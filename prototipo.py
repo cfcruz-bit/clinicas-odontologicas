@@ -75,7 +75,6 @@ app.config.update(SESSION_COOKIE_SAMESITE="Lax", SESSION_COOKIE_SECURE="FLY_APP_
                   # Las computadoras de la clinica son compartidas: la sesion se cierra tras 30 min sin uso
                   PERMANENT_SESSION_LIFETIME=timedelta(minutes=30),
                   MAX_CONTENT_LENGTH=2_000_000)  # la firma dibujada pesa unas decenas de KB
-LARGO_CLAVE = 8
 
 FORMATO = "%d/%m/%Y"  # las fechas se escriben y se leen como dd/mm/aaaa
 MANAGUA = timezone(timedelta(hours=-6))  # Nicaragua no cambia de horario; el servidor esta en UTC
@@ -200,27 +199,6 @@ def entrar():
                 return redirect(url_for("menu"))
             datos["aviso"] = "CIF o contraseña incorrectos."
     return render_template("entrar.html", **datos)
-
-
-@app.route("/clave", methods=["GET", "POST"])
-def clave():
-    if request.method == "POST":
-        actual, nueva = request.form.get("actual", ""), request.form.get("nueva", "")
-        cuenta = sql("SELECT clave FROM cuentas WHERE cif = %s", quien()[0]).fetchone()
-        if not check_password_hash(cuenta["clave"], actual):
-            flash("La contraseña actual no es correcta.", "error")
-        elif len(nueva) < LARGO_CLAVE:
-            flash(f"La contraseña nueva debe tener al menos {LARGO_CLAVE} caracteres.", "error")
-        elif nueva != request.form.get("repetir", ""):
-            flash("Las dos contraseñas nuevas no coinciden.", "error")
-        elif nueva == actual:
-            flash("La contraseña nueva tiene que ser distinta de la actual.", "error")
-        else:
-            sql("UPDATE cuentas SET clave = %s WHERE cif = %s", generate_password_hash(nueva), quien()[0])
-            anotar("Cambió su contraseña")
-            flash("Contraseña cambiada.", "ok")
-            return redirect(url_for("menu"))
-    return render_template("clave.html", **comun(), largo=LARGO_CLAVE)
 
 
 @app.route("/menu")
