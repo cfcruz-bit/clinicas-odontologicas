@@ -29,12 +29,6 @@
   .error { margin: 0; font-size: 13px; color: #b3261e; }
   .aviso { margin: 0; padding: 10px 12px; font-size: 13px; border-radius: 8px;
            background: #e7f1f0; border-left: 4px solid #14707a; }
-  .en-proceso { display: flex; flex-direction: column; gap: 8px; margin-top: 4px;
-                padding-top: 16px; border-top: 1px solid #c9d3d1; }
-  .en-proceso button { height: auto; margin: 0; padding: 0; font-size: 13px; font-weight: 400;
-                       color: #4e5f5e; background: none; text-align: left; text-decoration: underline; }
-  .etiqueta { margin-left: 6px; padding: 1px 6px; font-size: 11px; font-weight: 600;
-              color: #7a5c00; background: #fdf3d0; border-radius: 10px; }
 </style>
 </head>
 <body>
@@ -79,12 +73,7 @@
   </label>
   {% if error_clave %}<p class="error">{{ error_clave }}</p>{% endif %}
 
-  <button name="accion" value="entrar">Iniciar sesión</button>
-
-  <div class="en-proceso">
-    <button name="accion" value="olvido">He olvidado mi contraseña <span class="etiqueta">En proceso</span></button>
-    <button name="accion" value="sso">Entrar con la cuenta de la UAM <span class="etiqueta">En proceso</span></button>
-  </div>
+  <button>Iniciar sesión</button>
 </form>
 
 </body>

@@ -184,9 +184,6 @@ def exigir_sesion():
 def entrar():
     datos = {"cif": "", "error_cif": "", "error_clave": "", "aviso": ""}
     if request.method == "POST":
-        if request.form.get("accion") != "entrar":  # las opciones que todavia no estan hechas
-            datos["aviso"] = "Esta opción todavía está en proceso."
-            return render_template("entrar.html", **datos)
         cif = request.form.get("cif", "").strip()
         clave = request.form.get("clave", "")
         datos["cif"] = cif
