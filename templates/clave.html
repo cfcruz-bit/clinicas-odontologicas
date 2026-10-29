@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block titulo %}Cambiar contraseña - Clínicas Odontológicas{% endblock %}
+{% block contenido %}
+  <h2>Cambiar contraseña</h2>
+  {% if obligatorio %}
+  <div class="mensaje error">Por seguridad, cambie la contraseña inicial antes de seguir.</div>
+  {% endif %}
+
+  <form method="post">
+    <fieldset>
+      <legend>Contraseña</legend>
+      <div class="campo"><span>Contraseña actual: *</span><input type="password" name="actual" autocomplete="current-password"></div>
+      <div class="campo"><span>Contraseña nueva: *</span><input type="password" name="nueva" autocomplete="new-password" minlength="{{ largo }}"></div>
+      <div class="campo"><span>Repita la nueva: *</span><input type="password" name="repetir" autocomplete="new-password" minlength="{{ largo }}"></div>
+      <p class="tenue">Al menos {{ largo }} caracteres.</p>
+      <div class="acciones"><button class="btn">Guardar contraseña</button></div>
+    </fieldset>
+  </form>
+{% endblock %}

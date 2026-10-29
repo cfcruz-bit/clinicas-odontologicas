@@ -66,13 +66,18 @@ CREATE TABLE IF NOT EXISTS citas (
     fecha text NOT NULL, hora text NOT NULL, sala text NOT NULL DEFAULT '', razon text NOT NULL);
 CREATE TABLE IF NOT EXISTS bitacora (
     id serial PRIMARY KEY, cuando timestamptz NOT NULL DEFAULT now(), cif text, nombre text, rol text, accion text);
+-- Toda cuenta nueva tiene que cambiar la clave inicial al entrar por primera vez
+ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS debe_cambiar boolean NOT NULL DEFAULT true;
 """
 
 app = Flask(__name__)
 # Sin SECRET_KEY las sesiones se pierden al reiniciar, pero nunca quedan firmadas con una clave conocida
 app.secret_key = os.environ.get("SECRET_KEY") or secrets.token_hex()
 app.config.update(SESSION_COOKIE_SAMESITE="Lax", SESSION_COOKIE_SECURE="FLY_APP_NAME" in os.environ,
+                  # Las computadoras de la clinica son compartidas: la sesion se cierra tras 30 min sin uso
+                  PERMANENT_SESSION_LIFETIME=timedelta(minutes=30),
                   MAX_CONTENT_LENGTH=2_000_000)  # la firma dibujada pesa unas decenas de KB
+LARGO_CLAVE = 8
 
 FORMATO = "%d/%m/%Y"  # las fechas se escriben y se leen como dd/mm/aaaa
 MANAGUA = timezone(timedelta(hours=-6))  # Nicaragua no cambia de horario; el servidor esta en UTC
@@ -175,6 +180,8 @@ def todas_las_salas():
 def exigir_sesion():
     if request.endpoint not in ("entrar", "static") and quien() is None:
         return redirect(url_for("entrar"))
+    if session.get("debe_cambiar") and request.endpoint not in ("clave", "salir", "static"):
+        return redirect(url_for("clave"))
 
 
 @app.route("/", methods=["GET", "POST"])
@@ -192,13 +199,39 @@ def entrar():
         if not clave:
             datos["error_clave"] = "Escriba su contraseña."
         if cif and clave:
-            cuenta = sql("SELECT clave FROM cuentas WHERE cif = %s", cif).fetchone()
+            cuenta = sql("SELECT clave, debe_cambiar FROM cuentas WHERE cif = %s", cif).fetchone()
             if cuenta and check_password_hash(cuenta["clave"], clave):
+                session.permanent = True  # cuenta los 30 min desde la ultima pagina que se abrio
                 session["cif"] = cif
+                if cuenta["debe_cambiar"]:
+                    session["debe_cambiar"] = True
                 anotar("Entró al sistema")
                 return redirect(url_for("menu"))
             datos["aviso"] = "CIF o contraseña incorrectos."
     return render_template("entrar.html", **datos)
+
+
+@app.route("/clave", methods=["GET", "POST"])
+def clave():
+    if request.method == "POST":
+        actual, nueva = request.form.get("actual", ""), request.form.get("nueva", "")
+        cuenta = sql("SELECT clave FROM cuentas WHERE cif = %s", quien()[0]).fetchone()
+        if not check_password_hash(cuenta["clave"], actual):
+            flash("La contraseña actual no es correcta.", "error")
+        elif len(nueva) < LARGO_CLAVE:
+            flash(f"La contraseña nueva debe tener al menos {LARGO_CLAVE} caracteres.", "error")
+        elif nueva != request.form.get("repetir", ""):
+            flash("Las dos contraseñas nuevas no coinciden.", "error")
+        elif nueva == actual:
+            flash("La contraseña nueva tiene que ser distinta de la actual.", "error")
+        else:
+            sql("UPDATE cuentas SET clave = %s, debe_cambiar = false WHERE cif = %s",
+                generate_password_hash(nueva), quien()[0])
+            session.pop("debe_cambiar", None)
+            anotar("Cambió su contraseña")
+            flash("Contraseña cambiada.", "ok")
+            return redirect(url_for("menu"))
+    return render_template("clave.html", **comun(), obligatorio=session.get("debe_cambiar"), largo=LARGO_CLAVE)
 
 
 @app.route("/menu")
@@ -266,6 +299,28 @@ def razon(pid):
     return render_template("razon.html", **comun(), p=p, hoy=hoy(), salas=todas_las_salas())
 
 
+@app.route("/pacientes/<int:pid>/editar", methods=["GET", "POST"])
+def editar(pid):
+    """El estudiante a cargo corrige los datos del paciente si se equivocó al registrarlo."""
+    p = paciente(pid)
+    if not p or quien()[2] != "estudiante":
+        return redirect(url_for("pacientes"))
+    if request.method == "POST":
+        form = {c: request.form.get(c, "").strip() for c in ("nombre", "cedula", "telefono")}
+        p.update(form)  # si hay error, el formulario vuelve con lo que se escribio
+        if not form["nombre"] or not form["cedula"]:
+            flash("El nombre y la cédula del paciente son obligatorios.", "error")
+        elif sql("SELECT 1 FROM pacientes WHERE cedula = %s AND id <> %s", form["cedula"], pid).fetchone():
+            flash("Ya existe otro paciente con esa cédula.", "error")
+        else:
+            sql("UPDATE pacientes SET nombre = %s, cedula = %s, telefono = %s WHERE id = %s",
+                form["nombre"], form["cedula"], form["telefono"], pid)
+            anotar(f"Corrigió los datos de {form['nombre']} ({form['cedula']})")
+            flash("Datos del paciente guardados.", "ok")
+            return redirect(url_for("expediente", pid=pid))
+    return render_template("editar.html", **comun(), p=p)
+
+
 @app.route("/pacientes/<int:pid>")
 def expediente(pid):
     p = paciente(pid)
@@ -323,6 +378,16 @@ def consentimiento(pid):
 @app.route("/citas", methods=["GET", "POST"])
 def citas():
     cif, _, rol = quien()
+    if request.method == "POST" and rol == "estudiante" and request.form.get("accion") == "cancelar":
+        # Solo las citas que no han pasado: las pasadas son parte del historial del paciente
+        cita = sql("SELECT * FROM citas WHERE id = %s AND fecha >= %s", request.form.get("id", type=int),
+                   hoy()).fetchone()
+        p = cita and paciente(cita["paciente_id"])
+        if p:
+            sql("DELETE FROM citas WHERE id = %s", cita["id"])
+            anotar(f"Canceló la cita de {p['nombre']} del {dmy(cita['fecha'])} a las {cita['hora']}")
+            flash("Cita cancelada.", "ok")
+        return redirect(url_for("citas"))
     if request.method == "POST" and rol == "estudiante":
         p = paciente(request.form.get("paciente_id", type=int))
         f = {c: request.form.get(c, "").strip() for c in ("fecha", "hora", "sala", "razon")}

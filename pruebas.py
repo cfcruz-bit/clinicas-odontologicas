@@ -15,6 +15,8 @@ import prototipo as m  # noqa: E402
 base = psycopg.connect(os.environ["DATABASE_URL"], autocommit=True, row_factory=dict_row, prepare_threshold=None)
 base.execute("DROP TABLE IF EXISTS bitacora, citas, trabajo, pacientes, salas, cuentas")
 m.crear_tablas()
+# El Dr. Rivas se queda con la clave inicial para probar el cambio obligatorio; los demas ya la cambiaron
+base.execute("UPDATE cuentas SET debe_cambiar = false WHERE cif <> '00000004'")
 
 def uno(consulta, *args):
     return base.execute(consulta, args).fetchone()
@@ -47,6 +49,26 @@ caso("Con una clave equivocada no se entra",
      m.app.test_client().post("/", data={"accion": "entrar", "cif": "00000002", "clave": "otra"}).status_code == 200)
 caso("El nombre del usuario sale en la cabecera, no solo el rol", "Grace Alvarado" in texto(grace.get("/menu")))
 
+entrada = m.app.test_client().post("/", data={"accion": "entrar", "cif": "00000002", "clave": "uam2026"})
+caso("La sesion se cierra sola a los 30 minutos sin uso",
+     m.app.permanent_session_lifetime.total_seconds() == 1800 and "Expires=" in entrada.headers["Set-Cookie"])
+
+rivas = cliente("00000004")
+caso("Con la clave inicial hay que cambiarla antes de seguir", rivas.get("/menu").headers["Location"].endswith("/clave"))
+rivas.post("/clave", data={"actual": "otra", "nueva": "nueva-clave-1", "repetir": "nueva-clave-1"})
+rivas.post("/clave", data={"actual": "uam2026", "nueva": "corta", "repetir": "corta"})
+rivas.post("/clave", data={"actual": "uam2026", "nueva": "nueva-clave-1", "repetir": "distinta-12"})
+caso("No se cambia sin la clave actual, con una corta o si no coinciden",
+     rivas.get("/menu").status_code == 302)
+rivas.post("/clave", data={"actual": "uam2026", "nueva": "nueva-clave-1", "repetir": "nueva-clave-1"})
+caso("Despues de cambiarla ya entra al sistema", rivas.get("/menu").status_code == 200)
+viejo = m.app.test_client()
+viejo.post("/", data={"accion": "entrar", "cif": "00000004", "clave": "uam2026"})
+nuevo = m.app.test_client()
+nuevo.post("/", data={"accion": "entrar", "cif": "00000004", "clave": "nueva-clave-1"})
+caso("La clave vieja deja de servir y la nueva entra sin pedir cambio",
+     viejo.get("/menu").status_code == 302 and nuevo.get("/menu").status_code == 200)
+
 grace.post("/pacientes", data={"accion": "registrar", "nombre": "Luis Pérez", "cedula": "T-100", "telefono": "88880000"})
 pid = uno("SELECT id FROM pacientes")["id"]
 paciente = lambda: uno("SELECT * FROM pacientes WHERE id = %s", pid)  # noqa: E731
@@ -69,6 +91,25 @@ grace.post("/citas", data={"paciente_id": pid, "fecha": m.dmy(m.hoy()), "hora": 
                            "razon": "Otra"})
 caso("No se agenda una sala ocupada a la misma hora", cuantos("citas") == 1)
 
+grace.post("/citas", data={"paciente_id": pid, "fecha": m.dmy(m.hoy()), "hora": "11:00", "razon": "Para cancelar"})
+cancelar = uno("SELECT id FROM citas WHERE razon = 'Para cancelar'")["id"]
+gabriel.post("/citas", data={"accion": "cancelar", "id": cancelar})
+caso("Un estudiante no cancela citas de pacientes ajenos", cuantos("citas") == 2)
+grace.post("/citas", data={"accion": "cancelar", "id": cancelar})
+caso("El estudiante a cargo cancela una cita", cuantos("citas") == 1)
+base.execute("INSERT INTO citas (paciente_id, fecha, hora, razon) VALUES (%s, '2020-01-01', '08:00', 'Pasada')", (pid,))
+pasada = uno("SELECT id FROM citas WHERE razon = 'Pasada'")["id"]
+grace.post("/citas", data={"accion": "cancelar", "id": pasada})
+caso("Las citas pasadas no se cancelan: son historial", cuantos("citas") == 2)
+
+gabriel.post("/pacientes", data={"accion": "registrar", "nombre": "Ana Ruiz", "cedula": "T-200"})
+grace.post(f"/pacientes/{pid}/editar", data={"nombre": "Luis Pérez", "cedula": "T-200", "telefono": ""})
+caso("Al corregir no se puede usar la cedula de otro paciente", paciente()["cedula"] == "T-100")
+gabriel.post(f"/pacientes/{pid}/editar", data={"nombre": "Otro", "cedula": "T-100", "telefono": ""})
+caso("Un estudiante no corrige pacientes ajenos", paciente()["nombre"] == "Luis Pérez")
+grace.post(f"/pacientes/{pid}/editar", data={"nombre": "Luis Pérez", "cedula": "T-100", "telefono": "22220000"})
+caso("El estudiante a cargo corrige los datos del paciente", paciente()["telefono"] == "22220000")
+
 caso("Cada estudiante ve solo sus pacientes", "Luis Pérez" not in texto(gabriel.get("/pacientes")))
 caso("Cada estudiante ve solo sus citas", "Luis Pérez" not in texto(gabriel.get("/citas")))
 caso("Un estudiante no abre el expediente de otro", gabriel.get(f"/pacientes/{pid}").status_code == 302)
@@ -76,7 +117,7 @@ caso("El profesor ve a todos los pacientes", "Luis Pérez" in texto(profe.get("/
 
 caso("El profesor no registra pacientes", "accion\" value=\"registrar" not in texto(profe.get("/pacientes")))
 profe.post("/pacientes", data={"accion": "registrar", "nombre": "X", "cedula": "T-999"})
-caso("El profesor no puede registrar ni por la fuerza", cuantos("pacientes") == 1)
+caso("El profesor no puede registrar ni por la fuerza", cuantos("pacientes") == 2)
 caso("El profesor no agenda citas", "Agendar cita" not in texto(profe.get("/citas")))
 profe.post("/pacientes", data={"accion": "aprobar", "id": pid, "aprobado": "1"})
 caso("El profesor solo revisa: aprueba al paciente", paciente()["aprobado"] is True)
@@ -121,7 +162,7 @@ caso("El estudiante no administra las salas", "Agregar sala" not in texto(grace.
 caso("La bitacora guarda lo que hizo cada quien", "Pasó a Luis Pérez" in texto(admin.get("/bitacora")))
 
 m.crear_tablas()
-caso("Crear las tablas otra vez no borra ni duplica nada", cuantos("pacientes") == 1 and cuantos("cuentas") == 5)
+caso("Crear las tablas otra vez no borra ni duplica nada", cuantos("pacientes") == 2 and cuantos("cuentas") == 5)
 
 print(f"\n{'Todo correcto.' if not fallos else str(len(fallos)) + ' fallos.'}")
 sys.exit(1 if fallos else 0)

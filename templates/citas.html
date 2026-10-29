@@ -36,7 +36,7 @@
   <div class="tabla">
     <table>
       <thead><tr><th>Fecha</th><th>Hora</th><th>Paciente</th><th>Razón de la cita</th><th>Sala</th>
-        {% if es_rol != "estudiante" %}<th>Estudiante</th>{% endif %}</tr></thead>
+        {% if es_rol != "estudiante" %}<th>Estudiante</th>{% else %}<th></th>{% endif %}</tr></thead>
       <tbody>
         {% for c in citas|sort(attribute='fecha,hora') %}
         {% set p = mios[c.paciente_id] %}
@@ -47,7 +47,13 @@
             {% if p.razon %}<div class="tenue">{{ p.razon }}</div>{% endif %}</td>
           <td>{{ c.razon }}</td>
           <td>{{ c.sala or '' }}</td>
-          {% if es_rol != "estudiante" %}<td>{{ nombre_de(p.estudiante) }}</td>{% endif %}
+          {% if es_rol != "estudiante" %}<td>{{ nombre_de(p.estudiante) }}</td>
+          {% else %}<td class="acciones">{% if c.fecha >= hoy %}
+            <form method="post" class="en-linea">
+              <input type="hidden" name="accion" value="cancelar">
+              <input type="hidden" name="id" value="{{ c.id }}">
+              <button class="btn chico">Cancelar cita</button>
+            </form>{% endif %}</td>{% endif %}
         </tr>
         {% else %}
         <tr><td class="vacio" colspan="6">Todavía no hay citas.</td></tr>

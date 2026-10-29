@@ -14,7 +14,8 @@
       </div>
     </div>
     <div class="en-linea">
-      {% if es_rol == "estudiante" %}<a class="btn" href="{{ url_for('razon', pid=p.id) }}">Cambiar la razón</a>{% endif %}
+      {% if es_rol == "estudiante" %}<a class="btn" href="{{ url_for('editar', pid=p.id) }}">Corregir datos</a>
+      <a class="btn" href="{{ url_for('razon', pid=p.id) }}">Cambiar la razón</a>{% endif %}
       <a class="btn" href="{{ url_for('consentimiento', pid=p.id) }}">Consentimiento</a>
       {% if es_rol == "admin" %}<a class="btn" href="{{ url_for('traspaso', pid=p.id) }}">Cambiar de estudiante</a>{% endif %}
     </div>
