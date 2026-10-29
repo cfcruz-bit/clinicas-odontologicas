@@ -66,8 +66,6 @@ CREATE TABLE IF NOT EXISTS citas (
     fecha text NOT NULL, hora text NOT NULL, sala text NOT NULL DEFAULT '', razon text NOT NULL);
 CREATE TABLE IF NOT EXISTS bitacora (
     id serial PRIMARY KEY, cuando timestamptz NOT NULL DEFAULT now(), cif text, nombre text, rol text, accion text);
--- Toda cuenta nueva tiene que cambiar la clave inicial al entrar por primera vez
-ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS debe_cambiar boolean NOT NULL DEFAULT true;
 """
 
 app = Flask(__name__)
@@ -180,8 +178,6 @@ def todas_las_salas():
 def exigir_sesion():
     if request.endpoint not in ("entrar", "static") and quien() is None:
         return redirect(url_for("entrar"))
-    if session.get("debe_cambiar") and request.endpoint not in ("clave", "salir", "static"):
-        return redirect(url_for("clave"))
 
 
 @app.route("/", methods=["GET", "POST"])
@@ -199,12 +195,10 @@ def entrar():
         if not clave:
             datos["error_clave"] = "Escriba su contraseña."
         if cif and clave:
-            cuenta = sql("SELECT clave, debe_cambiar FROM cuentas WHERE cif = %s", cif).fetchone()
+            cuenta = sql("SELECT clave FROM cuentas WHERE cif = %s", cif).fetchone()
             if cuenta and check_password_hash(cuenta["clave"], clave):
                 session.permanent = True  # cuenta los 30 min desde la ultima pagina que se abrio
                 session["cif"] = cif
-                if cuenta["debe_cambiar"]:
-                    session["debe_cambiar"] = True
                 anotar("Entró al sistema")
                 return redirect(url_for("menu"))
             datos["aviso"] = "CIF o contraseña incorrectos."
@@ -225,13 +219,11 @@ def clave():
         elif nueva == actual:
             flash("La contraseña nueva tiene que ser distinta de la actual.", "error")
         else:
-            sql("UPDATE cuentas SET clave = %s, debe_cambiar = false WHERE cif = %s",
-                generate_password_hash(nueva), quien()[0])
-            session.pop("debe_cambiar", None)
+            sql("UPDATE cuentas SET clave = %s WHERE cif = %s", generate_password_hash(nueva), quien()[0])
             anotar("Cambió su contraseña")
             flash("Contraseña cambiada.", "ok")
             return redirect(url_for("menu"))
-    return render_template("clave.html", **comun(), obligatorio=session.get("debe_cambiar"), largo=LARGO_CLAVE)
+    return render_template("clave.html", **comun(), largo=LARGO_CLAVE)
 
 
 @app.route("/menu")

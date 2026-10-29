@@ -15,8 +15,6 @@ import prototipo as m  # noqa: E402
 base = psycopg.connect(os.environ["DATABASE_URL"], autocommit=True, row_factory=dict_row, prepare_threshold=None)
 base.execute("DROP TABLE IF EXISTS bitacora, citas, trabajo, pacientes, salas, cuentas")
 m.crear_tablas()
-# El Dr. Rivas se queda con la clave inicial para probar el cambio obligatorio; los demas ya la cambiaron
-base.execute("UPDATE cuentas SET debe_cambiar = false WHERE cif <> '00000004'")
 
 def uno(consulta, *args):
     return base.execute(consulta, args).fetchone()
@@ -54,19 +52,19 @@ caso("La sesion se cierra sola a los 30 minutos sin uso",
      m.app.permanent_session_lifetime.total_seconds() == 1800 and "Expires=" in entrada.headers["Set-Cookie"])
 
 rivas = cliente("00000004")
-caso("Con la clave inicial hay que cambiarla antes de seguir", rivas.get("/menu").headers["Location"].endswith("/clave"))
+caso("Con la clave inicial se entra directo: no obliga a cambiarla", rivas.get("/menu").status_code == 200)
+clave_de_rivas = lambda: uno("SELECT clave FROM cuentas WHERE cif = '00000004'")["clave"]  # noqa: E731
+antes = clave_de_rivas()
 rivas.post("/clave", data={"actual": "otra", "nueva": "nueva-clave-1", "repetir": "nueva-clave-1"})
 rivas.post("/clave", data={"actual": "uam2026", "nueva": "corta", "repetir": "corta"})
 rivas.post("/clave", data={"actual": "uam2026", "nueva": "nueva-clave-1", "repetir": "distinta-12"})
-caso("No se cambia sin la clave actual, con una corta o si no coinciden",
-     rivas.get("/menu").status_code == 302)
+caso("No se cambia sin la clave actual, con una corta o si no coinciden", clave_de_rivas() == antes)
 rivas.post("/clave", data={"actual": "uam2026", "nueva": "nueva-clave-1", "repetir": "nueva-clave-1"})
-caso("Despues de cambiarla ya entra al sistema", rivas.get("/menu").status_code == 200)
 viejo = m.app.test_client()
 viejo.post("/", data={"accion": "entrar", "cif": "00000004", "clave": "uam2026"})
 nuevo = m.app.test_client()
 nuevo.post("/", data={"accion": "entrar", "cif": "00000004", "clave": "nueva-clave-1"})
-caso("La clave vieja deja de servir y la nueva entra sin pedir cambio",
+caso("Al cambiarla, la clave vieja deja de servir y la nueva entra",
      viejo.get("/menu").status_code == 302 and nuevo.get("/menu").status_code == 200)
 
 grace.post("/pacientes", data={"accion": "registrar", "nombre": "Luis Pérez", "cedula": "T-100", "telefono": "88880000"})
