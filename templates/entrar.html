@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Iniciar sesión - Clínicas Odontológicas</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; padding: 48px 16px; display: flex; align-items: center; justify-content: center;
+    font: 14px system-ui, "Segoe UI", sans-serif; color: #10302f;
+    background: linear-gradient(rgba(12, 40, 42, .45), rgba(12, 40, 42, .45)) , url({{ url_for('static', filename='fondo-clinica.jpg') }}) center / cover no-repeat;
+  }
+  form { width: 100%; max-width: 420px; padding: 36px 28px 40px; display: flex; flex-direction: column; gap: 18px;
+         background: #f6f8f7; border-radius: 18px; box-shadow: 0 24px 60px rgba(6, 24, 26, .35); }
+  .marca { position: relative; width: 100%; aspect-ratio: 360 / 190; color: #14707a; }
+  .marca svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .marca div { position: absolute; left: 0; right: 0; bottom: 10px; text-align: center; }
+  .marca img { width: 46%; }
+  .marca p { margin: 6px 0 0; font-size: 15px; font-weight: 600; color: #14707a; }
+  h1 { margin: 10px 0 0; font-size: 32px; font-weight: 600; text-align: center; }
+  label { display: flex; flex-direction: column; gap: 6px; font-weight: 500; }
+  input { height: 52px; padding: 0 14px; font: inherit; font-size: 16px; color: inherit;
+          background: #fff; border: 1.5px solid #c9d3d1; border-radius: 10px; }
+  input:focus { outline: none; border-color: #14707a; box-shadow: 0 0 0 3px rgba(20, 112, 122, .18); }
+  button { height: 52px; margin-top: 8px; font: inherit; font-size: 16px; font-weight: 600;
+           color: #fff; background: #14707a; border: 0; border-radius: 10px; cursor: pointer; }
+  button:hover { filter: brightness(.92); }
+  .error { margin: 0; font-size: 13px; color: #b3261e; }
+  .aviso { margin: 0; padding: 10px 12px; font-size: 13px; border-radius: 8px;
+           background: #e7f1f0; border-left: 4px solid #14707a; }
+  .en-proceso { display: flex; flex-direction: column; gap: 8px; margin-top: 4px;
+                padding-top: 16px; border-top: 1px solid #c9d3d1; }
+  .en-proceso button { height: auto; margin: 0; padding: 0; font-size: 13px; font-weight: 400;
+                       color: #4e5f5e; background: none; text-align: left; text-decoration: underline; }
+  .etiqueta { margin-left: 6px; padding: 1px 6px; font-size: 11px; font-weight: 600;
+              color: #7a5c00; background: #fdf3d0; border-radius: 10px; }
+</style>
+</head>
+<body>
+<form method="post">
+  <div class="marca">
+    <svg aria-hidden="true" viewBox="0 0 360 190" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
+      <defs>
+        <path id="diente" d="M7 3c-2.2 0-4 1.8-4 4.2 0 2.3.8 3.8 1.4 5.6.6 1.9.7 4 1.3 6.4.4 1.5 1 2.8 2 2.8 1.6 0 1.6-5 3.3-5s1.7 5 3.3 5c1 0 1.6-1.3 2-2.8.6-2.4.7-4.5 1.3-6.4.6-1.8 1.4-3.3 1.4-5.6C21 4.8 19.2 3 17 3c-1.9 0-2.9 1-5 1S8.9 3 7 3z"/>
+      </defs>
+      <use href="#diente" transform="rotate(-78 180 170) translate(171 10) scale(0.75)"/>
+      <use href="#diente" transform="rotate(-66 180 170) translate(171 10) scale(0.75)"/>
+      <use href="#diente" transform="rotate(-54 180 170) translate(171 10) scale(0.75)"/>
+      <use href="#diente" transform="rotate(-42 180 170) translate(171 10) scale(0.75)"/>
+      <use href="#diente" transform="rotate(-30 180 170) translate(171 10) scale(0.75)"/>
+      <use href="#diente" transform="rotate(-18 180 170) translate(171 10) scale(0.75)"/>
+      <use href="#diente" transform="rotate(-6 180 170) translate(171 10) scale(0.75)"/>
+      <use href="#diente" transform="rotate(6 180 170) translate(171 10) scale(0.75)"/>
+      <use href="#diente" transform="rotate(18 180 170) translate(171 10) scale(0.75)"/>
+      <use href="#diente" transform="rotate(30 180 170) translate(171 10) scale(0.75)"/>
+      <use href="#diente" transform="rotate(42 180 170) translate(171 10) scale(0.75)"/>
+      <use href="#diente" transform="rotate(54 180 170) translate(171 10) scale(0.75)"/>
+      <use href="#diente" transform="rotate(66 180 170) translate(171 10) scale(0.75)"/>
+      <use href="#diente" transform="rotate(78 180 170) translate(171 10) scale(0.75)"/>
+    </svg>
+    <div>
+      <img src="{{ url_for('static', filename='logo-uam.png') }}" alt="Universidad Americana (UAM)">
+      <p>Facultad de Odontología</p>
+    </div>
+  </div>
+
+  <h1>Iniciar sesión</h1>
+
+  {% if aviso %}<p class="aviso">{{ aviso }}</p>{% endif %}
+
+  <label>CIF
+    <input name="cif" value="{{ cif }}" autocomplete="off">
+  </label>
+  {% if error_cif %}<p class="error">{{ error_cif }}</p>{% endif %}
+
+  <label>Contraseña
+    <input name="clave" type="password" autocomplete="off">
+  </label>
+  {% if error_clave %}<p class="error">{{ error_clave }}</p>{% endif %}
+
+  <button name="accion" value="entrar">Iniciar sesión</button>
+
+  <div class="en-proceso">
+    <button name="accion" value="olvido">He olvidado mi contraseña <span class="etiqueta">En proceso</span></button>
+    <button name="accion" value="sso">Entrar con la cuenta de la UAM <span class="etiqueta">En proceso</span></button>
+  </div>
+</form>
+
+</body>
+</html>

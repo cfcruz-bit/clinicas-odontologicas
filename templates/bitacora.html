@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block titulo %}Bitácora - Clínicas Odontológicas{% endblock %}
+{% block contenido %}
+  <h2>Bitácora</h2>
+  <p>Quién hizo qué y a qué hora. En el prototipo guarda lo de esta corrida; en el sistema queda en la base de datos.</p>
+
+  {% if lineas %}
+  <div class="tabla">
+    <table>
+      <thead><tr><th>Fecha y hora</th><th>Usuario</th><th>CIF</th><th>Rol</th><th>Acción</th></tr></thead>
+      <tbody>
+        {% for l in lineas %}
+        <tr><td class="fecha">{{ l.cuando }}</td><td>{{ l.nombre }}</td><td>{{ l.cif }}</td>
+            <td>{{ l.rol }}</td><td>{{ l.accion }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="tenue">Todavía no hay movimientos registrados.</p>
+  {% endif %}
+{% endblock %}

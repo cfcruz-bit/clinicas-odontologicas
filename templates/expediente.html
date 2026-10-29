@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block titulo %}{{ p.nombre }} - Clínicas Odontológicas{% endblock %}
+{% block contenido %}
+  <p><a href="{{ url_for('pacientes') }}">&larr; Pacientes</a></p>
+
+  <div class="ficha">
+    <div>
+      <h1>{{ p.nombre }}{% if p.razon %} <small class="razon">{{ p.razon }}</small>{% endif %}</h1>
+      <div class="tenue">Cédula {{ p.cedula }}{% if p.telefono %} · Tel. {{ p.telefono }}{% endif %}</div>
+      <div class="tenue">Estudiante a cargo: {{ nombre_de(p.estudiante) }}</div>
+      <div>
+        Aprobación docente: {% if p.aprobado %}<span class="verde">Aprobado</span>{% else %}<span class="amarillo">Pendiente</span>{% endif %}
+        · Consentimiento: {% if p.firma %}<span class="verde">Firmado</span>{% else %}<span class="amarillo">Falta firma</span>{% endif %}
+      </div>
+    </div>
+    <div class="en-linea">
+      {% if es_rol == "estudiante" %}<a class="btn" href="{{ url_for('razon', pid=p.id) }}">Cambiar la razón</a>{% endif %}
+      <a class="btn" href="{{ url_for('consentimiento', pid=p.id) }}">Consentimiento</a>
+      {% if es_rol == "admin" %}<a class="btn" href="{{ url_for('traspaso', pid=p.id) }}">Cambiar de estudiante</a>{% endif %}
+    </div>
+  </div>
+
+  <h2>Trabajo por estudiante</h2>
+  <p class="tenue">Cuando el paciente cambia de estudiante, el trabajo del anterior queda archivado con el resumen
+     de lo que se le hizo.</p>
+  <div class="tabla">
+    <table>
+      <thead><tr><th>Estudiante</th><th>Desde</th><th>Hasta</th><th>Qué se le hizo y qué trabajó</th></tr></thead>
+      <tbody>
+        {% for t in p.trabajo|reverse %}
+        <tr>
+          <td>{{ nombre_de(t.estudiante) }}</td>
+          <td class="fecha">{{ t.desde|dmy }}</td>
+          <td class="fecha">{% if t.hasta %}{{ t.hasta|dmy }}{% else %}<span class="verde">Lo atiende ahora</span>{% endif %}</td>
+          <td>{{ t.resumen or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <h2>Citas</h2>
+  <div class="tabla">
+    <table>
+      <thead><tr><th>Fecha</th><th>Hora</th><th>Razón de la cita</th><th>Sala</th></tr></thead>
+      <tbody>
+        {% for c in citas|sort(attribute='fecha,hora') %}
+        <tr><td class="fecha">{{ c.fecha|dmy }}</td><td>{{ c.hora }}</td><td>{{ c.razon }}</td><td>{{ c.sala or '' }}</td></tr>
+        {% else %}
+        <tr><td class="vacio" colspan="4">Este paciente no tiene citas.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}

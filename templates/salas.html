@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block titulo %}Salas - Clínicas Odontológicas{% endblock %}
+{% block contenido %}
+  <h2>Plano de la clínica</h2>
+  <p class="tenue">Cada sala muestra un ✓ si está disponible o una ✗ si no lo está.</p>
+  <div class="plano">
+    <div class="plano-salas">
+      {% for s in salas %}
+      <div class="sala {{ 'libre' if s.disponible else 'ocupada' }}">
+        <span class="marca-sala">{{ '✓' if s.disponible else '✗' }}</span>
+        <b>{{ s.nombre }}</b>
+        <small>{{ 'Disponible' if s.disponible else 'No disponible' }}</small>
+        {% if es_rol == "admin" %}
+        <form method="post">
+          <input type="hidden" name="sala" value="{{ s.id }}">
+          <button class="btn chico">{{ 'Marcar no disponible' if s.disponible else 'Marcar disponible' }}</button>
+        </form>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    <div class="plano-pasillo">Pasillo / recepción</div>
+  </div>
+
+  {% if es_rol == "admin" %}
+  <form method="post">
+    <input type="hidden" name="accion" value="agregar">
+    <fieldset>
+      <legend>Agregar sala</legend>
+      <div class="en-linea"><input name="nombre" placeholder="Nombre de la sala" aria-label="Nombre de la sala"><button class="btn">Agregar</button></div>
+    </fieldset>
+  </form>
+  {% else %}
+  <p class="tenue">La Facultad es la que agrega salas y cambia su disponibilidad.</p>
+  {% endif %}
+{% endblock %}

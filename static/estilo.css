@@ -1,0 +1,223 @@
+/* Clínicas Odontológicas - estilo sobrio, basado en la primera version de escritorio */
+:root {
+  --azul: #2b4a6f; --borde: #cfd3d8; --fondo: #f4f5f7; --panel: #ffffff; --texto: #222222;
+  --tenue: #6b6f75; --rojo: #9b2c2c; --verde: #2f6b3a; --amarillo: #7a5c00; --seleccion: #eef2f6;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--fondo); color: var(--texto);
+       font: 14px/1.4 "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif; }
+a { color: var(--azul); }
+.app { max-width: 1120px; margin: 0 auto; padding: 8px 10px 24px; }
+.app:has(.entrar) { max-width: none; margin: 0; padding: 0; }
+.tenue { color: var(--tenue); }
+h2 { font-size: 14px; font-weight: 600; color: var(--texto); margin: 20px 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--borde); }
+h2:first-child { margin-top: 0; }
+p { margin: 0 0 8px; }
+
+/* cabecera */
+.cabecera { display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 6px 16px; padding: 6px 0 10px; }
+.titulo { font-size: 19px; font-weight: 600; color: var(--azul); text-decoration: none; line-height: 1.1; }
+.titulo small { display: block; font-size: 12px; font-weight: 400; color: var(--tenue); }
+.sesion { font-size: 13px; color: var(--tenue); }
+.sesion a { margin-left: 10px; }
+
+/* pestanas (como un Notebook de Tkinter) */
+.pestanas { display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; position: relative; z-index: 1; margin-bottom: -1px; }
+.pestanas a { flex: none; padding: 6px 14px; border: 1px solid var(--borde); border-bottom: 0; border-radius: 3px 3px 0 0;
+              background: #e9ebee; color: var(--texto); text-decoration: none; }
+.pestanas a:hover { background: #f1f2f4; }
+.pestanas a.activa { background: var(--panel); border-bottom: 1px solid var(--panel); font-weight: 600; }
+.contador { display: inline-block; min-width: 18px; margin-left: 5px; padding: 0 5px; border-radius: 9px;
+            background: #5a6068; color: #fff; font-size: 11px; font-weight: 600; text-align: center; }
+.panel { background: var(--panel); border: 1px solid var(--borde); padding: 14px; min-height: 60vh; }
+.subpestanas { margin-top: 12px; }
+.subpanel { min-height: 0; }
+.subpanel[hidden] { display: none; }
+
+/* mensajes */
+.mensaje { padding: 7px 10px; margin-bottom: 10px; background: #f7f8f9; border: 1px solid var(--borde); border-left: 3px solid var(--tenue); }
+.mensaje.ok { border-left-color: var(--verde); }
+.mensaje.error { border-left-color: var(--rojo); color: var(--rojo); }
+.mensaje.aviso { border-left-color: var(--amarillo); }
+.mensaje.demo { color: var(--tenue); font-size: 13px; }
+
+/* formularios */
+.columnas { display: grid; grid-template-columns: 330px 1fr; gap: 14px; align-items: start; }
+.columnas.anchas { grid-template-columns: 1fr 1fr; }
+.columnas > * { min-width: 0; }
+@media (max-width: 820px) { .columnas, .columnas.anchas { grid-template-columns: 1fr; } }
+fieldset { border: 1px solid var(--borde); border-radius: 3px; margin: 0 0 12px; padding: 8px 12px 12px; min-width: 0; }
+legend { padding: 0 4px; font-weight: 600; }
+.campo { display: grid; grid-template-columns: 125px 1fr; align-items: center; gap: 8px; margin-bottom: 7px; }
+.campo > span { color: #333; }
+.campo.arriba { align-items: start; }
+.campo.arriba > span { padding-top: 5px; }
+@media (max-width: 600px) { .campo { grid-template-columns: 1fr; gap: 3px; } .campo.arriba > span { padding-top: 0; } }
+input, select, textarea { width: 100%; min-height: 30px; padding: 4px 7px; font: inherit; color: var(--texto);
+                          background: #fff; border: 1px solid #b8bcc2; border-radius: 2px; }
+textarea { resize: vertical; }
+input[type=checkbox] { width: auto; min-height: 0; }
+input:focus, select:focus, textarea:focus { outline: 0; border-color: var(--azul); box-shadow: 0 0 0 1px var(--azul); }
+.btn { display: inline-block; min-height: 30px; padding: 4px 14px; font: inherit; color: var(--texto); text-decoration: none;
+       background: #f3f4f6; border: 1px solid #b8bcc2; border-radius: 2px; cursor: pointer; white-space: nowrap; }
+.btn:hover { background: var(--seleccion); border-color: var(--azul); }
+.btn.activa { background: #fff; border-color: var(--azul); font-weight: 600; }
+.btn:disabled { opacity: .6; cursor: default; }
+.btn.chico { min-height: 26px; padding: 2px 9px; font-size: 13px; }
+.btn.peligro { color: var(--rojo); }
+.acciones { display: flex; justify-content: flex-end; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+.en-linea { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.en-linea > input, .en-linea > select { width: auto; flex: 1; min-width: 110px; }
+.filtros { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.filtros > * { width: auto; flex: 1; min-width: 160px; }
+.filtros .btn { flex: none; min-width: 0; }
+@media (max-width: 700px) {  /* tamanos comodos para el dedo y sin zoom automatico en iPhone */
+  input, select, textarea { font-size: 16px; min-height: 38px; }
+  .btn { min-height: 38px; }
+  .btn.chico { min-height: 32px; }
+}
+
+/* tablas (como un Treeview) */
+.tabla { overflow-x: auto; border: 1px solid var(--borde); margin-bottom: 12px; }
+table { width: 100%; border-collapse: collapse; background: #fff; }
+th { background: #f4f5f7; text-align: left; font-weight: 600; padding: 5px 8px; white-space: nowrap;
+     border-bottom: 1px solid var(--borde); border-right: 1px solid #e2e2e2; }
+td { padding: 5px 8px; border-bottom: 1px solid #ececec; vertical-align: middle; }
+tbody tr:hover td { background: var(--seleccion); }
+td.vacio { text-align: center; color: var(--tenue); padding: 16px; }
+td.fecha { white-space: nowrap; }
+td.num, th.num { text-align: right; white-space: nowrap; }
+td select { width: auto; min-height: 26px; padding: 1px 4px; }
+.rojo { color: var(--rojo); }
+.verde { color: var(--verde); }
+.amarillo { color: var(--amarillo); }
+
+/* expediente */
+.ficha { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; flex-wrap: wrap;
+         border-bottom: 1px solid var(--borde); padding-bottom: 10px; margin-bottom: 10px; }
+.ficha h1 { font-size: 18px; margin: 0 0 2px; }
+.alergia { border: 1px solid var(--borde); border-left: 3px solid var(--rojo); background: #fff; color: var(--rojo); padding: 7px 10px; font-weight: 600; margin-bottom: 10px; }
+.datos { display: grid; grid-template-columns: 190px 1fr; margin: 0 0 12px; border: 1px solid var(--borde); }
+.datos dt, .datos dd { margin: 0; padding: 5px 8px; border-bottom: 1px solid #ececec; }
+.datos dt { background: #f7f8f9; font-weight: 600; }
+.datos dd { white-space: pre-line; }
+@media (max-width: 600px) { .datos { grid-template-columns: 1fr; } .datos dt { border-bottom: 0; } }
+
+/* odontograma (igual al de la primera version) */
+.odonto { overflow: hidden; background: #fafbfc; border: 1px solid var(--borde); padding: 10px 8px 12px; margin-bottom: 12px; }
+.arcada-titulo { text-align: center; font-weight: 600; margin: 4px 0 6px; }
+.arcada { display: grid; grid-template-columns: repeat(8, minmax(0, 38px)) 6px repeat(8, minmax(0, 38px));
+          gap: 6px clamp(3px, 0.6vw, 8px); justify-content: center; }
+.arcada .diente:nth-child(9) { grid-column-start: 10; }  /* linea media */
+.diente { padding: 0; border: 0; background: none; font: inherit; font-size: 12px; color: var(--texto); cursor: pointer; text-align: center; }
+.diente span { display: block; height: 50px; border: 1px solid #5a6068; background: var(--color); margin-bottom: 2px; }
+.diente[data-estado="Extraido"] span {
+  background: linear-gradient(to top right, transparent calc(50% - 2px), var(--rojo) calc(50% - 2px), var(--rojo) calc(50% + 2px), transparent calc(50% + 2px)),
+              linear-gradient(to top left, transparent calc(50% - 2px), var(--rojo) calc(50% - 2px), var(--rojo) calc(50% + 2px), transparent calc(50% + 2px)),
+              var(--color);
+}
+.diente.resaltado span { outline: 2px solid var(--azul); outline-offset: 2px; }
+.diente.resaltado { font-weight: 700; }
+.odonto[data-bloqueado] .arcada { opacity: .55; }
+.odonto[data-bloqueado] .diente { cursor: not-allowed; }
+.leyenda i.marco { background: #fff; outline: 2px solid var(--azul); outline-offset: 1px; }
+.pasos { margin: 0 0 10px; padding-left: 22px; }
+.pasos li { margin-bottom: 8px; }
+.pasos li.hecho::marker { color: var(--verde); }
+.pasos details { display: inline-block; margin-left: 8px; }
+.pasos summary { cursor: pointer; color: var(--azul); text-decoration: underline; }
+.pasos details form { margin-top: 6px; }
+.foto-grande { display: block; max-width: 100%; max-height: 70vh; border: 1px solid var(--borde); background: #f4f5f7; }
+@media (max-width: 760px) {
+  .arcada { grid-template-columns: repeat(8, 1fr); gap: 6px; }
+  .arcada .diente:nth-child(9) { grid-column-start: auto; }
+  .diente span { height: 42px; }
+}
+.leyenda { display: flex; justify-content: center; flex-wrap: wrap; gap: 4px 14px; margin-top: 10px; }
+.leyenda i { display: inline-block; width: 12px; height: 12px; border: 1px solid #5a6068; vertical-align: -2px; margin-right: 4px; }
+.miniatura { display: block; width: 72px; height: 54px; object-fit: cover; border: 1px solid var(--borde); background: #f3f3f3; }
+.vista-previa[hidden] { display: none; }
+.vista-previa { display: block; max-width: 100%; max-height: 160px; border: 1px solid var(--borde); margin-top: 6px; }
+
+/* consentimiento */
+.texto-legal { background: #fafbfc; border: 1px solid var(--borde); padding: 10px; margin-bottom: 10px; }
+.pad-firma { display: block; width: 100%; max-width: 520px; height: 180px; background: #fff; border: 1px dashed #888; touch-action: none; margin-bottom: 8px; }
+.firma { max-width: 320px; max-height: 150px; border: 1px solid var(--borde); background: #fff; }
+
+/* entrar: panel claro sobre la foto de la clinica, con el arco de dientes y el logo UAM */
+.entrar {
+  --acento: #14707a; --tinta: #10302f; --linea: #c9d3d1;
+  min-height: 100vh; padding: 48px 16px; display: flex; align-items: center; justify-content: center;
+  font-family: Onest, system-ui, sans-serif; color: var(--tinta);
+  background: linear-gradient(rgba(12, 40, 42, .45), rgba(12, 40, 42, .45)), url(fondo-clinica.jpg) center / cover no-repeat;
+}
+.panel-entrar { width: 100%; max-width: 420px; padding: 36px clamp(20px, 6vw, 32px) 40px; display: flex; flex-direction: column; gap: 18px;
+                background: #f6f8f7; border-radius: 18px; box-shadow: 0 24px 60px rgba(6, 24, 26, .35); }
+.marca { position: relative; width: 100%; max-width: 360px; aspect-ratio: 360 / 190; align-self: center; color: var(--acento); }
+.marca svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.marca-logos { position: absolute; left: 0; right: 0; bottom: 10px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.marca-logos img { display: block; width: 46%; height: auto; }
+.marca-logos p { margin: 0; font-size: 15px; font-weight: 600; color: var(--acento); }
+.entrar h1 { margin: 10px 0 0; font-size: 32px; font-weight: 600; letter-spacing: -.02em; text-align: center; }
+.campo { display: flex; flex-direction: column; gap: 6px; }
+.campo label { font-size: 14px; font-weight: 500; }
+.caja { display: flex; align-items: center; height: 52px; padding: 0 14px; background: #fff; border: 1.5px solid var(--linea); border-radius: 10px; }
+.caja.con-boton { padding-right: 4px; }
+.caja:focus-within { border-color: var(--acento); box-shadow: 0 0 0 3px rgba(20, 112, 122, .18); }
+.caja input { flex: 1; min-width: 0; height: 100%; border: 0; outline: none; background: transparent; font: inherit; font-size: 16px; color: var(--tinta); }
+.ver-clave { flex: none; width: 44px; height: 44px; padding: 0; display: grid; place-items: center;
+             border: 0; border-radius: 8px; background: transparent; cursor: pointer; }
+.ver-clave svg { width: 20px; height: 20px; fill: none; stroke: #4e5f5e; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.ojo-cerrado, .ver-clave[aria-pressed="true"] .ojo-abierto { display: none; }
+.ver-clave[aria-pressed="true"] .ojo-cerrado { display: block; }
+.ingresar { height: 52px; margin-top: 8px; font: inherit; font-size: 16px; font-weight: 600; color: #fff;
+            background: var(--acento); border: 0; border-radius: 10px; cursor: pointer; }
+.ingresar:hover { filter: brightness(.92); }
+.olvido summary { font-size: 14px; font-weight: 600; color: var(--acento); cursor: pointer; }
+.olvido p { margin: 10px 0 0; font-size: 13px; }
+.nota-entrar { margin: 0; font-size: 12px; text-align: center; color: #4e5f5e; }
+.ingresar:focus-visible, .ver-clave:focus-visible, .olvido summary:focus-visible { outline: 3px solid var(--tinta); outline-offset: 2px; }
+
+/* impresion / PDF del expediente: solo los datos, sin navegacion ni formularios de accion */
+@media print {
+  @page { margin: 14mm; }
+  body { background: #fff; }
+  .cabecera .sesion, .pestanas, fieldset, button, a.btn, .mensaje, canvas, input[type=file] { display: none !important; }
+  .panel { min-height: 0; border: 0; padding: 0; }
+  .seccion[hidden] { display: block !important; }
+  .seccion { margin-bottom: 14px; }
+}
+
+/* razon por la que esta el paciente, al lado de su nombre */
+.razon { font-size: 13px; font-weight: 400; color: var(--tenue); }
+.razon::before { content: "· "; }
+
+/* plano de la clinica: cada sala con un check si esta disponible o una X si no */
+.plano { background: #fafbfc; border: 1px solid var(--borde); padding: 10px; margin-bottom: 12px; }
+.plano-titulo { font-weight: 600; margin-bottom: 8px; }
+.plano-salas { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; }
+.plano .sala { display: block; padding: 8px; text-align: center; text-decoration: none; color: var(--texto);
+               background: #fff; border: 2px solid var(--verde); border-radius: 3px; }
+.plano .sala.ocupada { border-color: var(--rojo); background: #fdf7f7; }
+.plano .sala:hover { background: var(--seleccion); }
+.plano .marca-sala { display: block; font-size: 24px; line-height: 1.1; color: var(--verde); }
+.plano .sala.ocupada .marca-sala { color: var(--rojo); }
+.plano .sala small { display: block; color: var(--tenue); }
+.plano-pasillo { margin-top: 8px; padding: 6px; text-align: center; color: var(--tenue);
+                 background: #eef0f2; border: 1px dashed var(--borde); }
+
+/* hoja de consentimiento para imprimir */
+.hoja { max-width: 720px; margin: 0 auto; }
+.hoja-encabezado { display: flex; align-items: center; gap: 14px; border-bottom: 2px solid var(--azul);
+                   padding-bottom: 10px; margin-bottom: 14px; }
+.hoja-encabezado img { width: 140px; height: auto; }
+.hoja .texto-legal { line-height: 1.6; }
+.firmas { margin-top: 30px; max-width: 320px; }  /* solo firma el paciente */
+.firma.vacia { height: 120px; background: #fff; border: 1px solid var(--borde); }
+.linea-firma { border-top: 1px solid var(--texto); margin-top: 4px; padding-top: 4px; text-align: center; font-size: 13px; }
+@media print { .sin-imprimir, .cabecera { display: none !important; } }
+
+/* el paciente dibuja su firma con el dedo o el mouse */
+.firma { display: flex; align-items: flex-end; justify-content: center; max-width: none; height: 90px; border: 0; }
+.firma-trazo { max-width: 100%; max-height: 90px; }
+.plano .sala form { margin-top: 6px; }

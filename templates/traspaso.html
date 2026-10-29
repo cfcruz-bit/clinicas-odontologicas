@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block titulo %}Cambiar de estudiante - Clínicas Odontológicas{% endblock %}
+{% block contenido %}
+  <p><a href="{{ url_for('expediente', pid=p.id) }}">&larr; Volver al expediente</a></p>
+  <h2>Cambiar {{ p.nombre }} de estudiante</h2>
+
+  <form method="post">
+    <fieldset>
+      <legend>Traspaso del paciente</legend>
+      <p>Estudiante actual: <b>{{ nombre_de(p.estudiante) }}</b>. Su trabajo se archiva con el resumen que
+         escriba aquí; no se borra nada.</p>
+      <div class="campo arriba"><span>¿Qué se le hizo y qué trabajó? *</span>
+        <textarea name="resumen" rows="4" autofocus
+                  placeholder="Ej.: historia clínica y odontograma completos, profilaxis y obturación del 36. Queda pendiente endodoncia del 46."></textarea>
+      </div>
+      <div class="campo"><span>Nuevo estudiante: *</span>
+        <select name="estudiante">
+          <option value="">Seleccione…</option>
+          {% for cif_est, nombre_est in estudiantes %}{% if cif_est != p.estudiante %}<option value="{{ cif_est }}">{{ nombre_est }}</option>{% endif %}{% endfor %}
+        </select>
+      </div>
+      <div class="acciones"><button class="btn">Traspasar paciente</button></div>
+    </fieldset>
+  </form>
+{% endblock %}

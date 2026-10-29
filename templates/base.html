@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="{{ url_for('static', filename='icono.svg') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='estilo.css') }}">
+  <title>{% block titulo %}Clínicas Odontológicas{% endblock %}</title>
+</head>
+<body>
+<div class="app">
+  <header class="cabecera">
+    <a class="titulo" href="{{ url_for('menu') }}">Clínicas Odontológicas<small>Facultad de Odontología UAM</small></a>
+    <div class="sesion">
+      {{ nombre }} ({{ rol }})
+      <a href="{{ url_for('salir') }}">Salir</a>
+    </div>
+  </header>
+  <nav class="pestanas">
+    {% for texto, endpoint in pestanas %}
+    <a href="{{ url_for(endpoint) }}" class="{{ 'activa' if endpoint == request.endpoint }}">{{ texto }}</a>
+    {% endfor %}
+  </nav>
+  <main class="panel">
+    {% for tipo, texto in get_flashed_messages(with_categories=true) %}<div class="mensaje {{ tipo }}">{{ texto }}</div>{% endfor %}
+    {% block contenido %}{% endblock %}
+  </main>
+  <p class="tenue sin-imprimir" style="margin-top: 10px">
+    Para imprimir, use Ctrl+P (⌘P en Mac).
+  </p>
+</div>
+</body>
+</html>

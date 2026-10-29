@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block titulo %}Consentimiento de {{ p.nombre }}{% endblock %}
+{% block contenido %}
+  <div class="en-linea sin-imprimir" style="justify-content: space-between">
+    <a href="{{ url_for('expediente', pid=p.id) }}">&larr; Volver al expediente</a>
+    <span class="tenue">Para imprimir o guardar en PDF: Ctrl+P (⌘P en Mac).</span>
+  </div>
+
+  <div class="hoja">
+    <div class="hoja-encabezado">
+      <img src="{{ url_for('static', filename='logo-uam.png') }}" alt="Universidad Americana (UAM)">
+      <div><b>Clínicas Odontológicas</b><br>Facultad de Odontología UAM<br>Consentimiento informado</div>
+    </div>
+
+    <div class="tabla">
+      <table>
+        <tbody>
+          <tr><th>Paciente</th><td>{{ p.nombre }}</td></tr>
+          <tr><th>Cédula</th><td>{{ p.cedula }}</td></tr>
+          <tr><th>Razón de la consulta</th><td>{{ p.razon or '—' }}</td></tr>
+          <tr><th>Estudiante a cargo</th><td>{{ nombre_de(p.estudiante) }}</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="texto-legal">
+      Yo, <b>{{ p.nombre }}</b>, con cédula <b>{{ p.cedula }}</b>, autorizo a los estudiantes de la Clínica
+      Odontológica UAM, bajo supervisión docente, a realizar los procedimientos de diagnóstico y tratamiento que me
+      han sido explicados. He sido informado(a) de sus beneficios, riesgos y alternativas, y he podido hacer
+      preguntas que fueron respondidas a mi satisfacción.
+    </p>
+
+    <div class="firmas">
+      <div>
+        <div class="firma">
+          {% if p.firma %}<img class="firma-trazo" src="{{ p.firma }}" alt="Firma de {{ p.nombre }}">{% endif %}
+        </div>
+        <div class="linea-firma">Firma del paciente{% if p.firma %} · {{ p.firma_fecha|dmy }}{% endif %}</div>
+      </div>
+    </div>
+  </div>
+
+  {% if es_rol == "estudiante" %}
+  <form method="post" id="form-firma" class="sin-imprimir">
+    <fieldset>
+      <legend>{{ "Volver a firmar" if p.firma else "Firma del paciente" }}</legend>
+      <p class="tenue">El paciente firma aquí con el dedo (tableta o celular) o con el mouse. El docente no firma.</p>
+      <canvas class="pad-firma" id="lienzo-firma" width="600" height="180"></canvas>
+      <input type="hidden" name="firma" id="firma-dato">
+      <div class="acciones">
+        <button type="button" class="btn chico" id="borrar-firma">Borrar</button>
+        <button class="btn">Guardar firma</button>
+      </div>
+    </fieldset>
+  </form>
+  <script>
+    const lienzo = document.getElementById("lienzo-firma"), pluma = lienzo.getContext("2d");
+    let dibujando = false, hayTrazo = false;
+    pluma.lineWidth = 2.5; pluma.lineCap = "round"; pluma.strokeStyle = "#1b2a3a";
+
+    // El lienzo se dibuja a 600x180 aunque en pantalla se vea mas angosto
+    function punto(e) {
+      const caja = lienzo.getBoundingClientRect();
+      return [(e.clientX - caja.left) * lienzo.width / caja.width,
+              (e.clientY - caja.top) * lienzo.height / caja.height];
+    }
+    lienzo.addEventListener("pointerdown", e => {
+      dibujando = true; lienzo.setPointerCapture(e.pointerId);
+      pluma.beginPath(); pluma.moveTo(...punto(e));
+    });
+    lienzo.addEventListener("pointermove", e => {
+      if (!dibujando) return;
+      pluma.lineTo(...punto(e)); pluma.stroke(); hayTrazo = true;
+    });
+    lienzo.addEventListener("pointerup", () => { dibujando = false; });
+    document.getElementById("borrar-firma").addEventListener("click", () => {
+      pluma.clearRect(0, 0, lienzo.width, lienzo.height); hayTrazo = false;
+    });
+    // Si no hay trazo se manda vacio y el servidor avisa que falta la firma
+    document.getElementById("form-firma").addEventListener("submit", () => {
+      document.getElementById("firma-dato").value = hayTrazo ? lienzo.toDataURL("image/png") : "";
+    });
+  </script>
+  {% endif %}
+{% endblock %}

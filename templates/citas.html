@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block titulo %}Citas - Clínicas Odontológicas{% endblock %}
+{% block contenido %}
+  {% if es_rol == "estudiante" %}
+  <h2>Agendar cita</h2>
+  {% if pacientes %}
+  <form method="post">
+    <fieldset>
+      <legend>Datos de la cita</legend>
+      <div class="campo"><span>Paciente: *</span>
+        <select name="paciente_id">
+          <option value="">Seleccione…</option>
+          {% for p in pacientes %}<option value="{{ p.id }}">{{ p.nombre }} ({{ p.cedula }})</option>{% endfor %}
+        </select>
+      </div>
+      <div class="campo"><span>Fecha: *</span><input name="fecha" value="{{ hoy|dmy }}" placeholder="dd/mm/aaaa" inputmode="numeric" maxlength="10" pattern="\d{2}/\d{2}/\d{4}"></div>
+      <div class="campo"><span>Hora: *</span><input type="time" name="hora"></div>
+      <div class="campo"><span>Sala</span>
+        <select name="sala">
+          <option value="">Sin asignar</option>
+          {% for s in salas %}<option value="{{ s.nombre }}">{{ s.nombre }}{{ '' if s.disponible else ' (no disponible)' }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="campo"><span>Razón de la cita: *</span><input name="razon" placeholder="¿Para qué viene a esta cita?"></div>
+      <div class="acciones"><button class="btn">Agendar</button></div>
+    </fieldset>
+  </form>
+  {% else %}
+  <p>Primero <a href="{{ url_for('pacientes') }}">registre un paciente</a>.</p>
+  {% endif %}
+  {% else %}
+  <p class="tenue">Las citas las agenda el estudiante a cargo del paciente; aquí solo se consulta la agenda.</p>
+  {% endif %}
+
+  <h2>{{ "Mis citas" if es_rol == "estudiante" else "Citas" }}</h2>
+  <div class="tabla">
+    <table>
+      <thead><tr><th>Fecha</th><th>Hora</th><th>Paciente</th><th>Razón de la cita</th><th>Sala</th>
+        {% if es_rol != "estudiante" %}<th>Estudiante</th>{% endif %}</tr></thead>
+      <tbody>
+        {% for c in citas|sort(attribute='fecha,hora') %}
+        {% set p = mios[c.paciente_id] %}
+        <tr>
+          <td class="fecha">{{ c.fecha|dmy }}</td>
+          <td>{{ c.hora }}</td>
+          <td><a href="{{ url_for('expediente', pid=p.id) }}">{{ p.nombre }}</a>
+            {% if p.razon %}<div class="tenue">{{ p.razon }}</div>{% endif %}</td>
+          <td>{{ c.razon }}</td>
+          <td>{{ c.sala or '' }}</td>
+          {% if es_rol != "estudiante" %}<td>{{ nombre_de(p.estudiante) }}</td>{% endif %}
+        </tr>
+        {% else %}
+        <tr><td class="vacio" colspan="6">Todavía no hay citas.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}

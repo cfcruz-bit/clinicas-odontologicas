@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block titulo %}Inicio - Clínicas Odontológicas{% endblock %}
+{% block contenido %}
+  <h2>Hola, {{ nombre }}</h2>
+  <p>Entró con el CIF {{ cif }} como <b>{{ rol }}</b>. Desde esta cuenta puede:</p>
+  <ul>
+    {% for linea in que_hace %}<li>{{ linea }}</li>{% endfor %}
+  </ul>
+
+  <h2>Secciones que faltan</h2>
+  <div class="tabla">
+    <table>
+      <thead><tr><th>Sección</th><th>Para qué sirve</th><th>Estado</th></tr></thead>
+      <tbody>
+        {% for nombre_seccion, para_que in en_proceso %}
+        <tr><td>{{ nombre_seccion }}</td><td>{{ para_que }}</td><td class="amarillo">En proceso</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}

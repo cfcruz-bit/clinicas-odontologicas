@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block titulo %}Pacientes - Clínicas Odontológicas{% endblock %}
+{% block contenido %}
+  {% if es_rol == "estudiante" %}
+  <h2>Registrar paciente</h2>
+  <form method="post">
+    <input type="hidden" name="accion" value="registrar">
+    <fieldset>
+      <legend>Datos del paciente</legend>
+      <div class="campo"><span>Nombre: *</span><input name="nombre" value="{{ form.nombre or '' }}"></div>
+      <div class="campo"><span>Cédula: *</span><input name="cedula" value="{{ form.cedula or '' }}"></div>
+      <div class="campo"><span>Teléfono</span><input name="telefono" value="{{ form.telefono or '' }}"></div>
+      <p class="tenue">Al guardar se pide la razón por la que viene el paciente.</p>
+      <div class="acciones"><button class="btn">Registrar y continuar</button></div>
+    </fieldset>
+  </form>
+  {% elif es_rol == "profesor" %}
+  <p class="tenue">El profesor solo revisa y aprueba lo que registran los estudiantes.</p>
+  {% endif %}
+
+  <h2>{{ "Mis pacientes" if es_rol == "estudiante" else "Pacientes" }}</h2>
+  <div class="tabla">
+    <table>
+      <thead>
+        <tr>
+          <th>Nombre</th><th>Razón de la consulta</th><th>Cédula</th><th>Teléfono</th>
+          {% if es_rol != "estudiante" %}<th>Estudiante</th>{% endif %}
+          <th>Aprobación</th><th>Consentimiento</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in pacientes %}
+        <tr>
+          <td><a href="{{ url_for('expediente', pid=p.id) }}">{{ p.nombre }}</a></td>
+          <td>{{ p.razon or '—' }}</td>
+          <td>{{ p.cedula }}</td>
+          <td>{{ p.telefono }}</td>
+          {% if es_rol != "estudiante" %}<td>{{ nombre_de(p.estudiante) }}</td>{% endif %}
+          <td class="{{ 'verde' if p.aprobado else 'amarillo' }}">{{ "Aprobado" if p.aprobado else "Pendiente" }}</td>
+          <td class="{{ 'verde' if p.firma else 'amarillo' }}">{{ "Firmado" if p.firma else "Falta firma" }}</td>
+          <td class="acciones">
+            {% if es_rol == "profesor" %}
+            <form method="post" class="en-linea">
+              <input type="hidden" name="accion" value="aprobar">
+              <input type="hidden" name="id" value="{{ p.id }}">
+              <input type="hidden" name="aprobado" value="{{ 0 if p.aprobado else 1 }}">
+              <button class="btn chico">{{ "Quitar aprobación" if p.aprobado else "Aprobar" }}</button>
+            </form>
+            <a class="btn chico" href="{{ url_for('expediente_pdf', pid=p.id) }}">Descargar expediente (PDF)</a>
+            {% elif es_rol == "admin" %}
+            <a class="btn chico" href="{{ url_for('traspaso', pid=p.id) }}">Cambiar de estudiante</a>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td class="vacio" colspan="8">Todavía no hay pacientes registrados.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}
