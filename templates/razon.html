@@ -15,7 +15,7 @@
     <fieldset>
       <legend>Primera cita (opcional)</legend>
       <p class="tenue">Si ya quedó agendada, se crea de una vez.</p>
-      <div class="campo"><span>Fecha</span><input name="fecha" placeholder="dd/mm/aaaa" inputmode="numeric" maxlength="10" pattern="\d{2}/\d{2}/\d{4}"></div>
+      <div class="campo"><span>Fecha</span><input type="date" name="fecha" min="{{ hoy }}"></div>
       <div class="campo"><span>Hora</span><input type="time" name="hora"></div>
       <div class="campo"><span>Sala</span>
         <select name="sala">

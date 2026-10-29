@@ -76,7 +76,7 @@ app.config.update(SESSION_COOKIE_SAMESITE="Lax", SESSION_COOKIE_SECURE="FLY_APP_
                   PERMANENT_SESSION_LIFETIME=timedelta(minutes=30),
                   MAX_CONTENT_LENGTH=2_000_000)  # la firma dibujada pesa unas decenas de KB
 
-FORMATO = "%d/%m/%Y"  # las fechas se escriben y se leen como dd/mm/aaaa
+FORMATO = "%d/%m/%Y"  # las fechas se muestran como dd/mm/aaaa; se eligen en el calendario
 MANAGUA = timezone(timedelta(hours=-6))  # Nicaragua no cambia de horario; el servidor esta en UTC
 
 
@@ -121,12 +121,17 @@ def dmy(iso):
     except (ValueError, TypeError):
         return iso or ""
 
-def desde_dmy(texto):
-    """28/10/2026 -> 2026-10-28. Vacio si la fecha no es valida, para poder avisar."""
+def error_de_cita(fecha, hora, sala):
+    """Por qué no se puede agendar la cita; None si se puede. Fecha aaaa-mm-dd del calendario, hora HH:MM."""
     try:
-        return datetime.strptime(texto.strip(), FORMATO).date().isoformat()
-    except (ValueError, AttributeError):
-        return ""
+        cuando = datetime.strptime(f"{fecha} {hora}", "%Y-%m-%d %H:%M").replace(tzinfo=MANAGUA)
+    except ValueError:
+        return "Elija la fecha en el calendario y la hora de la cita."
+    if cuando < datetime.now(MANAGUA):
+        return "No se pueden agendar citas en una fecha u hora que ya pasó."
+    if sala and sql("SELECT 1 FROM citas WHERE sala = %s AND fecha = %s AND hora = %s", sala, fecha, hora).fetchone():
+        return "Esa sala ya está ocupada a esa hora."
+    return None
 
 app.jinja_env.filters["dmy"] = dmy
 
@@ -245,19 +250,20 @@ def razon(pid):
         return redirect(url_for("pacientes"))
     if request.method == "POST":
         razon = request.form.get("razon", "").strip()
-        escrita, hora = request.form.get("fecha", ""), request.form.get("hora", "")
-        fecha = desde_dmy(escrita)
+        fecha, hora, sala = (request.form.get(c, "").strip() for c in ("fecha", "hora", "sala"))
+        # La primera cita es opcional, pero si se empieza a llenar se valida igual que en Citas
+        error = (fecha or hora) and error_de_cita(fecha, hora, sala)
+        p["razon"] = razon  # si hay error, el formulario vuelve con lo que se escribio
         if not razon:
             flash("Escriba la razón por la que viene el paciente.", "error")
-        elif escrita.strip() and not fecha:
-            flash("Escriba la fecha de la cita como dd/mm/aaaa.", "error")
+        elif error:
+            flash(error, "error")
         else:
             sql("UPDATE pacientes SET razon = %s WHERE id = %s", razon, pid)
             anotar(f"Anotó la razón de {p['nombre']}: {razon}")
-            if fecha and hora:
+            if fecha:
                 sql("INSERT INTO citas (paciente_id, fecha, hora, sala, razon) VALUES (%s, %s, %s, %s, %s)",
-                    pid, fecha, hora, request.form.get("sala", ""),
-                    request.form.get("razon_cita", "").strip() or razon)
+                    pid, fecha, hora, sala, request.form.get("razon_cita", "").strip() or razon)
                 anotar(f"Agendó cita de {p['nombre']} el {dmy(fecha)} a las {hora}")
                 flash("Razón guardada y cita agendada.", "ok")
             else:
@@ -358,16 +364,10 @@ def citas():
     if request.method == "POST" and rol == "estudiante":
         p = paciente(request.form.get("paciente_id", type=int))
         f = {c: request.form.get(c, "").strip() for c in ("fecha", "hora", "sala", "razon")}
-        escrita, f["fecha"] = f["fecha"], desde_dmy(f["fecha"])
-        if not (p and escrita and f["hora"] and f["razon"]):
+        if not (p and f["fecha"] and f["hora"] and f["razon"]):
             flash("Elige paciente, fecha, hora y la razón de la cita.", "error")
-        elif not f["fecha"]:
-            flash("Escriba la fecha como dd/mm/aaaa.", "error")
-        elif f["fecha"] < hoy():
-            flash("No se pueden agendar citas en fechas pasadas.", "error")
-        elif f["sala"] and sql("SELECT 1 FROM citas WHERE sala = %s AND fecha = %s AND hora = %s",
-                               f["sala"], f["fecha"], f["hora"]).fetchone():
-            flash("Esa sala ya está ocupada a esa hora.", "error")
+        elif error := error_de_cita(f["fecha"], f["hora"], f["sala"]):
+            flash(error, "error")
         else:
             sql("INSERT INTO citas (paciente_id, fecha, hora, sala, razon) VALUES (%s, %s, %s, %s, %s)",
                 p["id"], f["fecha"], f["hora"], f["sala"], f["razon"])

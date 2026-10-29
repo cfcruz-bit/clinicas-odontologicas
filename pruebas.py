@@ -4,6 +4,7 @@ Ejecutar:  PRUEBAS_DATABASE_URL=<cadena de la rama de pruebas> python pruebas.py
 """
 import os
 import sys
+from datetime import datetime, timedelta
 
 import psycopg
 from psycopg.rows import dict_row
@@ -58,22 +59,38 @@ caso("Al registrar, el paso siguiente pide la razon del paciente",
      "por qué está el paciente" in texto(grace.get(f"/pacientes/{pid}/razon")))
 grace.post(f"/pacientes/{pid}/razon", data={"razon": ""})
 caso("La razon es obligatoria", paciente()["razon"] == "")
-grace.post(f"/pacientes/{pid}/razon", data={"razon": "Dolor en la muela 36", "fecha": m.dmy(m.hoy()),
+ahora = datetime.now(m.MANAGUA)
+MANANA = (ahora + timedelta(days=1)).date().isoformat()
+AYER = (ahora - timedelta(days=1)).date().isoformat()
+HACE_UNA_HORA = (ahora - timedelta(hours=1)).strftime("%H:%M")  # puede caer ayer si es antes de la 1 a. m.
+
+grace.post(f"/pacientes/{pid}/razon", data={"razon": "Dolor en la muela 36", "fecha": AYER, "hora": "09:00"})
+caso("La primera cita tampoco se agenda en una fecha pasada",
+     cuantos("citas") == 0 and paciente()["razon"] == "")
+grace.post(f"/pacientes/{pid}/razon", data={"razon": "Dolor en la muela 36", "fecha": MANANA, "hora": ""})
+caso("Si se pone fecha a la primera cita, tambien hace falta la hora", cuantos("citas") == 0)
+grace.post(f"/pacientes/{pid}/razon", data={"razon": "Dolor en la muela 36", "fecha": MANANA,
                                             "hora": "09:00", "sala": "Sala 1", "razon_cita": "Valoración"})
 caso("La razon sale al lado del nombre en la lista", "Dolor en la muela 36" in texto(grace.get("/pacientes")))
 caso("La razon de la cita y la del paciente salen en la pagina de citas",
      all(t in texto(grace.get("/citas")) for t in ("Valoración", "Dolor en la muela 36")))
 
-caso("Las fechas se escriben y se ven como dd/mm/aaaa",
-     m.desde_dmy("28/10/2026") == "2026-10-28"
-     and m.dmy(m.hoy()) in texto(grace.get("/citas")))
-grace.post("/citas", data={"paciente_id": pid, "fecha": "2026-11-30", "hora": "10:00", "razon": "Control"})
-caso("Una fecha en otro formato no se agenda", cuantos("citas") == 1)
-grace.post("/citas", data={"paciente_id": pid, "fecha": m.dmy(m.hoy()), "hora": "09:00", "sala": "Sala 1",
+formulario = texto(grace.get("/citas"))
+caso("La fecha se elige en un calendario que no deja dias anteriores a hoy",
+     'type="date"' in formulario and f'min="{m.hoy()}"' in formulario)
+caso("Las fechas se ven como dd/mm/aaaa", m.dmy(MANANA) in formulario)
+grace.post("/citas", data={"paciente_id": pid, "fecha": "30/11/2026", "hora": "10:00", "razon": "Control"})
+caso("Una fecha que no viene del calendario no se agenda", cuantos("citas") == 1)
+grace.post("/citas", data={"paciente_id": pid, "fecha": AYER, "hora": "10:00", "razon": "Control"})
+caso("No se agenda en un dia anterior a hoy, aunque sea del mismo mes", cuantos("citas") == 1)
+if HACE_UNA_HORA < ahora.strftime("%H:%M"):
+    grace.post("/citas", data={"paciente_id": pid, "fecha": m.hoy(), "hora": HACE_UNA_HORA, "razon": "Control"})
+    caso("Hoy no se agenda a una hora que ya paso", cuantos("citas") == 1)
+grace.post("/citas", data={"paciente_id": pid, "fecha": MANANA, "hora": "09:00", "sala": "Sala 1",
                            "razon": "Otra"})
 caso("No se agenda una sala ocupada a la misma hora", cuantos("citas") == 1)
 
-grace.post("/citas", data={"paciente_id": pid, "fecha": m.dmy(m.hoy()), "hora": "11:00", "razon": "Para cancelar"})
+grace.post("/citas", data={"paciente_id": pid, "fecha": MANANA, "hora": "11:00", "razon": "Para cancelar"})
 cancelar = uno("SELECT id FROM citas WHERE razon = 'Para cancelar'")["id"]
 gabriel.post("/citas", data={"accion": "cancelar", "id": cancelar})
 caso("Un estudiante no cancela citas de pacientes ajenos", cuantos("citas") == 2)

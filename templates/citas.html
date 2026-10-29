@@ -13,8 +13,8 @@
           {% for p in pacientes %}<option value="{{ p.id }}">{{ p.nombre }} ({{ p.cedula }})</option>{% endfor %}
         </select>
       </div>
-      <div class="campo"><span>Fecha: *</span><input name="fecha" value="{{ hoy|dmy }}" placeholder="dd/mm/aaaa" inputmode="numeric" maxlength="10" pattern="\d{2}/\d{2}/\d{4}"></div>
-      <div class="campo"><span>Hora: *</span><input type="time" name="hora"></div>
+      <div class="campo"><span>Fecha: *</span><input type="date" name="fecha" value="{{ hoy }}" min="{{ hoy }}" required></div>
+      <div class="campo"><span>Hora: *</span><input type="time" name="hora" required></div>
       <div class="campo"><span>Sala</span>
         <select name="sala">
           <option value="">Sin asignar</option>
