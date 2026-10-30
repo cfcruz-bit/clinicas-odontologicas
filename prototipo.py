@@ -170,13 +170,12 @@ def lugar_de(ip):
     if guardado and guardado[0] == ip:
         return guardado[1]
     try:
-        if not ipaddress.ip_address(ip).is_global:
-            lugar = "Red local"
-        else:
-            with urllib.request.urlopen(f"https://ipwho.is/{ip}?fields=success,city,region,country", timeout=3) as r:
-                datos = json.load(r)
-            partes = [datos[c] for c in ("city", "region", "country") if datos.get("success") and datos.get(c)]
-            lugar = ", ".join(dict.fromkeys(partes))  # "Managua, Managua, Nicaragua" -> "Managua, Nicaragua"
+        # Una IP de la red local no dice dónde está: se usa la conexión a internet de esa misma red
+        consulta = ip if ipaddress.ip_address(ip).is_global else ""
+        with urllib.request.urlopen(f"https://ipwho.is/{consulta}?fields=success,city,region,country", timeout=3) as r:
+            datos = json.load(r)
+        partes = [datos[c] for c in ("city", "region", "country") if datos.get("success") and datos.get(c)]
+        lugar = ", ".join(dict.fromkeys(partes))  # "Managua, Managua, Nicaragua" -> "Managua, Nicaragua"
     except (OSError, ValueError):  # sin respuesta del servicio o IP rara: la accion se anota igual
         lugar = ""
     session["lugar"] = [ip, lugar]

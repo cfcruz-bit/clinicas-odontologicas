@@ -192,9 +192,10 @@ caso("La bitacora guarda el reporte y la solucion",
      all(t in texto(admin.get("/bitacora")) for t in ("Reportó que Sala 2 no funciona", "Solucionó la falla de Sala 2")))
 caso("La bitacora guarda lo que hizo cada quien", "Pasó a Luis Pérez" in texto(admin.get("/bitacora")))
 bitacora = texto(admin.get("/bitacora"))
-caso("La bitacora dice desde donde se hizo (aqui, red local) y no muestra la IP",
-     uno("SELECT lugar FROM bitacora ORDER BY id DESC LIMIT 1")["lugar"] == "Red local"
-     and "Red local" in bitacora and "127.0.0.1" not in bitacora)
+lugar = uno("SELECT lugar FROM bitacora ORDER BY id DESC LIMIT 1")["lugar"]
+caso("Desde la red local la bitacora pone la ubicacion de la conexion, no 'Red local', y no muestra la IP",
+     lugar != "Red local" and "Red local" not in bitacora and "127.0.0.1" not in bitacora)
+print(f"         (ubicacion encontrada: {lugar or 'sin respuesta del servicio'})")
 with m.app.test_request_context(headers={"Fly-Client-IP": "1.2.3.4"}):
     caso("Fuera de Fly no se cree un encabezado de IP que cualquiera puede inventar", m.ip_del_usuario() != "1.2.3.4")
 
