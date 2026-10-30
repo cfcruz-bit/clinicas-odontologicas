@@ -2,17 +2,17 @@
 {% block titulo %}Bitácora - Clínicas Odontológicas{% endblock %}
 {% block contenido %}
   <h2>Bitácora</h2>
-  <p>Quién hizo qué, a qué hora y desde dónde. La ubicación sale de la IP: es la ciudad aproximada, no la
-     dirección exacta, y todas las computadoras de una misma red (por ejemplo, la UAM) comparten la misma IP.</p>
+  <p>Quién hizo qué, a qué hora y desde dónde. La ubicación es la ciudad aproximada de la conexión a internet,
+     no la dirección exacta.</p>
 
   {% if lineas %}
   <div class="tabla">
     <table>
-      <thead><tr><th>Fecha y hora</th><th>Usuario</th><th>CIF</th><th>Rol</th><th>Acción</th><th>IP</th><th>Ubicación</th></tr></thead>
+      <thead><tr><th>Fecha y hora</th><th>Usuario</th><th>CIF</th><th>Rol</th><th>Acción</th><th>Ubicación</th></tr></thead>
       <tbody>
         {% for l in lineas %}
         <tr><td class="fecha">{{ l.cuando }}</td><td>{{ l.nombre }}</td><td>{{ l.cif }}</td>
-            <td>{{ l.rol }}</td><td>{{ l.accion }}</td><td>{{ l.ip or '—' }}</td><td>{{ l.lugar or '—' }}</td></tr>
+            <td>{{ l.rol }}</td><td>{{ l.accion }}</td><td>{{ l.lugar or '—' }}</td></tr>
         {% endfor %}
       </tbody>
     </table>

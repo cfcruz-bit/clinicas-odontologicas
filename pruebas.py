@@ -159,9 +159,10 @@ caso("La administracion cambia la disponibilidad de una sala",
      uno("SELECT disponible FROM salas WHERE id = %s", sala1)["disponible"] is False)
 caso("El estudiante no administra las salas", "Agregar sala" not in texto(grace.get("/salas")))
 caso("La bitacora guarda lo que hizo cada quien", "Pasó a Luis Pérez" in texto(admin.get("/bitacora")))
-linea = uno("SELECT ip, lugar FROM bitacora ORDER BY id DESC LIMIT 1")
-caso("La bitacora guarda la IP y, si es de la misma red, dice que es red local",
-     linea["ip"] == "127.0.0.1" and linea["lugar"] == "Red local" and "127.0.0.1" in texto(admin.get("/bitacora")))
+bitacora = texto(admin.get("/bitacora"))
+caso("La bitacora dice desde donde se hizo (aqui, red local) y no muestra la IP",
+     uno("SELECT lugar FROM bitacora ORDER BY id DESC LIMIT 1")["lugar"] == "Red local"
+     and "Red local" in bitacora and "127.0.0.1" not in bitacora)
 with m.app.test_request_context(headers={"Fly-Client-IP": "1.2.3.4"}):
     caso("Fuera de Fly no se cree un encabezado de IP que cualquiera puede inventar", m.ip_del_usuario() != "1.2.3.4")
 

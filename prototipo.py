@@ -69,8 +69,7 @@ CREATE TABLE IF NOT EXISTS citas (
     fecha text NOT NULL, hora text NOT NULL, sala text NOT NULL DEFAULT '', razon text NOT NULL);
 CREATE TABLE IF NOT EXISTS bitacora (
     id serial PRIMARY KEY, cuando timestamptz NOT NULL DEFAULT now(), cif text, nombre text, rol text, accion text);
-ALTER TABLE bitacora ADD COLUMN IF NOT EXISTS ip text NOT NULL DEFAULT '',
-                     ADD COLUMN IF NOT EXISTS lugar text NOT NULL DEFAULT '';
+ALTER TABLE bitacora ADD COLUMN IF NOT EXISTS lugar text NOT NULL DEFAULT '';
 """
 
 app = Flask(__name__)
@@ -175,11 +174,11 @@ def lugar_de(ip):
     return lugar
 
 def anotar(accion):
-    """Bitacora: deja constancia de lo que acaba de hacer el usuario, desde qué IP y lugar aproximado."""
+    """Bitacora: deja constancia de lo que acaba de hacer el usuario y desde qué lugar aproximado.
+    La IP solo se usa para saber el lugar; no se guarda."""
     cif, nombre, rol = quien()
-    ip = ip_del_usuario()
-    sql("INSERT INTO bitacora (cif, nombre, rol, accion, ip, lugar) VALUES (%s, %s, %s, %s, %s, %s)",
-        cif, nombre, ROLES[rol], accion, ip, lugar_de(ip))
+    sql("INSERT INTO bitacora (cif, nombre, rol, accion, lugar) VALUES (%s, %s, %s, %s, %s)",
+        cif, nombre, ROLES[rol], accion, lugar_de(ip_del_usuario()))
 
 def comun():
     """Datos que necesita la plantilla base en todas las paginas."""
@@ -439,7 +438,7 @@ def bitacora():
         return redirect(url_for("menu"))
     # ponytail: solo las ultimas 500 lineas; paginar si hace falta revisar mas atras
     lineas = sql("SELECT to_char(cuando AT TIME ZONE 'America/Managua', 'DD/MM/YYYY HH24:MI') AS cuando,"
-                 " cif, nombre, rol, accion, ip, lugar FROM bitacora ORDER BY id DESC LIMIT 500").fetchall()
+                 " cif, nombre, rol, accion, lugar FROM bitacora ORDER BY id DESC LIMIT 500").fetchall()
     return render_template("bitacora.html", **comun(), lineas=lineas)
 
 
