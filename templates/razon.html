@@ -20,7 +20,7 @@
       <div class="campo"><span>Sala</span>
         <select name="sala">
           <option value="">Sin asignar</option>
-          {% for s in salas %}<option value="{{ s.nombre }}">{{ s.nombre }}{{ '' if s.disponible else ' (no disponible)' }}</option>{% endfor %}
+          {% for s in salas %}<option value="{{ s.nombre }}"{{ ' disabled' if not s.disponible }}>{{ s.nombre }}{{ '' if s.disponible else ' (no disponible)' }}</option>{% endfor %}
         </select>
       </div>
       <div class="campo"><span>Razón de la cita</span><input name="razon_cita" placeholder="Si se deja vacío, se usa la razón de la consulta"></div>

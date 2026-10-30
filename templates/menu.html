@@ -1,6 +1,12 @@
 {% extends "base.html" %}
 {% block titulo %}Inicio - Clínicas Odontológicas{% endblock %}
 {% block contenido %}
+  {% if fallas %}
+  <div class="mensaje error">
+    {{ "Hay 1 sala que no funciona" if fallas == 1 else "Hay %d salas que no funcionan"|format(fallas) }}, reportada por
+    los estudiantes. <a href="{{ url_for('salas') }}">Ver qué falla y marcarla como solucionada</a>.
+  </div>
+  {% endif %}
   <h2>Hola, {{ nombre }}</h2>
   <p>Entró con el CIF {{ cif }} como <b>{{ rol }}</b>. Desde esta cuenta puede:</p>
   <ul>

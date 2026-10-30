@@ -9,8 +9,8 @@
       <div class="sala {{ 'libre' if s.disponible else 'ocupada' }}">
         <span class="marca-sala">{{ '✓' if s.disponible else '✗' }}</span>
         <b>{{ s.nombre }}</b>
-        <small>{{ 'Disponible' if s.disponible else 'No disponible' }}</small>
-        {% if es_rol == "admin" %}
+        <small>{{ 'No funciona' if s.reporte_id else ('Disponible' if s.disponible else 'No disponible') }}</small>
+        {% if es_rol == "admin" and not s.reporte_id %}
         <form method="post">
           <input type="hidden" name="sala" value="{{ s.id }}">
           <button class="btn chico">{{ 'Marcar no disponible' if s.disponible else 'Marcar disponible' }}</button>
@@ -22,6 +22,34 @@
     <div class="plano-pasillo">Pasillo / recepción</div>
   </div>
 
+  {% set con_falla = salas|selectattr('reporte_id')|list %}
+  {% if es_rol != "estudiante" and con_falla %}
+  <h2>Salas que no funcionan</h2>
+  <div class="tabla">
+    <table>
+      <thead><tr><th>Sala</th><th>Qué no funciona</th><th>Reportó</th><th>Fecha y hora</th>
+        {% if es_rol == "admin" %}<th></th>{% endif %}</tr></thead>
+      <tbody>
+        {% for s in con_falla %}
+        <tr>
+          <td>{{ s.nombre }}</td><td>{{ s.motivo }}</td><td>{{ nombre_de(s.reporto) }}</td>
+          <td class="fecha">{{ s.reportada }}</td>
+          {% if es_rol == "admin" %}
+          <td class="acciones">
+            <form method="post" class="en-linea">
+              <input type="hidden" name="accion" value="resolver">
+              <input type="hidden" name="reporte" value="{{ s.reporte_id }}">
+              <button class="btn chico">Marcar como solucionada</button>
+            </form>
+          </td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
   {% if es_rol == "admin" %}
   <form method="post">
     <input type="hidden" name="accion" value="agregar">
@@ -30,6 +58,30 @@
       <div class="en-linea"><input name="nombre" placeholder="Nombre de la sala" aria-label="Nombre de la sala"><button class="btn">Agregar</button></div>
     </fieldset>
   </form>
+  {% elif es_rol == "estudiante" %}
+  {% set sin_falla = salas|rejectattr('reporte_id')|list %}
+  <form method="post">
+    <input type="hidden" name="accion" value="reportar">
+    <fieldset>
+      <legend>Reportar una sala que no funciona</legend>
+      <p class="tenue">La sala queda como no disponible y la Facultad recibe el aviso para solucionarlo.</p>
+      <div class="campo"><span>Sala: *</span>
+        <select name="sala" required>
+          <option value="">Seleccione…</option>
+          {% for s in sin_falla %}<option value="{{ s.id }}">{{ s.nombre }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="campo arriba"><span>¿Qué no funciona? *</span>
+        <textarea name="motivo" rows="3" required maxlength="{{ motivo_maximo }}"
+                  placeholder="Ej.: la lámpara de la unidad dental no enciende; la succión no tiene fuerza…"></textarea>
+      </div>
+      <div class="acciones"><button class="btn">Enviar reporte</button></div>
+    </fieldset>
+  </form>
+  {% if con_falla %}
+  <p class="tenue">Ya reportadas, esperando a la Facultad:
+    {% for s in con_falla %}{{ s.nombre }} ({{ s.motivo }}){{ '; ' if not loop.last }}{% endfor %}.</p>
+  {% endif %}
   {% else %}
   <p class="tenue">La Facultad es la que agrega salas y cambia su disponibilidad.</p>
   {% endif %}

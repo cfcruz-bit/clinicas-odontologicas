@@ -70,6 +70,12 @@ CREATE TABLE IF NOT EXISTS citas (
 CREATE TABLE IF NOT EXISTS bitacora (
     id serial PRIMARY KEY, cuando timestamptz NOT NULL DEFAULT now(), cif text, nombre text, rol text, accion text);
 ALTER TABLE bitacora ADD COLUMN IF NOT EXISTS lugar text NOT NULL DEFAULT '';
+CREATE TABLE IF NOT EXISTS reportes (
+    id serial PRIMARY KEY, sala_id int NOT NULL REFERENCES salas ON DELETE CASCADE, cif text REFERENCES cuentas,
+    motivo text NOT NULL, cuando timestamptz NOT NULL DEFAULT now(),
+    resuelto_por text REFERENCES cuentas, resuelto_cuando timestamptz);
+-- Una sala tiene a lo sumo una falla abierta: si ya la reportaron, la Facultad ya esta avisada
+CREATE UNIQUE INDEX IF NOT EXISTS una_falla_abierta ON reportes (sala_id) WHERE resuelto_cuando IS NULL;
 """
 
 app = Flask(__name__)
@@ -82,6 +88,7 @@ app.config.update(SESSION_COOKIE_SAMESITE="Lax", SESSION_COOKIE_SECURE="FLY_APP_
 
 FORMATO = "%d/%m/%Y"  # las fechas se muestran como dd/mm/aaaa; se eligen en el calendario
 MANAGUA = timezone(timedelta(hours=-6))  # Nicaragua no cambia de horario; el servidor esta en UTC
+MOTIVO_MAXIMO = 500  # caracteres del motivo de una sala que no funciona
 
 
 def bd():
@@ -133,6 +140,8 @@ def error_de_cita(fecha, hora, sala):
         return "Elija la fecha en el calendario y la hora de la cita."
     if cuando < datetime.now(MANAGUA):
         return "No se pueden agendar citas en una fecha u hora que ya pasó."
+    if sala and sql("SELECT 1 FROM salas WHERE nombre = %s AND NOT disponible", sala).fetchone():
+        return "Esa sala no está disponible."
     if sala and sql("SELECT 1 FROM citas WHERE sala = %s AND fecha = %s AND hora = %s", sala, fecha, hora).fetchone():
         return "Esa sala ya está ocupada a esa hora."
     return None
@@ -183,7 +192,11 @@ def anotar(accion):
 def comun():
     """Datos que necesita la plantilla base en todas las paginas."""
     cif, nombre, rol = quien()
-    return {"cif": cif, "nombre": nombre, "rol": ROLES[rol], "es_rol": rol, "pestanas": MENUS[rol]}
+    pestanas, fallas = MENUS[rol], 0
+    if rol == "admin":  # la Facultad ve en la pestana cuantas salas reportaron los estudiantes
+        fallas = sql("SELECT count(*) AS n FROM reportes WHERE resuelto_cuando IS NULL").fetchone()["n"]
+        pestanas = [(f"{t} ({fallas})" if e == "salas" and fallas else t, e) for t, e in pestanas]
+    return {"cif": cif, "nombre": nombre, "rol": ROLES[rol], "es_rol": rol, "pestanas": pestanas, "fallas": fallas}
 
 def paciente(pid):
     """El paciente, solo si el usuario puede verlo: cada estudiante ve unicamente los suyos."""
@@ -203,7 +216,11 @@ def nombre_de(cif):
     return cuentas()[cif][0] if cif in cuentas() else "sin asignar"
 
 def todas_las_salas():
-    return sql("SELECT * FROM salas ORDER BY id").fetchall()
+    """Las salas y, si tienen una falla sin solucionar, su motivo y quién la reportó."""
+    return sql("SELECT s.*, r.id AS reporte_id, r.motivo, r.cif AS reporto,"
+               " to_char(r.cuando AT TIME ZONE 'America/Managua', 'DD/MM/YYYY HH24:MI') AS reportada"
+               " FROM salas s LEFT JOIN reportes r ON r.sala_id = s.id AND r.resuelto_cuando IS NULL"
+               " ORDER BY s.id").fetchall()
 
 
 @app.before_request
@@ -410,9 +427,41 @@ def citas():
 
 @app.route("/salas", methods=["GET", "POST"])
 def salas():
-    """Plano de la clínica: cada sala con un check si está disponible o una X si no."""
-    if request.method == "POST" and quien()[2] == "admin":
-        if request.form.get("accion") == "agregar":
+    """Plano de la clínica: cada sala con un check si está disponible o una X si no.
+    El estudiante reporta las salas que no funcionan y la Facultad las marca como solucionadas."""
+    cif, _, rol = quien()
+    if request.method == "POST":
+        accion = request.form.get("accion")
+        if rol == "estudiante" and accion == "reportar":
+            s = sql("SELECT id, nombre FROM salas WHERE id = %s", request.form.get("sala", type=int)).fetchone()
+            motivo = request.form.get("motivo", "").strip()
+            if not s or not motivo:
+                flash("Elija la sala y escriba qué es lo que no funciona.", "error")
+            elif len(motivo) > MOTIVO_MAXIMO:
+                flash(f"El motivo puede tener hasta {MOTIVO_MAXIMO} caracteres.", "error")
+            else:
+                with bd().transaction():
+                    nuevo = sql("INSERT INTO reportes (sala_id, cif, motivo) VALUES (%s, %s, %s)"
+                                " ON CONFLICT (sala_id) WHERE resuelto_cuando IS NULL DO NOTHING RETURNING id",
+                                s["id"], cif, motivo).fetchone()
+                    if nuevo:
+                        sql("UPDATE salas SET disponible = false WHERE id = %s", s["id"])
+                        anotar(f"Reportó que {s['nombre']} no funciona: {motivo}")
+                if nuevo:
+                    flash(f"{s['nombre']} quedó como no funcional. La Facultad fue notificada.", "ok")
+                else:
+                    flash(f"{s['nombre']} ya tiene una falla reportada; la Facultad ya está avisada.", "error")
+        elif rol == "admin" and accion == "resolver":
+            with bd().transaction():
+                r = sql("UPDATE reportes SET resuelto_por = %s, resuelto_cuando = now()"
+                        " WHERE id = %s AND resuelto_cuando IS NULL RETURNING sala_id, motivo",
+                        cif, request.form.get("reporte", type=int)).fetchone()
+                if r:
+                    s = sql("UPDATE salas SET disponible = true WHERE id = %s RETURNING nombre", r["sala_id"]).fetchone()
+                    anotar(f"Solucionó la falla de {s['nombre']}: {r['motivo']}")
+            if r:
+                flash(f"{s['nombre']} quedó solucionada y disponible otra vez.", "ok")
+        elif rol == "admin" and accion == "agregar":
             nombre = request.form.get("nombre", "").strip()
             if not nombre:
                 flash("Escriba el nombre de la sala.", "error")
@@ -422,13 +471,14 @@ def salas():
                 sql("INSERT INTO salas (nombre) VALUES (%s)", nombre)
                 anotar(f"Agregó {nombre}")
                 flash(f"{nombre} agregada.", "ok")
-        else:
+        elif rol == "admin":
             s = sql("UPDATE salas SET disponible = NOT disponible WHERE id = %s RETURNING nombre, disponible",
                     request.form.get("sala", type=int)).fetchone()
             if s:
                 anotar(f"Marcó {s['nombre']} como " + ("disponible" if s["disponible"] else "no disponible"))
         return redirect(url_for("salas"))
-    return render_template("salas.html", **comun(), salas=todas_las_salas())
+    return render_template("salas.html", **comun(), salas=todas_las_salas(), nombre_de=nombre_de,
+                           motivo_maximo=MOTIVO_MAXIMO)
 
 
 @app.route("/bitacora")

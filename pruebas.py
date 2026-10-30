@@ -14,7 +14,7 @@ os.environ["DATABASE_URL"] = os.environ["PRUEBAS_DATABASE_URL"]
 import prototipo as m  # noqa: E402
 
 base = psycopg.connect(os.environ["DATABASE_URL"], autocommit=True, row_factory=dict_row, prepare_threshold=None)
-base.execute("DROP TABLE IF EXISTS bitacora, citas, trabajo, pacientes, salas, cuentas")
+base.execute("DROP TABLE IF EXISTS reportes, bitacora, citas, trabajo, pacientes, salas, cuentas")
 m.crear_tablas()
 
 def uno(consulta, *args):
@@ -158,6 +158,38 @@ admin.post("/salas", data={"sala": sala1})
 caso("La administracion cambia la disponibilidad de una sala",
      uno("SELECT disponible FROM salas WHERE id = %s", sala1)["disponible"] is False)
 caso("El estudiante no administra las salas", "Agregar sala" not in texto(grace.get("/salas")))
+
+sala2 = uno("SELECT id FROM salas WHERE nombre = 'Sala 2'")["id"]
+falla = lambda: uno("SELECT * FROM reportes WHERE sala_id = %s AND resuelto_cuando IS NULL", sala2)  # noqa: E731
+grace.post("/salas", data={"accion": "reportar", "sala": sala2, "motivo": "  "})
+caso("Para reportar una sala hay que decir que no funciona", falla() is None)
+profe.post("/salas", data={"accion": "reportar", "sala": sala2, "motivo": "No enciende la lámpara"})
+caso("Solo los estudiantes reportan salas", falla() is None)
+grace.post("/salas", data={"accion": "reportar", "sala": sala2, "motivo": "No enciende la lámpara"})
+caso("El estudiante marca una sala como no funcional con su motivo",
+     falla()["motivo"] == "No enciende la lámpara" and falla()["cif"] == "00000002"
+     and uno("SELECT disponible FROM salas WHERE id = %s", sala2)["disponible"] is False)
+gabriel.post("/salas", data={"accion": "reportar", "sala": sala2, "motivo": "Otra cosa"})
+caso("Una sala ya reportada no se reporta dos veces", cuantos("reportes") == 1)
+caso("La Facultad ve el aviso en Inicio y en la pestaña Salas",
+     "Hay 1 sala que no funciona" in texto(admin.get("/menu")) and "Salas (1)" in texto(admin.get("/menu")))
+caso("La Facultad ve qué falla y quién lo reportó",
+     all(t in texto(admin.get("/salas")) for t in ("No enciende la lámpara", "Grace Alvarado", "Marcar como solucionada")))
+caso("El estudiante no ve el aviso de la Facultad", "Hay 1 sala" not in texto(grace.get("/menu")))
+gabriel.post("/citas", data={"paciente_id": pid, "fecha": MANANA, "hora": "15:00", "sala": "Sala 2", "razon": "X"})
+caso("No se agenda una cita en una sala que no funciona",
+     uno("SELECT count(*) AS n FROM citas WHERE sala = 'Sala 2' AND hora = '15:00'")["n"] == 0)
+reporte = falla()["id"]
+gabriel.post("/salas", data={"accion": "resolver", "reporte": reporte})
+caso("Solo la Facultad marca una falla como solucionada", falla() is not None)
+admin.post("/salas", data={"accion": "resolver", "reporte": reporte})
+resuelto = uno("SELECT * FROM reportes WHERE id = %s", reporte)
+caso("Al solucionarla la sala vuelve a estar disponible y el aviso desaparece",
+     resuelto["resuelto_por"] == "00000007" and resuelto["resuelto_cuando"] is not None
+     and uno("SELECT disponible FROM salas WHERE id = %s", sala2)["disponible"] is True
+     and "Salas (" not in texto(admin.get("/menu")))
+caso("La bitacora guarda el reporte y la solucion",
+     all(t in texto(admin.get("/bitacora")) for t in ("Reportó que Sala 2 no funciona", "Solucionó la falla de Sala 2")))
 caso("La bitacora guarda lo que hizo cada quien", "Pasó a Luis Pérez" in texto(admin.get("/bitacora")))
 bitacora = texto(admin.get("/bitacora"))
 caso("La bitacora dice desde donde se hizo (aqui, red local) y no muestra la IP",
