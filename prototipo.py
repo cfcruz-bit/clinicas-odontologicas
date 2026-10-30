@@ -6,8 +6,11 @@ Ejecutar:  python prototipo.py   (crea las tablas si no existen)
 """
 import base64
 import io
+import ipaddress
+import json
 import os
 import secrets
+import urllib.request
 from datetime import datetime, timedelta, timezone
 
 import psycopg
@@ -66,6 +69,8 @@ CREATE TABLE IF NOT EXISTS citas (
     fecha text NOT NULL, hora text NOT NULL, sala text NOT NULL DEFAULT '', razon text NOT NULL);
 CREATE TABLE IF NOT EXISTS bitacora (
     id serial PRIMARY KEY, cuando timestamptz NOT NULL DEFAULT now(), cif text, nombre text, rol text, accion text);
+ALTER TABLE bitacora ADD COLUMN IF NOT EXISTS ip text NOT NULL DEFAULT '',
+                     ADD COLUMN IF NOT EXISTS lugar text NOT NULL DEFAULT '';
 """
 
 app = Flask(__name__)
@@ -147,10 +152,34 @@ def quien():
     cif = session.get("cif")
     return (cif, *cuentas()[cif]) if cif in cuentas() else None
 
+def ip_del_usuario():
+    # En Fly la IP real llega en Fly-Client-IP; fuera de Fly ese encabezado lo podria inventar cualquiera
+    return (request.headers.get("Fly-Client-IP") if "FLY_APP_NAME" in os.environ else None) or request.remote_addr or ""
+
+def lugar_de(ip):
+    """Ciudad, región y país aproximados de la IP (no la dirección exacta). Se busca una vez por sesión e IP."""
+    guardado = session.get("lugar")
+    if guardado and guardado[0] == ip:
+        return guardado[1]
+    try:
+        if not ipaddress.ip_address(ip).is_global:
+            lugar = "Red local"
+        else:
+            with urllib.request.urlopen(f"https://ipwho.is/{ip}?fields=success,city,region,country", timeout=3) as r:
+                datos = json.load(r)
+            partes = [datos[c] for c in ("city", "region", "country") if datos.get("success") and datos.get(c)]
+            lugar = ", ".join(dict.fromkeys(partes))  # "Managua, Managua, Nicaragua" -> "Managua, Nicaragua"
+    except (OSError, ValueError):  # sin respuesta del servicio o IP rara: la accion se anota igual
+        lugar = ""
+    session["lugar"] = [ip, lugar]
+    return lugar
+
 def anotar(accion):
-    """Bitacora: deja constancia de lo que acaba de hacer el usuario."""
+    """Bitacora: deja constancia de lo que acaba de hacer el usuario, desde qué IP y lugar aproximado."""
     cif, nombre, rol = quien()
-    sql("INSERT INTO bitacora (cif, nombre, rol, accion) VALUES (%s, %s, %s, %s)", cif, nombre, ROLES[rol], accion)
+    ip = ip_del_usuario()
+    sql("INSERT INTO bitacora (cif, nombre, rol, accion, ip, lugar) VALUES (%s, %s, %s, %s, %s, %s)",
+        cif, nombre, ROLES[rol], accion, ip, lugar_de(ip))
 
 def comun():
     """Datos que necesita la plantilla base en todas las paginas."""
@@ -410,7 +439,7 @@ def bitacora():
         return redirect(url_for("menu"))
     # ponytail: solo las ultimas 500 lineas; paginar si hace falta revisar mas atras
     lineas = sql("SELECT to_char(cuando AT TIME ZONE 'America/Managua', 'DD/MM/YYYY HH24:MI') AS cuando,"
-                 " cif, nombre, rol, accion FROM bitacora ORDER BY id DESC LIMIT 500").fetchall()
+                 " cif, nombre, rol, accion, ip, lugar FROM bitacora ORDER BY id DESC LIMIT 500").fetchall()
     return render_template("bitacora.html", **comun(), lineas=lineas)
 
 
