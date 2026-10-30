@@ -1,0 +1,306 @@
+<!doctype html>
+<!--
+  Fuente de guia-defensa.pdf. Para volver a generar el PDF despues de editar este archivo:
+  "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --headless=new --no-pdf-header-footer --print-to-pdf=guia-defensa.pdf guia\guia.html
+  Las capturas usan datos ficticios de la rama 'capturas' de Neon.
+-->
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Guía de defensa - Clínicas Odontológicas</title>
+<style>
+  @page { size: letter; margin: 18mm 16mm 18mm 16mm;
+          @bottom-left { content: "Clínicas Odontológicas · Facultad de Odontología UAM"; font: 8pt Arial, sans-serif; color: #6b7a8c; }
+          @bottom-right { content: "Página " counter(page); font: 8pt Arial, sans-serif; color: #6b7a8c; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 10.5pt/1.45 Arial, Helvetica, sans-serif; color: #1b2a3a; }
+  h1 { font-size: 28pt; margin: 0 0 4px; }
+  .sub { color: #6b7a8c; font-style: italic; margin: 0 0 18px; }
+  h2 { font-size: 15pt; margin: 22px 0 8px; break-after: avoid; }
+  h3 { font-size: 11.5pt; margin: 16px 0 6px; break-after: avoid; }
+  p { margin: 0 0 8px; }
+  ul, ol { margin: 0 0 8px; padding-left: 20px; }
+  li { margin-bottom: 3px; }
+  code { font: 9pt Consolas, "Courier New", monospace; color: #3a4a5c; }
+  table { width: 100%; border-collapse: collapse; margin: 6px 0 12px; font-size: 9.5pt; break-inside: auto; }
+  th { background: #1b2a3a; color: #fff; text-align: left; padding: 5px 8px; font-weight: 600; }
+  td { border: 1px solid #d5dde6; padding: 5px 8px; vertical-align: top; }
+  tr:nth-child(even) td { background: #f3f6f9; }
+  tr { break-inside: avoid; }
+  figure { margin: 8px 0 14px; break-inside: avoid; }
+  figure img { width: 100%; border: 1px solid #c9d3dd; border-radius: 4px; display: block; }
+  figure.media img { width: 78%; margin: 0 auto; }
+  figcaption { font-size: 8.5pt; color: #6b7a8c; margin-top: 4px; }
+  .nota { background: #eef4f8; border-left: 4px solid #1b6f8a; padding: 7px 10px; margin: 8px 0 12px; font-size: 9.5pt; }
+  .salto { break-before: page; }
+  .er { width: 100%; height: auto; margin: 6px 0 4px; }
+  dt { font-weight: 700; margin-top: 8px; break-after: avoid; }
+  dd { margin: 2px 0 6px 0; }
+</style>
+</head>
+<body>
+
+<h1>Guía de defensa</h1>
+<p class="sub">Clínicas Odontológicas · Facultad de Odontología UAM</p>
+
+<h2>1. Qué es lo que entrego</h2>
+<p>Una aplicación web <b>funcional</b> para las Clínicas Odontológicas de la Facultad de Odontología de la UAM.
+Está hecha en Python con <b>Flask</b> y plantillas HTML, guarda todo en una base de datos <b>PostgreSQL en Neon</b>
+(en la nube) y está publicada en <b>Fly.io</b>, así que se usa desde cualquier navegador.</p>
+<table>
+  <tr><th style="width:28%">Qué</th><th>Dónde</th></tr>
+  <tr><td>Aplicación publicada</td><td><code>https://clinicas-odontologicas-uam.fly.dev</code></td></tr>
+  <tr><td>Código fuente</td><td><code>https://github.com/cfcruz-bit/clinicas-odontologicas</code> (público)</td></tr>
+  <tr><td>Base de datos</td><td>Neon, proyecto <code>clinicas-odontologicas</code>, base <code>neondb</code>, región AWS us-east-1</td></tr>
+</table>
+<p>Archivos del proyecto:</p>
+<ul>
+  <li><code>prototipo.py</code>: toda la lógica: rutas, roles, validaciones, tablas de la base de datos, bitácora y el expediente en PDF.</li>
+  <li><code>templates/</code>: las plantillas Jinja de cada pantalla (<code>base.html</code> tiene la cabecera y las pestañas).</li>
+  <li><code>static/</code>: la hoja de estilos, el logo de la UAM, el ícono y la foto de fondo.</li>
+  <li><code>pruebas.py</code>: las pruebas automáticas; corren contra una rama de Neon aparte para no tocar los datos reales.</li>
+  <li><code>requirements.txt</code>, <code>Dockerfile</code> y <code>fly.toml</code>: lo que necesita Fly para construir y publicar la aplicación.</li>
+</ul>
+<div class="nota">Todas las capturas de esta guía se tomaron con <b>datos ficticios</b> en una rama de Neon llamada
+<code>capturas</code>, separada de la base real. Ningún paciente que aparece aquí existe.</div>
+
+<h2>2. Las cuentas</h2>
+<p>Hay cinco cuentas iniciales, dos por cada tipo de usuario y una de la Facultad. La contraseña de todas es
+<code>uam2026</code>; en la base de datos <b>no</b> se guarda así, sino cifrada (ver sección 6).</p>
+<table>
+  <tr><th>CIF</th><th>Nombre</th><th>Rol</th></tr>
+  <tr><td>00000001</td><td>Dra. Grace Mendoza</td><td>Profesor</td></tr>
+  <tr><td>00000004</td><td>Dr. Gustavo Rivas</td><td>Profesor</td></tr>
+  <tr><td>00000002</td><td>Grace Alvarado</td><td>Estudiante</td></tr>
+  <tr><td>00000005</td><td>Gabriel Espinoza</td><td>Estudiante</td></tr>
+  <tr><td>00000007</td><td>Gina Saavedra</td><td>Facultad (admin)</td></tr>
+</table>
+
+<h2>3. Qué puede hacer cada rol</h2>
+<p><b>Estudiante</b>: registra a sus pacientes, anota la razón de la consulta, agenda y cancela sus citas, corrige los
+datos de sus pacientes, recoge la firma del consentimiento y reporta las salas que no funcionan. Solo ve a los
+pacientes que tiene a cargo y no ve la bitácora.</p>
+<p><b>Profesor</b>: <b>solo revisa</b>. Ve a todos los pacientes, aprueba o retira la aprobación, ve el historial de qué
+le hizo cada estudiante a cada paciente, descarga el expediente en PDF y revisa la bitácora. No registra pacientes ni
+citas y no firma el consentimiento.</p>
+<p><b>Facultad</b>: administra las salas (agrega, marca disponibles o no), recibe los avisos de salas que no funcionan y
+las marca como solucionadas, pasa un paciente de un estudiante a otro archivando el trabajo del anterior, y revisa la
+bitácora.</p>
+<p>No es solo esconder botones: cada ruta de <code>prototipo.py</code> vuelve a revisar el rol antes de tocar la base de
+datos. Si alguien armara el formulario a mano, igual no pasaría; las pruebas lo intentan y comprueban que no se guarda nada.</p>
+
+<h2 class="salto">4. El recorrido, pantalla por pantalla</h2>
+
+<h3>4.1 Iniciar sesión</h3>
+<p>Se escribe el CIF y la contraseña. Si falta alguno, la pantalla dice cuál; si no coinciden, dice "CIF o contraseña
+incorrectos" sin aclarar cuál de los dos falló. La sesión se cierra sola a los 30 minutos sin uso, porque en la clínica
+las computadoras son compartidas.</p>
+<figure class="media"><img src="capturas/01-entrar.png"><figcaption>Figura 1. Pantalla de inicio de sesión.</figcaption></figure>
+
+<h3>4.2 Registrar paciente (estudiante)</h3>
+<p>En "Mis pacientes" el estudiante llena nombre, cédula y teléfono. La lista muestra la razón de la consulta, si el
+profesor ya aprobó y si el consentimiento está firmado. Cada estudiante ve <b>solo a sus pacientes</b>.</p>
+<figure><img src="capturas/02-pacientes-estudiante.png"><figcaption>Figura 2. Registro y lista de pacientes del estudiante.</figcaption></figure>
+
+<h3>4.3 Paso 2: la razón de la consulta y la primera cita</h3>
+<p>Al registrar, la aplicación pasa sola a preguntar por qué viene el paciente (obligatorio). En la misma pantalla se
+puede agendar la primera cita, con las mismas reglas que la página de Citas.</p>
+<figure><img src="capturas/03-razon.png"><figcaption>Figura 3. Paso 2 del registro.</figcaption></figure>
+
+<h3>4.4 Expediente del paciente</h3>
+<p>Datos del paciente, estado de aprobación y de la firma, el trabajo de cada estudiante que lo ha atendido y sus citas.
+Desde aquí el estudiante corrige los datos, cambia la razón o abre el consentimiento.</p>
+<figure><img src="capturas/04-expediente.png"><figcaption>Figura 4. Expediente de un paciente aprobado y con consentimiento firmado.</figcaption></figure>
+
+<h3>4.5 Consentimiento informado</h3>
+<p>El paciente firma con el dedo (tableta o celular) o con el mouse. La firma se guarda como imagen y sale en la hoja
+impresa y en el PDF del expediente. El docente no firma.</p>
+<figure><img src="capturas/05-consentimiento.png"><figcaption>Figura 5. Consentimiento con la firma dibujada del paciente.</figcaption></figure>
+
+<h3>4.6 Citas</h3>
+<p>La fecha se elige en el <b>calendario del navegador</b>, que no deja elegir días anteriores a hoy. Las salas que no
+están disponibles salen desactivadas. Las citas que todavía no pasaron se pueden cancelar; las pasadas no, porque son
+historial del paciente.</p>
+<figure><img src="capturas/06-citas.png"><figcaption>Figura 6. Agendar cita y lista de citas del estudiante.</figcaption></figure>
+
+<h3>4.7 Salas y reporte de fallas (estudiante)</h3>
+<p>El plano muestra las 20 salas con ✓ si están disponibles y ✗ si no. Si una sala no funciona, el estudiante la
+elige, escribe qué falla y la envía: la sala queda como "No funciona" y la Facultad recibe el aviso.</p>
+<figure><img src="capturas/07-salas-estudiante.png"><figcaption>Figura 7. Plano de salas y formulario para reportar una sala que no funciona.</figcaption></figure>
+
+<h3>4.8 El profesor revisa</h3>
+<p>El profesor ve a todos los pacientes con el estudiante a cargo de cada uno, los aprueba o retira la aprobación y
+descarga el expediente en PDF. No tiene el formulario de registro.</p>
+<figure><img src="capturas/13-pacientes-profesor.png"><figcaption>Figura 8. Lista de pacientes vista por el profesor.</figcaption></figure>
+
+<h3>4.9 La Facultad recibe el aviso</h3>
+<p>Cuando hay salas reportadas, la Facultad lo ve en Inicio y en la pestaña, que muestra cuántas son: "Salas (1)".</p>
+<figure><img src="capturas/08-inicio-facultad.png"><figcaption>Figura 9. Inicio de la Facultad con el aviso de una sala que no funciona.</figcaption></figure>
+<p>En Salas ve qué falla, quién lo reportó y cuándo. Al marcarla como solucionada, la sala vuelve a estar disponible y el
+aviso desaparece.</p>
+<figure><img src="capturas/09-salas-facultad.png"><figcaption>Figura 10. Salas vistas por la Facultad, con la falla pendiente.</figcaption></figure>
+
+<h3>4.10 Cambiar un paciente de estudiante</h3>
+<p>Solo la Facultad. Es obligatorio escribir qué se le hizo al paciente: ese resumen cierra el trabajo del estudiante
+anterior y queda archivado en el expediente.</p>
+<figure><img src="capturas/11-traspaso.png"><figcaption>Figura 11. Traspaso de un paciente.</figcaption></figure>
+<figure><img src="capturas/10-expediente-traspasado.png"><figcaption>Figura 12. Expediente después del traspaso: el trabajo del primer estudiante quedó archivado con su resumen.</figcaption></figure>
+
+<h3>4.11 Bitácora</h3>
+<p>Quién hizo qué, a qué hora (hora de Nicaragua) y desde dónde. La ubicación es la ciudad aproximada de la conexión a
+internet; la IP solo se usa para averiguarla y no se guarda. En la captura dice "Red local" porque se tomó con la
+aplicación corriendo en la misma computadora. La ven el profesor y la Facultad.</p>
+<figure><img src="capturas/12-bitacora.png"><figcaption>Figura 13. Bitácora.</figcaption></figure>
+
+<h2 class="salto">5. La base de datos en Neon</h2>
+<p>Neon es PostgreSQL en la nube. El proyecto <code>clinicas-odontologicas</code> tiene tres <b>ramas</b>, que son copias
+independientes de la base:</p>
+<table>
+  <tr><th style="width:18%">Rama</th><th>Para qué</th></tr>
+  <tr><td><code>main</code></td><td>La base real: la que usa la aplicación publicada en Fly.</td></tr>
+  <tr><td><code>pruebas</code></td><td>La usa <code>pruebas.py</code>. Se borra entera cada vez que corren las pruebas.</td></tr>
+  <tr><td><code>capturas</code></td><td>Datos ficticios para las capturas de esta guía.</td></tr>
+</table>
+<p>Las tablas se crean solas con <code>CREATE TABLE IF NOT EXISTS</code> en cada despliegue: si ya existen no se tocan,
+así que publicar una versión nueva nunca borra datos.</p>
+
+<h3>5.1 Las tablas y cómo se relacionan</h3>
+<svg class="er" viewBox="0 0 720 360" xmlns="http://www.w3.org/2000/svg" font-family="Arial, sans-serif">
+  <defs><marker id="f" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+    <path d="M0,0 L10,5 L0,10 z" fill="#1b6f8a"/></marker></defs>
+  <g stroke="#1b6f8a" stroke-width="1.6" fill="none" marker-end="url(#f)">
+    <path d="M360 175 L360 92"/>
+    <path d="M565 175 L430 85"/>
+    <path d="M510 206 L432 206"/>
+    <path d="M155 175 L155 92"/>
+    <path d="M185 175 L290 85"/>
+    <path d="M360 290 L360 238"/>
+  </g>
+  <g font-size="9.5" fill="#1b6f8a">
+    <text x="366" y="138">estudiante</text>
+    <text x="500" y="118">estudiante</text>
+    <text x="442" y="199">paciente_id</text>
+    <text x="100" y="138">sala_id</text>
+    <text x="236" y="118">cif</text>
+    <text x="366" y="270">paciente_id</text>
+  </g>
+  <g font-size="10" fill="#1b2a3a">
+    <rect x="85" y="30" width="140" height="62" rx="5" fill="#eef4f8" stroke="#1b2a3a"/>
+    <text x="155" y="50" text-anchor="middle" font-weight="bold" font-size="12">salas</text>
+    <text x="155" y="68" text-anchor="middle">id, nombre</text><text x="155" y="83" text-anchor="middle">disponible</text>
+    <rect x="290" y="30" width="140" height="62" rx="5" fill="#eef4f8" stroke="#1b2a3a"/>
+    <text x="360" y="50" text-anchor="middle" font-weight="bold" font-size="12">cuentas</text>
+    <text x="360" y="68" text-anchor="middle">cif, nombre, rol</text><text x="360" y="83" text-anchor="middle">clave (cifrada)</text>
+    <rect x="495" y="30" width="160" height="62" rx="5" fill="#f7f7f7" stroke="#8a97a5" stroke-dasharray="4 3"/>
+    <text x="575" y="50" text-anchor="middle" font-weight="bold" font-size="12">bitacora</text>
+    <text x="575" y="68" text-anchor="middle">cuando, cif, nombre, rol</text><text x="575" y="83" text-anchor="middle">accion, lugar</text>
+    <rect x="85" y="175" width="140" height="62" rx="5" fill="#eef4f8" stroke="#1b2a3a"/>
+    <text x="155" y="195" text-anchor="middle" font-weight="bold" font-size="12">reportes</text>
+    <text x="155" y="213" text-anchor="middle">sala_id, cif, motivo</text><text x="155" y="228" text-anchor="middle">resuelto_por / cuando</text>
+    <rect x="290" y="175" width="140" height="62" rx="5" fill="#eef4f8" stroke="#1b2a3a"/>
+    <text x="360" y="195" text-anchor="middle" font-weight="bold" font-size="12">pacientes</text>
+    <text x="360" y="213" text-anchor="middle">nombre, cedula, razon</text><text x="360" y="228" text-anchor="middle">estudiante, aprobado, firma</text>
+    <rect x="510" y="175" width="160" height="62" rx="5" fill="#eef4f8" stroke="#1b2a3a"/>
+    <text x="590" y="195" text-anchor="middle" font-weight="bold" font-size="12">trabajo</text>
+    <text x="590" y="213" text-anchor="middle">paciente_id, estudiante</text><text x="590" y="228" text-anchor="middle">desde, hasta, resumen</text>
+    <rect x="290" y="290" width="140" height="62" rx="5" fill="#eef4f8" stroke="#1b2a3a"/>
+    <text x="360" y="310" text-anchor="middle" font-weight="bold" font-size="12">citas</text>
+    <text x="360" y="328" text-anchor="middle">paciente_id, fecha, hora</text><text x="360" y="343" text-anchor="middle">sala, razon</text>
+  </g>
+</svg>
+<p style="font-size:8.5pt;color:#6b7a8c">Figura 14. Cada flecha es una llave foránea (<code>REFERENCES</code>): apunta a la tabla de la que depende.
+La bitácora (línea punteada) no tiene llaves foráneas a propósito: guarda una copia del nombre y el rol, para que el
+registro no cambie aunque después cambie la cuenta.</p>
+
+<table>
+  <tr><th style="width:15%">Tabla</th><th>Qué guarda</th><th style="width:34%">Detalles que conviene saber</th></tr>
+  <tr><td><code>cuentas</code></td><td>CIF, nombre, rol y contraseña de cada usuario.</td><td>La contraseña se guarda cifrada (hash), nunca en texto.</td></tr>
+  <tr><td><code>pacientes</code></td><td>Nombre, cédula, teléfono, razón, estudiante a cargo, aprobación y firma.</td><td>La cédula es <code>UNIQUE</code>: la base no deja repetirla. La firma es la imagen PNG en base64.</td></tr>
+  <tr><td><code>trabajo</code></td><td>Un período por cada estudiante que atendió al paciente.</td><td>El período abierto tiene <code>hasta</code> vacío; al traspasar se cierra con el resumen.</td></tr>
+  <tr><td><code>citas</code></td><td>Fecha, hora, sala y razón de cada cita.</td><td>Fecha en formato aaaa-mm-dd para que se ordene bien.</td></tr>
+  <tr><td><code>salas</code></td><td>Las salas y si están disponibles.</td><td>El nombre es <code>UNIQUE</code>.</td></tr>
+  <tr><td><code>reportes</code></td><td>Las fallas que reportan los estudiantes y quién las solucionó.</td><td>Un índice único parcial impide dos fallas abiertas en la misma sala.</td></tr>
+  <tr><td><code>bitacora</code></td><td>Quién hizo qué, cuándo y desde dónde.</td><td>Se muestran las últimas 500 líneas.</td></tr>
+</table>
+
+<h3>5.2 Cómo se ve en la consola de Neon</h3>
+<p>En la consola de Neon (<code>console.neon.tech</code>), en <b>Tables</b>, se elige la rama arriba a la izquierda y la
+tabla en la lista; a la derecha salen sus filas. Con <b>Schema</b> se ven las columnas, sus tipos y las restricciones.</p>
+<figure><img src="capturas/n1-esquema-pacientes.png"><figcaption>Figura 15. Columnas y restricciones de la tabla <code>pacientes</code>: la cédula única y la llave foránea del estudiante hacia <code>cuentas</code>.</figcaption></figure>
+<figure><img src="capturas/n2-pacientes.png"><figcaption>Figura 16. Filas de la tabla <code>pacientes</code>.</figcaption></figure>
+<figure><img src="capturas/n3-citas.png"><figcaption>Figura 17. Tabla <code>citas</code>: cada cita apunta a su paciente con <code>paciente_id</code>.</figcaption></figure>
+<figure><img src="capturas/n4-salas.png"><figcaption>Figura 18. Tabla <code>salas</code>: la Sala 3 la marcó la Facultad y la Sala 5 está reportada.</figcaption></figure>
+<figure><img src="capturas/n5-reportes.png"><figcaption>Figura 19. Tabla <code>reportes</code>: la falla de la Sala 5, reportada por el CIF 00000002.</figcaption></figure>
+<figure><img src="capturas/n6-bitacora.png"><figcaption>Figura 20. Tabla <code>bitacora</code>: la hora se guarda con zona horaria y la aplicación la muestra en hora de Nicaragua.</figcaption></figure>
+
+<h2 class="salto">6. prototipo.py por dentro</h2>
+<table>
+  <tr><th style="width:22%">Dónde</th><th style="width:30%">Qué hace</th><th>Qué decir si el profesor pregunta</th></tr>
+  <tr><td><code>TABLAS</code> y <code>crear_tablas()</code></td><td>Crean las tablas y las cuentas y salas iniciales.</td><td>Se ejecuta en cada despliegue y no borra nada: todo es <code>IF NOT EXISTS</code> y las cuentas usan <code>ON CONFLICT DO NOTHING</code>.</td></tr>
+  <tr><td><code>bd()</code> y <code>sql()</code></td><td>Abren una conexión a Neon por petición y la cierran al terminar.</td><td>Las consultas usan parámetros (<code>%s</code>), nunca texto pegado, así que no hay inyección SQL.</td></tr>
+  <tr><td><code>quien()</code></td><td>CIF, nombre y rol de quien entró.</td><td>Un solo lugar que contesta "¿quién es?"; todas las rutas lo usan.</td></tr>
+  <tr><td><code>exigir_sesion()</code></td><td>Antes de cada petición, sin sesión manda a la entrada.</td><td>Es el portón: una ruta nueva queda protegida sin hacer nada.</td></tr>
+  <tr><td><code>paciente(pid)</code></td><td>Trae un paciente solo si el usuario puede verlo.</td><td>Un estudiante no abre el expediente de otro ni escribiendo el número en la dirección.</td></tr>
+  <tr><td><code>entrar()</code></td><td>Revisa CIF y contraseña.</td><td>Compara contra el hash con <code>check_password_hash</code>; la contraseña nunca se guarda tal cual.</td></tr>
+  <tr><td><code>error_de_cita()</code></td><td>Dice por qué no se puede agendar una cita.</td><td>Una sola regla para Citas y para el paso 2: fecha y hora no pasadas (hora de Nicaragua), sala disponible y no ocupada.</td></tr>
+  <tr><td><code>anotar()</code> y <code>lugar_de()</code></td><td>Escriben la bitácora con la ubicación aproximada.</td><td>La ubicación se busca una vez por sesión; si el servicio no responde, la acción se anota igual.</td></tr>
+  <tr><td><code>salas()</code></td><td>Plano, reporte de fallas y su solución.</td><td>Reportar y solucionar van en una transacción: o se guarda todo o nada.</td></tr>
+  <tr><td><code>traspaso()</code></td><td>Cambia un paciente de estudiante.</td><td>Cierra el período anterior con el resumen y abre uno nuevo, en una transacción.</td></tr>
+  <tr><td><code>expediente_pdf()</code></td><td>Arma el expediente en PDF con reportlab.</td><td>Se escribe en memoria y se descarga; incluye la firma como imagen.</td></tr>
+</table>
+
+<h2>7. Las decisiones técnicas</h2>
+<dl>
+  <dt>¿Por qué Flask?</dt>
+  <dd>Es Python y es pequeño: cada pantalla es una función con <code>@app.route</code> y se lee de corrido, así que se ve cómo se decide cada permiso.</dd>
+  <dt>¿Por qué Neon?</dt>
+  <dd>Es PostgreSQL en la nube, con plan gratuito y ramas: la rama de pruebas permite correr las pruebas sin tocar los datos reales.</dd>
+  <dt>¿Por qué Fly.io?</dt>
+  <dd>Publica la aplicación con HTTPS a partir del <code>Dockerfile</code>. Las claves (la cadena de conexión de Neon y la clave de sesión) viven como secretos de Fly, no en el código.</dd>
+  <dt>¿Cómo se protegen las contraseñas y la sesión?</dt>
+  <dd>Contraseñas cifradas con hash; la cookie de sesión va firmada, solo por HTTPS, sin acceso desde JavaScript y se vence a los 30 minutos sin uso.</dd>
+  <dt>¿Por qué el calendario del navegador para las fechas?</dt>
+  <dd>Porque no deja elegir días pasados y evita errores al escribir. El navegador siempre envía la fecha como aaaa-mm-dd, así que lo que se guarda no es ambiguo; en pantalla la muestra con el formato del idioma del navegador (dd/mm/aaaa en español). El servidor vuelve a validar la fecha aunque alguien se salte el calendario.</dd>
+</dl>
+
+<h2>8. Las validaciones</h2>
+<ul>
+  <li>Nombre y cédula obligatorios; la cédula no se repite (lo impide la base de datos).</li>
+  <li>La razón de la consulta es obligatoria.</li>
+  <li>No se agendan citas en días anteriores a hoy ni hoy a una hora que ya pasó.</li>
+  <li>No se agenda en una sala no disponible ni en una sala ya ocupada a esa fecha y hora.</li>
+  <li>Solo se cancelan las citas que no han pasado.</li>
+  <li>La firma tiene que ser un trazo dibujado, no un nombre escrito.</li>
+  <li>Al traspasar, el resumen es obligatorio y hay que elegir otro estudiante.</li>
+  <li>Para reportar una sala hay que decir qué falla; una sala no se reporta dos veces.</li>
+  <li>Cada estudiante solo ve y solo toca a sus pacientes; cada acción revisa el rol en el servidor.</li>
+</ul>
+<p>Todas están comprobadas en <code>pruebas.py</code>, que dice OK o FALLO por cada caso.</p>
+
+<h2>9. Lo que falta</h2>
+<table>
+  <tr><th>Sección</th><th>Para qué sirve</th></tr>
+  <tr><td>Odontograma</td><td>Foto presencial y odontograma digital</td></tr>
+  <tr><td>Tratamientos y cobros</td><td>Procedimientos, tarifario y abonos</td></tr>
+  <tr><td>Inventario</td><td>Materiales de la clínica</td></tr>
+  <tr><td>Cuentas</td><td>Que la Facultad cree cuentas y que cada persona cambie su contraseña; la UAM definirá cómo.</td></tr>
+</table>
+
+<h2>10. Preguntas probables</h2>
+<dl>
+  <dt>¿Dónde se guardan los datos?</dt>
+  <dd>En PostgreSQL en Neon, en la rama <code>main</code> del proyecto <code>clinicas-odontologicas</code>. No se pierden al reiniciar la aplicación.</dd>
+  <dt>¿Cómo se protege la información del paciente?</dt>
+  <dd>Sin sesión no se ve ninguna pantalla; cada ruta revisa el rol antes de tocar los datos; <code>paciente()</code> no entrega un paciente a un estudiante que no lo tiene a cargo; todo viaja por HTTPS y la sesión se vence sola.</dd>
+  <dt>¿Qué pasa si dos estudiantes reportan la misma sala a la vez?</dt>
+  <dd>La base de datos tiene un índice único que solo permite una falla abierta por sala; el segundo recibe el aviso de que ya estaba reportada.</dd>
+  <dt>¿La bitácora sabe exactamente desde qué computadora se hizo algo?</dt>
+  <dd>No. La ubicación sale de la conexión a internet y es aproximada; todas las computadoras de una misma red comparten la misma conexión.</dd>
+  <dt>¿Es legal la firma?</dt>
+  <dd>Es la firma manuscrita del paciente guardada como imagen, el equivalente a la firma en papel. Una firma digital con valor legal pleno necesita un certificado de una entidad autorizada; eso lo decide la Facultad.</dd>
+  <dt>¿Por qué el profesor no registra pacientes?</dt>
+  <dd>Porque el que atiende es el estudiante y el docente supervisa; así la bitácora sirve para saber qué hizo cada estudiante. Hay una prueba que lo intenta como profesor y comprueba que no se guarda nada.</dd>
+</dl>
+
+</body>
+</html>
