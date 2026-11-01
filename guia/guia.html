@@ -78,12 +78,12 @@ Está hecha en Python con <b>Flask</b> y plantillas HTML, guarda todo en una bas
 
 <h2>3. Qué puede hacer cada rol</h2>
 <p><b>Estudiante</b>: registra a sus pacientes, anota la razón de la consulta, agenda y cancela sus citas, corrige los
-datos de sus pacientes, recoge la firma del consentimiento y reporta las salas que no funcionan. Solo ve a los
+datos de sus pacientes, recoge la firma del consentimiento y reporta las clínicas que no funcionan. Solo ve a los
 pacientes que tiene a cargo y no ve la bitácora.</p>
 <p><b>Profesor</b>: <b>solo revisa</b>. Ve a todos los pacientes, aprueba o retira la aprobación, ve el historial de qué
 le hizo cada estudiante a cada paciente, descarga el expediente en PDF y revisa la bitácora. No registra pacientes ni
 citas y no firma el consentimiento.</p>
-<p><b>Facultad</b>: administra las salas (agrega, marca disponibles o no), recibe los avisos de salas que no funcionan y
+<p><b>Facultad</b>: administra las clínicas (agrega una clínica en la sala que le toca, la marca disponible o no), recibe los avisos de clínicas que no funcionan y
 las marca como solucionadas, pasa un paciente de un estudiante a otro archivando el trabajo del anterior, y revisa la
 bitácora.</p>
 <p>No es solo esconder botones: cada ruta de <code>prototipo.py</code> vuelve a revisar el rol antes de tocar la base de
@@ -93,7 +93,8 @@ datos. Si alguien armara el formulario a mano, igual no pasaría; las pruebas lo
 
 <h3>4.1 Iniciar sesión</h3>
 <p>Se escribe el CIF y la contraseña. Si falta alguno, la pantalla dice cuál; si no coinciden, dice "CIF o contraseña
-incorrectos" sin aclarar cuál de los dos falló. La sesión se cierra sola a los 30 minutos sin uso, porque en la clínica
+incorrectos" sin aclarar cuál de los dos falló. Tras <b>5 contraseñas equivocadas seguidas</b> la cuenta queda bloqueada
+15 minutos: mientras tanto no entra ni con la contraseña correcta, y el bloqueo queda en la bitácora. La sesión se cierra sola a los 30 minutos sin uso, porque en la clínica
 las computadoras son compartidas.</p>
 <figure class="media"><img src="capturas/01-entrar.png"><figcaption>Figura 1. Pantalla de inicio de sesión.</figcaption></figure>
 
@@ -118,15 +119,17 @@ impresa y en el PDF del expediente. El docente no firma.</p>
 <figure><img src="capturas/05-consentimiento.png"><figcaption>Figura 5. Consentimiento con la firma dibujada del paciente.</figcaption></figure>
 
 <h3>4.6 Citas</h3>
-<p>La fecha se elige en el <b>calendario del navegador</b>, que no deja elegir días anteriores a hoy. Las salas que no
-están disponibles salen desactivadas. Las citas que todavía no pasaron se pueden cancelar; las pasadas no, porque son
+<p>La fecha se elige en el <b>calendario del navegador</b>, que no deja elegir días anteriores a hoy. La clínica se elige en
+una lista separada por sala; las que no están disponibles salen desactivadas. Las citas que todavía no pasaron se pueden cancelar; las pasadas no, porque son
 historial del paciente.</p>
 <figure><img src="capturas/06-citas.png"><figcaption>Figura 6. Agendar cita y lista de citas del estudiante.</figcaption></figure>
 
-<h3>4.7 Salas y reporte de fallas (estudiante)</h3>
-<p>El plano muestra las 20 salas con ✓ si están disponibles y ✗ si no. Si una sala no funciona, el estudiante la
-elige, escribe qué falla y la envía: la sala queda como "No funciona" y la Facultad recibe el aviso.</p>
-<figure><img src="capturas/07-salas-estudiante.png"><figcaption>Figura 7. Plano de salas y formulario para reportar una sala que no funciona.</figcaption></figure>
+<h3>4.7 Clínicas y reporte de fallas (estudiante)</h3>
+<p>Hay 20 clínicas repartidas en dos salas: de la <b>Clínica 1 a la 10 en la Sala #1</b> y de la <b>11 a la 20 en la
+Sala #2</b>. El plano muestra cada sala con sus clínicas, con ✓ si están disponibles y ✗ si no. Si una clínica no
+funciona, el estudiante la elige, escribe qué falla y la envía: la clínica queda como "No funciona" y la Facultad recibe
+el aviso.</p>
+<figure><img src="capturas/07-salas-estudiante.png"><figcaption>Figura 7. Plano de las dos salas con sus clínicas y formulario para reportar una clínica que no funciona.</figcaption></figure>
 
 <h3>4.8 El profesor revisa</h3>
 <p>El profesor ve a todos los pacientes con el estudiante a cargo de cada uno, los aprueba o retira la aprobación y
@@ -134,11 +137,11 @@ descarga el expediente en PDF. No tiene el formulario de registro.</p>
 <figure><img src="capturas/13-pacientes-profesor.png"><figcaption>Figura 8. Lista de pacientes vista por el profesor.</figcaption></figure>
 
 <h3>4.9 La Facultad recibe el aviso</h3>
-<p>Cuando hay salas reportadas, la Facultad lo ve en Inicio y en la pestaña, que muestra cuántas son: "Salas (1)".</p>
-<figure><img src="capturas/08-inicio-facultad.png"><figcaption>Figura 9. Inicio de la Facultad con el aviso de una sala que no funciona.</figcaption></figure>
-<p>En Salas ve qué falla, quién lo reportó y cuándo. Al marcarla como solucionada, la sala vuelve a estar disponible y el
-aviso desaparece.</p>
-<figure><img src="capturas/09-salas-facultad.png"><figcaption>Figura 10. Salas vistas por la Facultad, con la falla pendiente.</figcaption></figure>
+<p>Cuando hay clínicas reportadas, la Facultad lo ve en Inicio y en la pestaña, que muestra cuántas son: "Clínicas (1)".</p>
+<figure><img src="capturas/08-inicio-facultad.png"><figcaption>Figura 9. Inicio de la Facultad con el aviso de una clínica que no funciona.</figcaption></figure>
+<p>En Clínicas ve qué falla, en qué sala está, quién lo reportó y cuándo. Al marcarla como solucionada, la clínica vuelve
+a estar disponible y el aviso desaparece. Al agregar una clínica, la Facultad escribe también el número de la sala.</p>
+<figure><img src="capturas/09-salas-facultad.png"><figcaption>Figura 10. Clínicas vistas por la Facultad, con la falla pendiente.</figcaption></figure>
 
 <h3>4.10 Cambiar un paciente de estudiante</h3>
 <p>Solo la Facultad. Es obligatorio escribir qué se le hizo al paciente: ese resumen cierra el trabajo del estudiante
@@ -187,7 +190,7 @@ así que publicar una versión nueva nunca borra datos.</p>
   <g font-size="10" fill="#1b2a3a">
     <rect x="85" y="30" width="140" height="62" rx="5" fill="#eef4f8" stroke="#1b2a3a"/>
     <text x="155" y="50" text-anchor="middle" font-weight="bold" font-size="12">salas</text>
-    <text x="155" y="68" text-anchor="middle">id, nombre</text><text x="155" y="83" text-anchor="middle">disponible</text>
+    <text x="155" y="68" text-anchor="middle">id, nombre</text><text x="155" y="83" text-anchor="middle">en_sala, disponible</text>
     <rect x="290" y="30" width="140" height="62" rx="5" fill="#eef4f8" stroke="#1b2a3a"/>
     <text x="360" y="50" text-anchor="middle" font-weight="bold" font-size="12">cuentas</text>
     <text x="360" y="68" text-anchor="middle">cif, nombre, rol</text><text x="360" y="83" text-anchor="middle">clave (cifrada)</text>
@@ -217,9 +220,9 @@ registro no cambie aunque después cambie la cuenta.</p>
   <tr><td><code>cuentas</code></td><td>CIF, nombre, rol y contraseña de cada usuario.</td><td>La contraseña se guarda cifrada (hash), nunca en texto.</td></tr>
   <tr><td><code>pacientes</code></td><td>Nombre, cédula, teléfono, razón, estudiante a cargo, aprobación y firma.</td><td>La cédula es <code>UNIQUE</code>: la base no deja repetirla. La firma es la imagen PNG en base64.</td></tr>
   <tr><td><code>trabajo</code></td><td>Un período por cada estudiante que atendió al paciente.</td><td>El período abierto tiene <code>hasta</code> vacío; al traspasar se cierra con el resumen.</td></tr>
-  <tr><td><code>citas</code></td><td>Fecha, hora, sala y razón de cada cita.</td><td>Fecha en formato aaaa-mm-dd para que se ordene bien.</td></tr>
-  <tr><td><code>salas</code></td><td>Las salas y si están disponibles.</td><td>El nombre es <code>UNIQUE</code>.</td></tr>
-  <tr><td><code>reportes</code></td><td>Las fallas que reportan los estudiantes y quién las solucionó.</td><td>Un índice único parcial impide dos fallas abiertas en la misma sala.</td></tr>
+  <tr><td><code>citas</code></td><td>Fecha, hora, clínica y razón de cada cita.</td><td>Fecha en formato aaaa-mm-dd para que se ordene bien.</td></tr>
+  <tr><td><code>salas</code></td><td>Las clínicas, la sala donde está cada una (<code>en_sala</code>) y si están disponibles.</td><td>El nombre es <code>UNIQUE</code>. La tabla conserva el nombre <code>salas</code> de cuando se llamaban así; cada fila es una clínica.</td></tr>
+  <tr><td><code>reportes</code></td><td>Las fallas que reportan los estudiantes y quién las solucionó.</td><td>Un índice único parcial impide dos fallas abiertas en la misma clínica.</td></tr>
   <tr><td><code>bitacora</code></td><td>Quién hizo qué, cuándo y desde dónde.</td><td>Se muestran las últimas 500 líneas.</td></tr>
 </table>
 
@@ -229,22 +232,22 @@ tabla en la lista; a la derecha salen sus filas. Con <b>Schema</b> se ven las co
 <figure><img src="capturas/n1-esquema-pacientes.png"><figcaption>Figura 15. Columnas y restricciones de la tabla <code>pacientes</code>: la cédula única y la llave foránea del estudiante hacia <code>cuentas</code>.</figcaption></figure>
 <figure><img src="capturas/n2-pacientes.png"><figcaption>Figura 16. Filas de la tabla <code>pacientes</code>.</figcaption></figure>
 <figure><img src="capturas/n3-citas.png"><figcaption>Figura 17. Tabla <code>citas</code>: cada cita apunta a su paciente con <code>paciente_id</code>.</figcaption></figure>
-<figure><img src="capturas/n4-salas.png"><figcaption>Figura 18. Tabla <code>salas</code>: la Sala 3 la marcó la Facultad y la Sala 5 está reportada.</figcaption></figure>
-<figure><img src="capturas/n5-reportes.png"><figcaption>Figura 19. Tabla <code>reportes</code>: la falla de la Sala 5, reportada por el CIF 00000002.</figcaption></figure>
+<figure><img src="capturas/n4-salas.png"><figcaption>Figura 18. Tabla <code>salas</code>: cada fila es una clínica y <code>en_sala</code> dice en qué sala está; la Clínica 3 la marcó la Facultad y la Clínica 5 está reportada.</figcaption></figure>
+<figure><img src="capturas/n5-reportes.png"><figcaption>Figura 19. Tabla <code>reportes</code>: la falla de la Clínica 5, reportada por el CIF 00000002.</figcaption></figure>
 <figure><img src="capturas/n6-bitacora.png"><figcaption>Figura 20. Tabla <code>bitacora</code>: la hora se guarda con zona horaria y la aplicación la muestra en hora de Nicaragua.</figcaption></figure>
 
 <h2 class="salto">6. prototipo.py por dentro</h2>
 <table>
   <tr><th style="width:22%">Dónde</th><th style="width:30%">Qué hace</th><th>Qué decir si el profesor pregunta</th></tr>
-  <tr><td><code>TABLAS</code> y <code>crear_tablas()</code></td><td>Crean las tablas y las cuentas y salas iniciales.</td><td>Se ejecuta en cada despliegue y no borra nada: todo es <code>IF NOT EXISTS</code> y las cuentas usan <code>ON CONFLICT DO NOTHING</code>.</td></tr>
+  <tr><td><code>TABLAS</code> y <code>crear_tablas()</code></td><td>Crean las tablas, las cuentas y las 20 clínicas iniciales (10 por sala).</td><td>Se ejecuta en cada despliegue y no borra nada: todo es <code>IF NOT EXISTS</code> y las cuentas usan <code>ON CONFLICT DO NOTHING</code>.</td></tr>
   <tr><td><code>bd()</code> y <code>sql()</code></td><td>Abren una conexión a Neon por petición y la cierran al terminar.</td><td>Las consultas usan parámetros (<code>%s</code>), nunca texto pegado, así que no hay inyección SQL.</td></tr>
   <tr><td><code>quien()</code></td><td>CIF, nombre y rol de quien entró.</td><td>Un solo lugar que contesta "¿quién es?"; todas las rutas lo usan.</td></tr>
   <tr><td><code>exigir_sesion()</code></td><td>Antes de cada petición, sin sesión manda a la entrada.</td><td>Es el portón: una ruta nueva queda protegida sin hacer nada.</td></tr>
   <tr><td><code>paciente(pid)</code></td><td>Trae un paciente solo si el usuario puede verlo.</td><td>Un estudiante no abre el expediente de otro ni escribiendo el número en la dirección.</td></tr>
-  <tr><td><code>entrar()</code></td><td>Revisa CIF y contraseña.</td><td>Compara contra el hash con <code>check_password_hash</code>; la contraseña nunca se guarda tal cual.</td></tr>
-  <tr><td><code>error_de_cita()</code></td><td>Dice por qué no se puede agendar una cita.</td><td>Una sola regla para Citas y para el paso 2: fecha y hora no pasadas (hora de Nicaragua), sala disponible y no ocupada.</td></tr>
+  <tr><td><code>entrar()</code></td><td>Revisa CIF y contraseña, y bloquea la cuenta tras 5 intentos fallidos.</td><td>Compara contra el hash con <code>check_password_hash</code>; la contraseña nunca se guarda tal cual. Los intentos se cuentan en la base de datos (<code>fallos</code>, <code>bloqueada_hasta</code>), así que el bloqueo vale aunque haya varios servidores.</td></tr>
+  <tr><td><code>error_de_cita()</code></td><td>Dice por qué no se puede agendar una cita.</td><td>Una sola regla para Citas y para el paso 2: fecha y hora no pasadas (hora de Nicaragua), clínica disponible y no ocupada.</td></tr>
   <tr><td><code>anotar()</code> y <code>lugar_de()</code></td><td>Escriben la bitácora con la ubicación aproximada.</td><td>La ubicación se busca una vez por sesión; si el servicio no responde, la acción se anota igual.</td></tr>
-  <tr><td><code>salas()</code></td><td>Plano, reporte de fallas y su solución.</td><td>Reportar y solucionar van en una transacción: o se guarda todo o nada.</td></tr>
+  <tr><td><code>salas()</code></td><td>Plano de las salas con sus clínicas, reporte de fallas y su solución.</td><td>Reportar y solucionar van en una transacción: o se guarda todo o nada.</td></tr>
   <tr><td><code>traspaso()</code></td><td>Cambia un paciente de estudiante.</td><td>Cierra el período anterior con el resumen y abre uno nuevo, en una transacción.</td></tr>
   <tr><td><code>expediente_pdf()</code></td><td>Arma el expediente en PDF con reportlab.</td><td>Se escribe en memoria y se descarga; incluye la firma como imagen.</td></tr>
 </table>
@@ -258,7 +261,7 @@ tabla en la lista; a la derecha salen sus filas. Con <b>Schema</b> se ven las co
   <dt>¿Por qué Fly.io?</dt>
   <dd>Publica la aplicación con HTTPS a partir del <code>Dockerfile</code>. Las claves (la cadena de conexión de Neon y la clave de sesión) viven como secretos de Fly, no en el código.</dd>
   <dt>¿Cómo se protegen las contraseñas y la sesión?</dt>
-  <dd>Contraseñas cifradas con hash; la cookie de sesión va firmada, solo por HTTPS, sin acceso desde JavaScript y se vence a los 30 minutos sin uso.</dd>
+  <dd>Contraseñas cifradas con hash; tras 5 intentos fallidos seguidos la cuenta se bloquea 15 minutos, para que nadie pueda probar contraseñas sin parar; la cookie de sesión va firmada, solo por HTTPS, sin acceso desde JavaScript y se vence a los 30 minutos sin uso.</dd>
   <dt>¿Por qué el calendario del navegador para las fechas?</dt>
   <dd>Porque no deja elegir días pasados y evita errores al escribir. El navegador siempre envía la fecha como aaaa-mm-dd, así que lo que se guarda no es ambiguo; en pantalla la muestra con el formato del idioma del navegador (dd/mm/aaaa en español). El servidor vuelve a validar la fecha aunque alguien se salte el calendario.</dd>
 </dl>
@@ -268,11 +271,13 @@ tabla en la lista; a la derecha salen sus filas. Con <b>Schema</b> se ven las co
   <li>Nombre y cédula obligatorios; la cédula no se repite (lo impide la base de datos).</li>
   <li>La razón de la consulta es obligatoria.</li>
   <li>No se agendan citas en días anteriores a hoy ni hoy a una hora que ya pasó.</li>
-  <li>No se agenda en una sala no disponible ni en una sala ya ocupada a esa fecha y hora.</li>
+  <li>No se agenda en una clínica no disponible ni en una clínica ya ocupada a esa fecha y hora.</li>
   <li>Solo se cancelan las citas que no han pasado.</li>
   <li>La firma tiene que ser un trazo dibujado, no un nombre escrito.</li>
   <li>Al traspasar, el resumen es obligatorio y hay que elegir otro estudiante.</li>
-  <li>Para reportar una sala hay que decir qué falla; una sala no se reporta dos veces.</li>
+  <li>Para reportar una clínica hay que decir qué falla; una clínica no se reporta dos veces.</li>
+  <li>Para agregar una clínica hay que decir en qué sala está.</li>
+  <li>Tras 5 contraseñas equivocadas seguidas la cuenta se bloquea 15 minutos.</li>
   <li>Cada estudiante solo ve y solo toca a sus pacientes; cada acción revisa el rol en el servidor.</li>
 </ul>
 <p>Todas están comprobadas en <code>pruebas.py</code>, que dice OK o FALLO por cada caso.</p>
@@ -292,8 +297,8 @@ tabla en la lista; a la derecha salen sus filas. Con <b>Schema</b> se ven las co
   <dd>En PostgreSQL en Neon, en la rama <code>main</code> del proyecto <code>clinicas-odontologicas</code>. No se pierden al reiniciar la aplicación.</dd>
   <dt>¿Cómo se protege la información del paciente?</dt>
   <dd>Sin sesión no se ve ninguna pantalla; cada ruta revisa el rol antes de tocar los datos; <code>paciente()</code> no entrega un paciente a un estudiante que no lo tiene a cargo; todo viaja por HTTPS y la sesión se vence sola.</dd>
-  <dt>¿Qué pasa si dos estudiantes reportan la misma sala a la vez?</dt>
-  <dd>La base de datos tiene un índice único que solo permite una falla abierta por sala; el segundo recibe el aviso de que ya estaba reportada.</dd>
+  <dt>¿Qué pasa si dos estudiantes reportan la misma clínica a la vez?</dt>
+  <dd>La base de datos tiene un índice único que solo permite una falla abierta por clínica; el segundo recibe el aviso de que ya estaba reportada.</dd>
   <dt>¿La bitácora sabe exactamente desde qué computadora se hizo algo?</dt>
   <dd>No. La ubicación sale de la conexión a internet y es aproximada; todas las computadoras de una misma red comparten la misma conexión.</dd>
   <dt>¿Es legal la firma?</dt>
