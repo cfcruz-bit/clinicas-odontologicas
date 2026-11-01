@@ -70,6 +70,8 @@ CREATE TABLE IF NOT EXISTS citas (
 CREATE TABLE IF NOT EXISTS bitacora (
     id serial PRIMARY KEY, cuando timestamptz NOT NULL DEFAULT now(), cif text, nombre text, rol text, accion text);
 ALTER TABLE bitacora ADD COLUMN IF NOT EXISTS lugar text NOT NULL DEFAULT '';
+ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS fallos int NOT NULL DEFAULT 0,
+                    ADD COLUMN IF NOT EXISTS bloqueada_hasta timestamptz;
 CREATE TABLE IF NOT EXISTS reportes (
     id serial PRIMARY KEY, sala_id int NOT NULL REFERENCES salas ON DELETE CASCADE, cif text REFERENCES cuentas,
     motivo text NOT NULL, cuando timestamptz NOT NULL DEFAULT now(),
@@ -89,6 +91,7 @@ app.config.update(SESSION_COOKIE_SAMESITE="Lax", SESSION_COOKIE_SECURE="FLY_APP_
 FORMATO = "%d/%m/%Y"  # las fechas se muestran como dd/mm/aaaa; se eligen en el calendario
 MANAGUA = timezone(timedelta(hours=-6))  # Nicaragua no cambia de horario; el servidor esta en UTC
 MOTIVO_MAXIMO = 500  # caracteres del motivo de una sala que no funciona
+FALLOS_MAXIMOS, MINUTOS_BLOQUEO = 5, 15  # tras 5 claves equivocadas seguidas la cuenta espera 15 min
 
 
 def bd():
@@ -181,10 +184,10 @@ def lugar_de(ip):
     session["lugar"] = [ip, lugar]
     return lugar
 
-def anotar(accion):
-    """Bitacora: deja constancia de lo que acaba de hacer el usuario y desde qué lugar aproximado.
-    La IP solo se usa para saber el lugar; no se guarda."""
-    cif, nombre, rol = quien()
+def anotar(accion, cif=None):
+    """Bitacora: deja constancia de lo que acaba de hacer el usuario (o la cuenta indicada) y desde qué
+    lugar aproximado. La IP solo se usa para saber el lugar; no se guarda."""
+    cif, nombre, rol = (cif, *cuentas()[cif]) if cif else quien()
     sql("INSERT INTO bitacora (cif, nombre, rol, accion, lugar) VALUES (%s, %s, %s, %s, %s)",
         cif, nombre, ROLES[rol], accion, lugar_de(ip_del_usuario()))
 
@@ -240,13 +243,26 @@ def entrar():
         if not clave:
             datos["error_clave"] = "Escriba su contraseña."
         if cif and clave:
-            cuenta = sql("SELECT clave FROM cuentas WHERE cif = %s", cif).fetchone()
-            if cuenta and check_password_hash(cuenta["clave"], clave):
+            cuenta = sql("SELECT clave, ceil(extract(epoch FROM bloqueada_hasta - now()) / 60) AS espera "
+                         "FROM cuentas WHERE cif = %s", cif).fetchone()
+            if cuenta and cuenta["espera"] and cuenta["espera"] > 0:
+                # Mientras esta bloqueada ni se mira la clave: asi no se puede seguir probando
+                datos["aviso"] = f"Cuenta bloqueada por intentos fallidos. Intente de nuevo en {cuenta['espera']:.0f} min."
+            elif cuenta and check_password_hash(cuenta["clave"], clave):
+                sql("UPDATE cuentas SET fallos = 0 WHERE cif = %s", cif)
                 session.permanent = True  # cuenta los 30 min desde la ultima pagina que se abrio
                 session["cif"] = cif
                 anotar("Entró al sistema")
                 return redirect(url_for("menu"))
-            datos["aviso"] = "CIF o contraseña incorrectos."
+            else:
+                datos["aviso"] = "CIF o contraseña incorrectos."
+                if cuenta and sql("UPDATE cuentas SET fallos = fallos + 1 WHERE cif = %s RETURNING fallos",
+                                  cif).fetchone()["fallos"] >= FALLOS_MAXIMOS:
+                    sql("UPDATE cuentas SET fallos = 0, bloqueada_hasta = now() + %s * interval '1 minute' "
+                        "WHERE cif = %s", MINUTOS_BLOQUEO, cif)
+                    anotar(f"Cuenta bloqueada {MINUTOS_BLOQUEO} min por {FALLOS_MAXIMOS} contraseñas equivocadas", cif)
+                    datos["aviso"] = (f"Demasiados intentos fallidos. La cuenta queda bloqueada "
+                                      f"{MINUTOS_BLOQUEO} min.")
     return render_template("entrar.html", **datos)
 
 

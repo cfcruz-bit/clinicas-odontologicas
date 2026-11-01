@@ -46,6 +46,15 @@ caso("Sin sesion la pagina de pacientes manda a la entrada",
 caso("La clave se guarda cifrada, no en texto plano", uno("SELECT clave FROM cuentas LIMIT 1")["clave"] != "uam2026")
 caso("Con una clave equivocada no se entra",
      m.app.test_client().post("/", data={"accion": "entrar", "cif": "00000002", "clave": "otra"}).status_code == 200)
+intento = lambda clave: texto(m.app.test_client().post("/", data={"cif": "00000004", "clave": clave}))  # noqa: E731
+for _ in range(m.FALLOS_MAXIMOS - 1):
+    intento("otra")
+caso("Tras 5 claves equivocadas la cuenta se bloquea", "bloqueada 15 min" in intento("otra"))
+caso("Bloqueada, ni con la clave correcta se entra", "Intente de nuevo en 15 min" in intento("uam2026"))
+caso("El bloqueo queda en la bitacora", uno("SELECT 1 FROM bitacora WHERE cif = '00000004' AND accion LIKE 'Cuenta bloqueada%%'"))
+base.execute("UPDATE cuentas SET bloqueada_hasta = now() - interval '1 second' WHERE cif = '00000004'")
+caso("Pasado el bloqueo se entra con la clave correcta",
+     m.app.test_client().post("/", data={"cif": "00000004", "clave": "uam2026"}).status_code == 302)
 caso("El nombre del usuario sale en la cabecera, no solo el rol", "Grace Alvarado" in texto(grace.get("/menu")))
 
 entrada = m.app.test_client().post("/", data={"accion": "entrar", "cif": "00000002", "clave": "uam2026"})
