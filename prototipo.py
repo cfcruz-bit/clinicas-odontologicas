@@ -12,10 +12,12 @@ import os
 import secrets
 import urllib.request
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation
 
 import psycopg
 from flask import (Flask, Response, flash, g, redirect, render_template, request,
                    session, url_for)
+from PIL import Image, ImageOps
 from psycopg.rows import dict_row
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.utils import ImageReader
@@ -36,21 +38,32 @@ MENUS = {"estudiante": [("Inicio", "menu"), ("Mis pacientes", "pacientes"), ("Mi
          "profesor": [("Inicio", "menu"), ("Pacientes", "pacientes"), ("Citas", "citas"), ("Clínicas", "salas"),
                       ("Bitácora", "bitacora")],
          "admin": [("Inicio", "menu"), ("Pacientes", "pacientes"), ("Citas", "citas"), ("Clínicas", "salas"),
+                   ("Tarifario", "tarifario"), ("Inventario", "inventario"), ("Cuentas", "administrar_cuentas"),
                    ("Bitácora", "bitacora")]}
 QUE_HACE = {"estudiante": ["Registrar a sus pacientes y la razón por la que vienen",
                            "Agendar sus citas con la razón de cada cita",
-                           "Llenar el odontograma y pedir la revisión del profesor",
+                           "Subir la foto presencial, llenar el odontograma y pedir la revisión del profesor",
+                           "Anotar el plan de tratamiento y marcar lo realizado",
                            "Recoger la firma del paciente en el consentimiento e imprimirlo"],
             "profesor": ["Revisar y aprobar lo que registra cada estudiante",
+                         "Aprobar el odontograma o devolverlo con lo que hay que corregir",
                          "Ver el historial de qué le hizo cada estudiante a cada paciente",
                          "Revisar la bitácora del sistema",
                          "No registra pacientes, citas ni tratamientos"],
-            "admin": ["Crear las cuentas y administrar las clínicas",
+            "admin": ["Crear las cuentas, ponerles contraseña y desactivarlas",
+                      "Administrar las clínicas, el tarifario y el inventario",
+                      "Registrar los abonos de los pacientes",
                       "Cambiar un paciente de estudiante archivando el trabajo del anterior",
                       "Revisar la bitácora del sistema"]}
-EN_PROCESO = {"Odontograma": "Foto presencial y odontograma digital",
-              "Tratamientos y cobros": "Procedimientos, tarifario y abonos",
-              "Inventario": "Materiales de la clínica"}
+
+# Odontograma: numeracion FDI de los 32 dientes permanentes, como se ven de frente al paciente
+ARRIBA = [*range(18, 10, -1), *range(21, 29)]
+ABAJO = [*range(48, 40, -1), *range(31, 39)]
+DIENTES = set(ARRIBA + ABAJO)
+ESTADOS = {"Sano": "#ffffff", "Caries": "#e57373", "Obturado": "#64b5f6", "Endodoncia": "#ba68c8",
+           "Corona": "#ffd54f", "Extracción indicada": "#ffb74d", "Extraído": "#ffffff"}  # estado -> color
+REVISIONES = {"": "Sin pedir", "pedida": "Pedida, esperando al profesor", "aprobada": "Aprobada",
+              "devuelta": "Devuelta para corregir"}
 
 TABLAS = """
 CREATE TABLE IF NOT EXISTS cuentas (
@@ -73,13 +86,39 @@ ALTER TABLE bitacora ADD COLUMN IF NOT EXISTS lugar text NOT NULL DEFAULT '';
 -- La tabla salas guarda las clinicas (unidades dentales); en_sala es la sala fisica que las agrupa
 ALTER TABLE salas ADD COLUMN IF NOT EXISTS en_sala int NOT NULL DEFAULT 1;
 ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS fallos int NOT NULL DEFAULT 0,
-                    ADD COLUMN IF NOT EXISTS bloqueada_hasta timestamptz;
+                    ADD COLUMN IF NOT EXISTS bloqueada_hasta timestamptz,
+                    ADD COLUMN IF NOT EXISTS activa boolean NOT NULL DEFAULT true;
 CREATE TABLE IF NOT EXISTS reportes (
     id serial PRIMARY KEY, sala_id int NOT NULL REFERENCES salas ON DELETE CASCADE, cif text REFERENCES cuentas,
     motivo text NOT NULL, cuando timestamptz NOT NULL DEFAULT now(),
     resuelto_por text REFERENCES cuentas, resuelto_cuando timestamptz);
 -- Una clinica tiene a lo sumo una falla abierta: si ya la reportaron, la Facultad ya esta avisada
 CREATE UNIQUE INDEX IF NOT EXISTS una_falla_abierta ON reportes (sala_id) WHERE resuelto_cuando IS NULL;
+-- Odontograma: solo se guardan los dientes anotados; el que no esta es sano
+ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS odonto_revision text NOT NULL DEFAULT '',
+                      ADD COLUMN IF NOT EXISTS odonto_revisor text REFERENCES cuentas,
+                      ADD COLUMN IF NOT EXISTS odonto_nota text NOT NULL DEFAULT '';
+CREATE TABLE IF NOT EXISTS dientes (
+    paciente_id int NOT NULL REFERENCES pacientes ON DELETE CASCADE, diente int NOT NULL, estado text NOT NULL,
+    nota text NOT NULL DEFAULT '', PRIMARY KEY (paciente_id, diente));
+CREATE TABLE IF NOT EXISTS fotos (
+    id serial PRIMARY KEY, paciente_id int NOT NULL REFERENCES pacientes ON DELETE CASCADE, cif text REFERENCES cuentas,
+    cuando timestamptz NOT NULL DEFAULT now(), imagen bytea NOT NULL);
+-- Tratamientos y cobros: el precio se copia del tarifario al anotar, asi un cambio de precio no altera lo anotado
+CREATE TABLE IF NOT EXISTS tarifario (
+    id serial PRIMARY KEY, nombre text NOT NULL UNIQUE, precio numeric(10, 2) NOT NULL CHECK (precio >= 0),
+    activo boolean NOT NULL DEFAULT true);
+CREATE TABLE IF NOT EXISTS tratamientos (
+    id serial PRIMARY KEY, paciente_id int NOT NULL REFERENCES pacientes ON DELETE CASCADE,
+    procedimiento_id int NOT NULL REFERENCES tarifario, diente int, precio numeric(10, 2) NOT NULL,
+    estudiante text REFERENCES cuentas, anotado text NOT NULL, realizado text);
+CREATE TABLE IF NOT EXISTS abonos (
+    id serial PRIMARY KEY, paciente_id int NOT NULL REFERENCES pacientes ON DELETE CASCADE,
+    monto numeric(10, 2) NOT NULL CHECK (monto > 0), cif text REFERENCES cuentas,
+    cuando timestamptz NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS materiales (
+    id serial PRIMARY KEY, nombre text NOT NULL UNIQUE, unidad text NOT NULL DEFAULT '',
+    cantidad int NOT NULL CHECK (cantidad >= 0), minimo int NOT NULL DEFAULT 0 CHECK (minimo >= 0));
 """
 
 app = Flask(__name__)
@@ -88,12 +127,15 @@ app.secret_key = os.environ.get("SECRET_KEY") or secrets.token_hex()
 app.config.update(SESSION_COOKIE_SAMESITE="Lax", SESSION_COOKIE_SECURE="FLY_APP_NAME" in os.environ,
                   # Las computadoras de la clinica son compartidas: la sesion se cierra tras 30 min sin uso
                   PERMANENT_SESSION_LIFETIME=timedelta(minutes=30),
-                  MAX_CONTENT_LENGTH=2_000_000)  # la firma dibujada pesa unas decenas de KB
+                  # la foto presencial de un celular pesa unos MB; se achica antes de guardarla
+                  MAX_CONTENT_LENGTH=12_000_000)
 
 FORMATO = "%d/%m/%Y"  # las fechas se muestran como dd/mm/aaaa; se eligen en el calendario
 MANAGUA = timezone(timedelta(hours=-6))  # Nicaragua no cambia de horario; el servidor esta en UTC
 MOTIVO_MAXIMO = 500  # caracteres del motivo de una clinica que no funciona
 FALLOS_MAXIMOS, MINUTOS_BLOQUEO = 5, 15  # tras 5 claves equivocadas seguidas la cuenta espera 15 min
+CLAVE_MINIMA = 8  # caracteres de la contraseña que la Facultad le pone a una cuenta
+FOTO_LADO = 1600  # pixeles del lado mas largo de la foto presencial guardada
 
 
 def bd():
@@ -154,17 +196,44 @@ def error_de_cita(fecha, hora, sala):
 
 app.jinja_env.filters["dmy"] = dmy
 
+def monto(texto):
+    """'1250.5' -> Decimal('1250.50'); None si no es un monto valido (cabe en numeric(10, 2))."""
+    try:
+        m = Decimal((texto or "").strip())
+    except InvalidOperation:
+        return None
+    return m.quantize(Decimal("0.01")) if m.is_finite() and 0 <= m < 10**8 else None
+
+def cordobas(m):
+    return f"C$ {m:,.2f}"
+
+app.jinja_env.filters["cordobas"] = cordobas
+
+def foto_jpeg(archivo):
+    """La foto subida, derecha, achicada y en JPEG; None si no es una imagen."""
+    try:
+        with Image.open(archivo) as imagen:
+            imagen = ImageOps.exif_transpose(imagen).convert("RGB")  # el celular guarda la foto girada
+            imagen.thumbnail((FOTO_LADO, FOTO_LADO))
+            salida = io.BytesIO()
+            imagen.save(salida, "JPEG", quality=85)
+            return salida.getvalue()
+    except (OSError, ValueError, AttributeError, Image.DecompressionBombError):  # sin archivo o no es imagen
+        return None
+
 def cuentas():
     """CIF -> (nombre, rol). Se lee una vez por peticion."""
     # ponytail: trae todas las cuentas cada vez; filtrar por CIF si llegan a ser miles
     if "cuentas" not in g:
-        g.cuentas = {f["cif"]: (f["nombre"], f["rol"]) for f in sql("SELECT cif, nombre, rol FROM cuentas")}
+        filas = sql("SELECT cif, nombre, rol, activa FROM cuentas").fetchall()
+        g.cuentas = {f["cif"]: (f["nombre"], f["rol"]) for f in filas}
+        g.inactivas = {f["cif"] for f in filas if not f["activa"]}  # siguen con nombre en el historial
     return g.cuentas
 
 def quien():
-    """CIF, rol y nombre de quien entro; None si no hay sesion."""
+    """CIF, rol y nombre de quien entro; None si no hay sesion o si la Facultad desactivo la cuenta."""
     cif = session.get("cif")
-    return (cif, *cuentas()[cif]) if cif in cuentas() else None
+    return (cif, *cuentas()[cif]) if cif in cuentas() and cif not in g.inactivas else None
 
 def ip_del_usuario():
     # En Fly la IP real llega en Fly-Client-IP; fuera de Fly ese encabezado lo podria inventar cualquiera
@@ -197,11 +266,13 @@ def anotar(accion, cif=None):
 def comun():
     """Datos que necesita la plantilla base en todas las paginas."""
     cif, nombre, rol = quien()
-    pestanas, fallas = MENUS[rol], 0
-    if rol == "admin":  # la Facultad ve en la pestana cuantas clinicas reportaron los estudiantes
-        fallas = sql("SELECT count(*) AS n FROM reportes WHERE resuelto_cuando IS NULL").fetchone()["n"]
-        pestanas = [(f"{t} ({fallas})" if e == "salas" and fallas else t, e) for t, e in pestanas]
-    return {"cif": cif, "nombre": nombre, "rol": ROLES[rol], "es_rol": rol, "pestanas": pestanas, "fallas": fallas}
+    avisos = {}
+    if rol == "admin":  # la Facultad ve en la pestana cuantas clinicas fallan y cuantos materiales se acaban
+        avisos = sql("SELECT (SELECT count(*) FROM reportes WHERE resuelto_cuando IS NULL) AS salas,"
+                     " (SELECT count(*) FROM materiales WHERE cantidad <= minimo) AS inventario").fetchone()
+    pestanas = [(f"{t} ({avisos[e]})" if avisos.get(e) else t, e) for t, e in MENUS[rol]]
+    return {"cif": cif, "nombre": nombre, "rol": ROLES[rol], "es_rol": rol, "pestanas": pestanas,
+            "fallas": avisos.get("salas", 0), "bajos": avisos.get("inventario", 0)}
 
 def paciente(pid):
     """El paciente, solo si el usuario puede verlo: cada estudiante ve unicamente los suyos."""
@@ -246,11 +317,13 @@ def entrar():
         if not clave:
             datos["error_clave"] = "Escriba su contraseña."
         if cif and clave:
-            cuenta = sql("SELECT clave, ceil(extract(epoch FROM bloqueada_hasta - now()) / 60) AS espera "
+            cuenta = sql("SELECT clave, activa, ceil(extract(epoch FROM bloqueada_hasta - now()) / 60) AS espera "
                          "FROM cuentas WHERE cif = %s", cif).fetchone()
             if cuenta and cuenta["espera"] and cuenta["espera"] > 0:
                 # Mientras esta bloqueada ni se mira la clave: asi no se puede seguir probando
                 datos["aviso"] = f"Cuenta bloqueada por intentos fallidos. Intente de nuevo en {cuenta['espera']:.0f} min."
+            elif cuenta and check_password_hash(cuenta["clave"], clave) and not cuenta["activa"]:
+                datos["aviso"] = "Esta cuenta está desactivada. Consulte con la Facultad."
             elif cuenta and check_password_hash(cuenta["clave"], clave):
                 sql("UPDATE cuentas SET fallos = 0 WHERE cif = %s", cif)
                 session.permanent = True  # cuenta los 30 min desde la ultima pagina que se abrio
@@ -271,8 +344,11 @@ def entrar():
 
 @app.route("/menu")
 def menu():
-    return render_template("menu.html", **comun(), que_hace=QUE_HACE[quien()[2]],
-                           en_proceso=list(EN_PROCESO.items()))
+    # Al profesor le aparecen los odontogramas que esperan su revision
+    revisar = sql("SELECT id, nombre, estudiante FROM pacientes WHERE odonto_revision = 'pedida' ORDER BY id"
+                  ).fetchall() if quien()[2] == "profesor" else []
+    return render_template("menu.html", **comun(), que_hace=QUE_HACE[quien()[2]], revisar=revisar,
+                           nombre_de=nombre_de)
 
 
 @app.route("/pacientes", methods=["GET", "POST"])
@@ -363,7 +439,7 @@ def expediente(pid):
     if not p:
         return redirect(url_for("pacientes"))
     p["trabajo"] = sql("SELECT * FROM trabajo WHERE paciente_id = %s ORDER BY id", pid).fetchall()
-    return render_template("expediente.html", **comun(), p=p, nombre_de=nombre_de,
+    return render_template("expediente.html", **comun(), p=p, nombre_de=nombre_de, revisiones=REVISIONES,
                            citas=sql("SELECT * FROM citas WHERE paciente_id = %s", pid).fetchall())
 
 
@@ -373,7 +449,7 @@ def traspaso(pid):
     p = paciente(pid)
     if not p or quien()[2] != "admin":
         return redirect(url_for("pacientes"))
-    estudiantes = [(c, n) for c, (n, r) in cuentas().items() if r == "estudiante"]
+    estudiantes = [(c, n) for c, (n, r) in cuentas().items() if r == "estudiante" and c not in g.inactivas]
     if request.method == "POST":
         nuevo = request.form.get("estudiante", "")
         resumen = request.form.get("resumen", "").strip()
@@ -499,6 +575,259 @@ def salas():
                            motivo_maximo=MOTIVO_MAXIMO)
 
 
+@app.route("/pacientes/<int:pid>/odontograma", methods=["GET", "POST"])
+def odontograma(pid):
+    """Foto presencial y odontograma digital. El estudiante a cargo los llena y pide la revisión;
+    el profesor lo aprueba o lo devuelve con lo que hay que corregir."""
+    p = paciente(pid)
+    if not p:
+        return redirect(url_for("pacientes"))
+    cif, _, rol = quien()
+    if request.method == "POST":
+        accion = request.form.get("accion")
+        if rol == "estudiante" and accion in ("diente", "foto"):
+            if accion == "diente":
+                d, estado = request.form.get("diente", type=int), request.form.get("estado")
+                nota = request.form.get("nota", "").strip()
+                if d not in DIENTES or estado not in ESTADOS:
+                    flash("Elija el diente y su estado.", "error")
+                    return redirect(url_for("odontograma", pid=pid))
+                que = f"el diente {d}: {estado}" + (f" ({nota})" if nota else "")
+                guardar = ("INSERT INTO dientes VALUES (%s, %s, %s, %s) ON CONFLICT (paciente_id, diente)"
+                           " DO UPDATE SET estado = excluded.estado, nota = excluded.nota", pid, d, estado, nota)
+            else:
+                imagen = foto_jpeg(request.files.get("foto"))
+                if not imagen:
+                    flash("Elija una foto (JPG o PNG, o tómela con la cámara).", "error")
+                    return redirect(url_for("odontograma", pid=pid))
+                que = "una foto presencial"
+                guardar = ("INSERT INTO fotos (paciente_id, cif, imagen) VALUES (%s, %s, %s)", pid, cif, imagen)
+            with bd().transaction():
+                sql(*guardar)
+                # Si ya estaba aprobado y se cambia, el profesor lo tiene que volver a revisar
+                sql("UPDATE pacientes SET odonto_revision = '' WHERE id = %s AND odonto_revision = 'aprobada'", pid)
+                anotar(f"Anotó en el odontograma de {p['nombre']} {que}")
+            flash("Foto guardada." if accion == "foto" else "Diente guardado.", "ok")
+        elif rol == "estudiante" and accion == "pedir":
+            if not sql("SELECT 1 FROM fotos WHERE paciente_id = %s", pid).fetchone():
+                flash("Antes de pedir la revisión suba la foto presencial del paciente.", "error")
+            elif sql("UPDATE pacientes SET odonto_revision = 'pedida' WHERE id = %s"
+                     " AND odonto_revision IN ('', 'devuelta') RETURNING id", pid).fetchone():
+                anotar(f"Pidió la revisión del odontograma de {p['nombre']}")
+                flash("Revisión pedida. El profesor la verá en su Inicio.", "ok")
+        elif rol == "profesor" and accion in ("aprobar", "devolver"):
+            nota = request.form.get("nota", "").strip()
+            if accion == "devolver" and not nota:
+                flash("Escriba qué tiene que corregir el estudiante.", "error")
+            elif sql("UPDATE pacientes SET odonto_revision = %s, odonto_revisor = %s, odonto_nota = %s"
+                     " WHERE id = %s AND odonto_revision = 'pedida' RETURNING id",
+                     "aprobada" if accion == "aprobar" else "devuelta", cif, nota, pid).fetchone():
+                anotar(("Aprobó el odontograma de " if accion == "aprobar" else "Devolvió el odontograma de ")
+                       + p["nombre"] + (f": {nota}" if nota else ""))
+                flash("Odontograma aprobado." if accion == "aprobar" else "Odontograma devuelto al estudiante.", "ok")
+        return redirect(url_for("odontograma", pid=pid))
+    elegido = request.args.get("diente", type=int)
+    return render_template(
+        "odontograma.html", **comun(), p=p, nombre_de=nombre_de, arriba=ARRIBA, abajo=ABAJO, estados=ESTADOS,
+        revisiones=REVISIONES, elegido=elegido if rol == "estudiante" and elegido in DIENTES else None,
+        dientes={f["diente"]: f for f in sql("SELECT * FROM dientes WHERE paciente_id = %s", pid)},
+        fotos=sql("SELECT id, cif, to_char(cuando AT TIME ZONE 'America/Managua', 'DD/MM/YYYY HH24:MI') AS cuando"
+                  " FROM fotos WHERE paciente_id = %s ORDER BY id DESC", pid).fetchall())
+
+
+@app.route("/pacientes/<int:pid>/fotos/<int:fid>.jpg")
+def foto(pid, fid):
+    # Solo la ve quien puede ver al paciente
+    f = paciente(pid) and sql("SELECT imagen FROM fotos WHERE id = %s AND paciente_id = %s", fid, pid).fetchone()
+    if not f:
+        return redirect(url_for("pacientes"))
+    return Response(bytes(f["imagen"]), mimetype="image/jpeg")
+
+
+def plan_de(pid):
+    return sql("SELECT t.*, a.nombre FROM tratamientos t JOIN tarifario a ON a.id = t.procedimiento_id"
+               " WHERE t.paciente_id = %s ORDER BY t.id", pid).fetchall()
+
+def cuenta_de(pid):
+    """Lo que cuesta el plan, lo realizado (lo que se cobra), lo abonado y el saldo pendiente."""
+    c = sql("SELECT coalesce(sum(precio), 0) AS plan,"
+            " coalesce(sum(precio) FILTER (WHERE realizado IS NOT NULL), 0) AS realizado,"
+            " (SELECT coalesce(sum(monto), 0) FROM abonos WHERE paciente_id = %s) AS abonado"
+            " FROM tratamientos WHERE paciente_id = %s", pid, pid).fetchone()
+    c["saldo"] = c["realizado"] - c["abonado"]
+    return c
+
+
+@app.route("/pacientes/<int:pid>/tratamientos", methods=["GET", "POST"])
+def tratamientos(pid):
+    """Plan de tratamiento con los precios del tarifario y los abonos del paciente.
+    El estudiante a cargo anota y marca lo realizado; la Facultad registra los abonos."""
+    p = paciente(pid)
+    if not p:
+        return redirect(url_for("pacientes"))
+    cif, _, rol = quien()
+    if request.method == "POST":
+        accion = request.form.get("accion")
+        if rol == "estudiante" and accion == "anotar":
+            proc = sql("SELECT * FROM tarifario WHERE id = %s AND activo",
+                       request.form.get("procedimiento", type=int)).fetchone()
+            diente = request.form.get("diente", type=int)  # opcional: hay procedimientos de toda la boca
+            if not proc or (diente is not None and diente not in DIENTES):
+                flash("Elija el procedimiento del tarifario.", "error")
+            else:
+                sql("INSERT INTO tratamientos (paciente_id, procedimiento_id, diente, precio, estudiante, anotado)"
+                    " VALUES (%s, %s, %s, %s, %s, %s)", pid, proc["id"], diente, proc["precio"], cif, hoy())
+                anotar(f"Anotó en el plan de {p['nombre']}: {proc['nombre']}" + (f" del {diente}" if diente else ""))
+                flash("Tratamiento anotado en el plan.", "ok")
+        elif rol == "estudiante" and accion in ("realizado", "quitar"):
+            t = sql("SELECT t.id, a.nombre FROM tratamientos t JOIN tarifario a ON a.id = t.procedimiento_id"
+                    " WHERE t.id = %s AND t.paciente_id = %s AND t.realizado IS NULL",
+                    request.form.get("id", type=int), pid).fetchone()
+            if t and accion == "realizado" and not p["firma"]:
+                flash("Falta la firma del consentimiento: sin ella no se realiza ningún tratamiento.", "error")
+            elif t and accion == "realizado":
+                sql("UPDATE tratamientos SET realizado = %s WHERE id = %s", hoy(), t["id"])
+                anotar(f"Realizó a {p['nombre']}: {t['nombre']}")
+                flash(f"{t['nombre']} quedó como realizado.", "ok")
+            elif t:  # lo pendiente se puede quitar; lo realizado ya es historial
+                sql("DELETE FROM tratamientos WHERE id = %s", t["id"])
+                anotar(f"Quitó del plan de {p['nombre']}: {t['nombre']}")
+                flash(f"{t['nombre']} quitado del plan.", "ok")
+        elif rol == "admin" and accion == "abono":
+            m = monto(request.form.get("monto"))
+            if m is None or m <= 0:
+                flash("Escriba el monto del abono.", "error")
+            else:
+                sql("INSERT INTO abonos (paciente_id, monto, cif) VALUES (%s, %s, %s)", pid, m, cif)
+                anotar(f"Registró un abono de {cordobas(m)} de {p['nombre']}")
+                flash(f"Abono de {cordobas(m)} registrado.", "ok")
+        return redirect(url_for("tratamientos", pid=pid))
+    return render_template(
+        "tratamientos.html", **comun(), p=p, nombre_de=nombre_de, plan=plan_de(pid), cuenta=cuenta_de(pid),
+        dientes=ARRIBA + ABAJO,
+        tarifario=sql("SELECT * FROM tarifario WHERE activo ORDER BY nombre").fetchall(),
+        abonos=sql("SELECT monto, cif, to_char(cuando AT TIME ZONE 'America/Managua', 'DD/MM/YYYY HH24:MI') AS cuando"
+                   " FROM abonos WHERE paciente_id = %s ORDER BY id", pid).fetchall())
+
+
+@app.route("/tarifario", methods=["GET", "POST"])
+def tarifario():
+    """Los procedimientos y su precio. Lo lleva la Facultad; un procedimiento desactivado ya no se anota."""
+    if quien()[2] != "admin":
+        return redirect(url_for("menu"))
+    if request.method == "POST":
+        accion, precio = request.form.get("accion"), monto(request.form.get("precio"))
+        if accion == "agregar":
+            nombre = request.form.get("nombre", "").strip()
+            if not nombre or precio is None:
+                flash("Escriba el procedimiento y su precio.", "error")
+            elif sql("SELECT 1 FROM tarifario WHERE lower(nombre) = lower(%s)", nombre).fetchone():
+                flash("Ese procedimiento ya está en el tarifario.", "error")
+            else:
+                sql("INSERT INTO tarifario (nombre, precio) VALUES (%s, %s)", nombre, precio)
+                anotar(f"Agregó al tarifario {nombre} a {cordobas(precio)}")
+                flash(f"{nombre} agregado al tarifario.", "ok")
+        elif accion == "precio":
+            fila = precio is not None and sql("UPDATE tarifario SET precio = %s WHERE id = %s RETURNING nombre",
+                                              precio, request.form.get("id", type=int)).fetchone()
+            if fila:
+                anotar(f"Cambió el precio de {fila['nombre']} a {cordobas(precio)}")
+                flash(f"Precio de {fila['nombre']} cambiado. Lo ya anotado conserva su precio.", "ok")
+            else:
+                flash("Escriba el precio nuevo.", "error")
+        elif accion == "activo":
+            fila = sql("UPDATE tarifario SET activo = NOT activo WHERE id = %s RETURNING nombre, activo",
+                       request.form.get("id", type=int)).fetchone()
+            if fila:
+                anotar(("Activó" if fila["activo"] else "Desactivó") + f" en el tarifario {fila['nombre']}")
+        return redirect(url_for("tarifario"))
+    return render_template("tarifario.html", **comun(),
+                           procedimientos=sql("SELECT * FROM tarifario ORDER BY nombre").fetchall())
+
+
+@app.route("/inventario", methods=["GET", "POST"])
+def inventario():
+    """Materiales de la clínica. La Facultad anota lo que entra y lo que sale y ve lo que se está acabando."""
+    if quien()[2] != "admin":
+        return redirect(url_for("menu"))
+    if request.method == "POST":
+        accion = request.form.get("accion")
+        cantidad = request.form.get("cantidad", type=int)
+        if accion == "agregar":
+            nombre, unidad = (request.form.get(c, "").strip() for c in ("nombre", "unidad"))
+            minimo = request.form.get("minimo", type=int)
+            if not nombre or cantidad is None or minimo is None or cantidad < 0 or minimo < 0:
+                flash("Escriba el material, cuántos hay y el mínimo para avisar.", "error")
+            elif sql("SELECT 1 FROM materiales WHERE lower(nombre) = lower(%s)", nombre).fetchone():
+                flash("Ese material ya está en el inventario.", "error")
+            else:
+                sql("INSERT INTO materiales (nombre, unidad, cantidad, minimo) VALUES (%s, %s, %s, %s)",
+                    nombre, unidad, cantidad, minimo)
+                anotar(f"Agregó al inventario {nombre}: {cantidad} {unidad}".rstrip())
+                flash(f"{nombre} agregado al inventario.", "ok")
+        elif accion in ("entrada", "salida"):
+            if not cantidad or cantidad < 1:
+                flash("Escriba cuántas unidades entran o salen.", "error")
+            else:
+                cambio = cantidad if accion == "entrada" else -cantidad
+                # No sale lo que no hay: la cantidad nunca queda en negativo
+                fila = sql("UPDATE materiales SET cantidad = cantidad + %s WHERE id = %s AND cantidad + %s >= 0"
+                           " RETURNING nombre, unidad, cantidad", cambio, request.form.get("id", type=int),
+                           cambio).fetchone()
+                if fila:
+                    anotar(f"{'Entrada' if cambio > 0 else 'Salida'} de {cantidad} {fila['unidad']} de"
+                           f" {fila['nombre']}; quedan {fila['cantidad']}")
+                    flash(f"{fila['nombre']}: quedan {fila['cantidad']} {fila['unidad']}.", "ok")
+                else:
+                    flash("No hay tantas unidades en el inventario.", "error")
+        return redirect(url_for("inventario"))
+    return render_template("inventario.html", **comun(), materiales=sql(
+        "SELECT *, cantidad <= minimo AS bajo FROM materiales ORDER BY cantidad <= minimo DESC, nombre").fetchall())
+
+
+@app.route("/cuentas", methods=["GET", "POST"])
+def administrar_cuentas():
+    """La Facultad crea las cuentas, les pone contraseña y las desactiva. La contraseña se guarda cifrada."""
+    yo, _, rol = quien()
+    if rol != "admin":
+        return redirect(url_for("menu"))
+    if request.method == "POST":
+        accion, cif, clave = (request.form.get("accion"), request.form.get("cif", "").strip(),
+                              request.form.get("clave", ""))
+        if accion == "crear":
+            nombre, rol_nuevo = request.form.get("nombre", "").strip(), request.form.get("rol")
+            if not cif.isalnum() or not nombre or rol_nuevo not in ROLES:
+                flash("Escriba el CIF (solo números y letras), el nombre y el rol.", "error")
+            elif len(clave) < CLAVE_MINIMA:
+                flash(f"La contraseña debe tener al menos {CLAVE_MINIMA} caracteres.", "error")
+            elif cif in cuentas():
+                flash("Ya existe una cuenta con ese CIF.", "error")
+            else:
+                sql("INSERT INTO cuentas (cif, nombre, rol, clave) VALUES (%s, %s, %s, %s)",
+                    cif, nombre, rol_nuevo, generate_password_hash(clave))
+                anotar(f"Creó la cuenta de {nombre} ({cif}, {ROLES[rol_nuevo]})")
+                flash(f"Cuenta de {nombre} creada. Dele la contraseña en privado.", "ok")
+        elif accion == "clave":
+            if len(clave) < CLAVE_MINIMA:
+                flash(f"La contraseña debe tener al menos {CLAVE_MINIMA} caracteres.", "error")
+            elif sql("UPDATE cuentas SET clave = %s, fallos = 0, bloqueada_hasta = NULL WHERE cif = %s RETURNING cif",
+                     generate_password_hash(clave), cif).fetchone():
+                anotar(f"Le puso una contraseña nueva a {nombre_de(cif)} ({cif})")
+                flash(f"Contraseña de {nombre_de(cif)} cambiada; si estaba bloqueada, ya puede entrar.", "ok")
+        elif accion == "activa":
+            if cif == yo:
+                flash("No puede desactivar su propia cuenta.", "error")
+            elif fila := sql("UPDATE cuentas SET activa = NOT activa WHERE cif = %s RETURNING nombre, activa",
+                             cif).fetchone():
+                anotar(("Activó" if fila["activa"] else "Desactivó") + f" la cuenta de {fila['nombre']} ({cif})")
+                flash(f"Cuenta de {fila['nombre']} " + ("activada." if fila["activa"] else "desactivada."), "ok")
+        return redirect(url_for("administrar_cuentas"))
+    return render_template("cuentas.html", **comun(), roles=ROLES, clave_minima=CLAVE_MINIMA, lista=sql(
+        "SELECT cif, nombre, rol, activa, CASE WHEN bloqueada_hasta > now() THEN"
+        " to_char(bloqueada_hasta AT TIME ZONE 'America/Managua', 'HH24:MI') END AS bloqueada"
+        " FROM cuentas ORDER BY activa DESC, rol, nombre").fetchall())
+
+
 @app.route("/bitacora")
 def bitacora():
     """Quién hizo qué y a qué hora. La revisan el profesor y la Facultad."""
@@ -561,6 +890,26 @@ def expediente_pdf(pid):
         linea("Citas", "Helvetica-Bold", 12)
         for c in agenda:
             linea(f"- {dmy(c['fecha'])} {c['hora']} · {c['razon']} · {c['sala'] or 'sin clínica'}", "Helvetica", 10)
+
+    y -= 10
+    linea("Odontograma", "Helvetica-Bold", 12)
+    linea(f"Revisión del profesor: {REVISIONES[p['odonto_revision']]}"
+          + (f" ({nombre_de(p['odonto_revisor'])})" if p["odonto_revision"] in ("aprobada", "devuelta") else ""),
+          "Helvetica", 10)
+    hallazgos = sql("SELECT * FROM dientes WHERE paciente_id = %s AND estado <> 'Sano' ORDER BY diente", pid).fetchall()
+    for d in hallazgos:
+        linea(f"- Diente {d['diente']}: {d['estado']}" + (f" · {d['nota']}" if d["nota"] else ""), "Helvetica", 10)
+    if not hallazgos:
+        linea("Sin hallazgos anotados: todos los dientes sanos.", "Helvetica", 10)
+
+    y -= 10
+    linea("Tratamientos y cobros", "Helvetica-Bold", 12)
+    for t in plan_de(pid):
+        linea(f"- {t['nombre']}" + (f" del {t['diente']}" if t["diente"] else "") + f" · {cordobas(t['precio'])} · "
+              + (f"realizado el {dmy(t['realizado'])}" if t["realizado"] else "pendiente"), "Helvetica", 10)
+    c = cuenta_de(pid)
+    linea(f"Realizado: {cordobas(c['realizado'])} · Abonado: {cordobas(c['abonado'])} · "
+          f"Saldo pendiente: {cordobas(c['saldo'])}", "Helvetica", 10)
 
     y -= 14
     linea("Consentimiento informado", "Helvetica-Bold", 12)

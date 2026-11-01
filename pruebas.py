@@ -2,11 +2,14 @@
 
 Ejecutar:  PRUEBAS_DATABASE_URL=<cadena de la rama de pruebas> python pruebas.py
 """
+import io
 import os
 import sys
 from datetime import datetime, timedelta
+from decimal import Decimal
 
 import psycopg
+from PIL import Image
 from psycopg.rows import dict_row
 
 # Nunca se toma DATABASE_URL: las pruebas no deben tocar la base de verdad
@@ -14,7 +17,8 @@ os.environ["DATABASE_URL"] = os.environ["PRUEBAS_DATABASE_URL"]
 import prototipo as m  # noqa: E402
 
 base = psycopg.connect(os.environ["DATABASE_URL"], autocommit=True, row_factory=dict_row, prepare_threshold=None)
-base.execute("DROP TABLE IF EXISTS reportes, bitacora, citas, trabajo, pacientes, salas, cuentas")
+base.execute("DROP TABLE IF EXISTS abonos, tratamientos, tarifario, materiales, fotos, dientes, reportes, bitacora,"
+             " citas, trabajo, pacientes, salas, cuentas")
 m.crear_tablas()
 
 def uno(consulta, *args):
@@ -220,8 +224,148 @@ print(f"         (ubicacion encontrada: {lugar or 'sin respuesta del servicio'})
 with m.app.test_request_context(headers={"Fly-Client-IP": "1.2.3.4"}):
     caso("Fuera de Fly no se cree un encabezado de IP que cualquiera puede inventar", m.ip_del_usuario() != "1.2.3.4")
 
+caso("En Inicio ya no hay secciones en proceso", "En proceso" not in texto(grace.get("/menu")))
+
+# Odontograma (Luis Pérez ya es de Gabriel y tiene el consentimiento firmado)
+odonto = f"/pacientes/{pid}/odontograma"
+caso("El odontograma muestra los 32 dientes", texto(gabriel.get(odonto)).count('class="diente') == 32)
+gabriel.post(odonto, data={"accion": "diente", "diente": "46", "estado": "Caries", "nota": "oclusal profunda"})
+caso("El estudiante a cargo anota el estado de un diente",
+     uno("SELECT estado, nota FROM dientes WHERE paciente_id = %s AND diente = 46", pid)
+     == {"estado": "Caries", "nota": "oclusal profunda"})
+gabriel.post(odonto, data={"accion": "diente", "diente": "99", "estado": "Caries"})
+gabriel.post(odonto, data={"accion": "diente", "diente": "11", "estado": "Roto"})
+caso("No se anotan dientes que no existen ni estados inventados", cuantos("dientes") == 1)
+grace.post(odonto, data={"accion": "diente", "diente": "11", "estado": "Caries"})
+profe.post(odonto, data={"accion": "diente", "diente": "11", "estado": "Caries"})
+caso("Ni otro estudiante ni el profesor anotan en el odontograma", cuantos("dientes") == 1)
+gabriel.post(odonto, data={"accion": "pedir"})
+caso("Sin la foto presencial no se pide la revision", paciente()["odonto_revision"] == "")
+gabriel.post(odonto, data={"accion": "foto", "foto": (io.BytesIO(b"no es una imagen"), "boca.jpg")})
+caso("Un archivo que no es una imagen no se guarda como foto", cuantos("fotos") == 0)
+grande = io.BytesIO()
+Image.new("RGB", (4000, 3000), "pink").save(grande, "PNG")
+grande.seek(0)
+gabriel.post(odonto, data={"accion": "foto", "foto": (grande, "boca.png")})
+foto = f"/pacientes/{pid}/fotos/{uno('SELECT id FROM fotos')['id']}.jpg"
+guardada = Image.open(io.BytesIO(gabriel.get(foto).data))
+caso("La foto presencial se guarda achicada y en JPEG",
+     guardada.format == "JPEG" and max(guardada.size) == m.FOTO_LADO)
+caso("Otro estudiante no ve las fotos del paciente", grace.get(foto).status_code == 302)
+gabriel.post(odonto, data={"accion": "pedir"})
+caso("El profesor ve en Inicio el odontograma que espera su revision",
+     paciente()["odonto_revision"] == "pedida" and "Luis Pérez" in texto(profe.get("/menu")))
+profe.post(odonto, data={"accion": "devolver", "nota": ""})
+caso("Para devolverlo hay que decir que corregir", paciente()["odonto_revision"] == "pedida")
+profe.post(odonto, data={"accion": "devolver", "nota": "Falta revisar el 36"})
+caso("El profesor lo devuelve con lo que hay que corregir",
+     paciente()["odonto_revision"] == "devuelta" and "Falta revisar el 36" in texto(gabriel.get(odonto)))
+gabriel.post(odonto, data={"accion": "pedir"})
+gabriel.post(odonto, data={"accion": "aprobar"})
+caso("El estudiante no aprueba su propio odontograma", paciente()["odonto_revision"] == "pedida")
+profe.post(odonto, data={"accion": "aprobar"})
+caso("El profesor aprueba el odontograma",
+     paciente()["odonto_revision"] == "aprobada" and paciente()["odonto_revisor"] == "00000001")
+gabriel.post(odonto, data={"accion": "diente", "diente": "36", "estado": "Obturado"})
+caso("Si se cambia despues de aprobado, hay que volver a pedir la revision", paciente()["odonto_revision"] == "")
+
+# Tarifario, tratamientos y abonos
+caso("Solo la Facultad lleva el tarifario",
+     grace.get("/tarifario").status_code == 302 and profe.get("/tarifario").status_code == 302)
+admin.post("/tarifario", data={"accion": "agregar", "nombre": "Profilaxis", "precio": "abc"})
+admin.post("/tarifario", data={"accion": "agregar", "nombre": "Profilaxis", "precio": "-5"})
+caso("El precio tiene que ser un monto valido", cuantos("tarifario") == 0)
+admin.post("/tarifario", data={"accion": "agregar", "nombre": "Profilaxis", "precio": "350"})
+admin.post("/tarifario", data={"accion": "agregar", "nombre": "Obturación con resina", "precio": "800.50"})
+admin.post("/tarifario", data={"accion": "agregar", "nombre": "profilaxis", "precio": "1"})
+caso("La Facultad agrega procedimientos y no se repiten", cuantos("tarifario") == 2)
+profilaxis = uno("SELECT id FROM tarifario WHERE nombre = 'Profilaxis'")["id"]
+resina = uno("SELECT id FROM tarifario WHERE nombre = 'Obturación con resina'")["id"]
+trat = f"/pacientes/{pid}/tratamientos"
+gabriel.post(trat, data={"accion": "anotar", "procedimiento": resina, "diente": "36"})
+gabriel.post(trat, data={"accion": "anotar", "procedimiento": profilaxis, "diente": ""})
+gabriel.post(trat, data={"accion": "anotar", "procedimiento": profilaxis, "diente": "99"})
+caso("El estudiante anota en el plan, con diente o sin el, pero no un diente que no existe",
+     cuantos("tratamientos") == 2)
+profe.post(trat, data={"accion": "anotar", "procedimiento": profilaxis})
+grace.post(trat, data={"accion": "anotar", "procedimiento": profilaxis})
+caso("Ni el profesor ni otro estudiante anotan tratamientos", cuantos("tratamientos") == 2)
+admin.post("/tarifario", data={"accion": "precio", "id": resina, "precio": "900"})
+caso("Cambiar el precio en el tarifario no altera lo ya anotado",
+     uno("SELECT precio FROM tratamientos WHERE procedimiento_id = %s", resina)["precio"] == Decimal("800.50")
+     and uno("SELECT precio FROM tarifario WHERE id = %s", resina)["precio"] == Decimal("900"))
+hecho = uno("SELECT id FROM tratamientos WHERE procedimiento_id = %s", resina)["id"]
+gabriel.post(trat, data={"accion": "realizado", "id": hecho})
+caso("Lo realizado queda con su fecha", uno("SELECT realizado FROM tratamientos WHERE id = %s", hecho)["realizado"] == m.hoy())
+gabriel.post(trat, data={"accion": "quitar", "id": hecho})
+caso("Lo realizado ya no se quita del plan", cuantos("tratamientos") == 2)
+ana = uno("SELECT id FROM pacientes WHERE cedula = 'T-200'")["id"]
+gabriel.post(f"/pacientes/{ana}/tratamientos", data={"accion": "anotar", "procedimiento": profilaxis})
+de_ana = uno("SELECT id FROM tratamientos WHERE paciente_id = %s", ana)["id"]
+gabriel.post(f"/pacientes/{ana}/tratamientos", data={"accion": "realizado", "id": de_ana})
+caso("Sin la firma del consentimiento no se marca nada como realizado",
+     uno("SELECT realizado FROM tratamientos WHERE id = %s", de_ana)["realizado"] is None)
+gabriel.post(f"/pacientes/{ana}/tratamientos", data={"accion": "quitar", "id": de_ana})
+caso("Lo pendiente se puede quitar del plan", cuantos("tratamientos") == 2)
+gabriel.post(trat, data={"accion": "abono", "monto": "100"})
+caso("Los abonos los registra solo la Facultad", cuantos("abonos") == 0)
+admin.post(trat, data={"accion": "abono", "monto": "0"})
+admin.post(trat, data={"accion": "abono", "monto": "500"})
+cobros = texto(gabriel.get(trat))
+caso("El plan suma todo y el saldo es lo realizado menos lo abonado",
+     cuantos("abonos") == 1 and "C$ 1,150.50" in cobros and "C$ 300.50" in cobros)
+admin.post("/tarifario", data={"accion": "activo", "id": profilaxis})
+gabriel.post(trat, data={"accion": "anotar", "procedimiento": profilaxis})
+caso("Un procedimiento desactivado ya no se anota", cuantos("tratamientos") == 2)
+pdf = gabriel.get(f"/pacientes/{pid}/expediente.pdf")
+caso("El expediente en PDF sale con el odontograma y los tratamientos", pdf.data[:4] == b"%PDF")
+
+# Inventario
+caso("Solo la Facultad lleva el inventario", grace.get("/inventario").status_code == 302)
+admin.post("/inventario", data={"accion": "agregar", "nombre": "Guantes", "unidad": "cajas", "cantidad": "10",
+                                "minimo": "3"})
+admin.post("/inventario", data={"accion": "agregar", "nombre": "guantes", "cantidad": "1", "minimo": "0"})
+admin.post("/inventario", data={"accion": "agregar", "nombre": "Resina", "cantidad": "-1", "minimo": "0"})
+caso("Se agregan materiales sin repetirlos ni con cantidades negativas", cuantos("materiales") == 1)
+guantes = lambda: uno("SELECT * FROM materiales")  # noqa: E731
+admin.post("/inventario", data={"accion": "salida", "id": guantes()["id"], "cantidad": "11"})
+caso("No sale mas de lo que hay", guantes()["cantidad"] == 10)
+admin.post("/inventario", data={"accion": "salida", "id": guantes()["id"], "cantidad": "7"})
+inicio = texto(admin.get("/menu"))
+caso("Al llegar al minimo la Facultad recibe el aviso",
+     guantes()["cantidad"] == 3 and "Inventario (1)" in inicio and "se está acabando" in inicio)
+admin.post("/inventario", data={"accion": "entrada", "id": guantes()["id"], "cantidad": "5"})
+caso("Con una entrada el aviso desaparece", guantes()["cantidad"] == 8 and "Inventario (" not in texto(admin.get("/menu")))
+
+# Cuentas
+caso("Solo la Facultad administra las cuentas", grace.get("/cuentas").status_code == 302)
+nueva = {"accion": "crear", "cif": "00000009", "nombre": "Nuevo Estudiante", "rol": "estudiante"}
+admin.post("/cuentas", data={**nueva, "clave": "corta"})
+caso("La contraseña de una cuenta nueva tiene al menos 8 caracteres", cuantos("cuentas") == 5)
+admin.post("/cuentas", data={**nueva, "clave": "clave-segura-1"})
+admin.post("/cuentas", data={**nueva, "cif": "00000002", "clave": "clave-segura-1"})
+caso("La Facultad crea una cuenta con su contraseña, guardada cifrada",
+     cuantos("cuentas") == 6 and uno("SELECT clave FROM cuentas WHERE cif = '00000009'")["clave"] != "clave-segura-1")
+nuevo = m.app.test_client()
+caso("La cuenta nueva entra con su contraseña",
+     nuevo.post("/", data={"cif": "00000009", "clave": "clave-segura-1"}).status_code == 302)
+admin.post("/cuentas", data={"accion": "activa", "cif": "00000009"})
+caso("Una cuenta desactivada no entra y la sesion que tenia abierta se cierra",
+     "desactivada" in texto(m.app.test_client().post("/", data={"cif": "00000009", "clave": "clave-segura-1"}))
+     and nuevo.get("/menu").status_code == 302)
+caso("A un estudiante desactivado no se le pasan pacientes",
+     'value="00000009"' not in texto(admin.get(f"/pacientes/{pid}/traspaso")))
+admin.post("/cuentas", data={"accion": "activa", "cif": "00000007"})
+caso("La Facultad no desactiva su propia cuenta", uno("SELECT activa FROM cuentas WHERE cif = '00000007'")["activa"])
+admin.post("/cuentas", data={"accion": "activa", "cif": "00000009"})
+for _ in range(m.FALLOS_MAXIMOS):
+    m.app.test_client().post("/", data={"cif": "00000009", "clave": "equivocada"})
+admin.post("/cuentas", data={"accion": "clave", "cif": "00000009", "clave": "otra-clave-2"})
+caso("Ponerle una contraseña nueva desbloquea la cuenta",
+     m.app.test_client().post("/", data={"cif": "00000009", "clave": "otra-clave-2"}).status_code == 302)
+
 m.crear_tablas()
-caso("Crear las tablas otra vez no borra ni duplica nada", cuantos("pacientes") == 2 and cuantos("cuentas") == 5)
+caso("Crear las tablas otra vez no borra ni duplica nada", cuantos("pacientes") == 2 and cuantos("cuentas") == 6)
 
 print(f"\n{'Todo correcto.' if not fallos else str(len(fallos)) + ' fallos.'}")
 sys.exit(1 if fallos else 0)

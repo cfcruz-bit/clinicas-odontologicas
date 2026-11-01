@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block titulo %}Tratamientos de {{ p.nombre }} - Clínicas Odontológicas{% endblock %}
+{% block contenido %}
+  <p><a href="{{ url_for('expediente', pid=p.id) }}">&larr; Volver al expediente</a></p>
+  <h2>Tratamientos y cobros de {{ p.nombre }}</h2>
+
+  <div class="tabla">
+    <table>
+      <tbody>
+        <tr><th>Total del plan</th><td class="num">{{ cuenta.plan|cordobas }}</td></tr>
+        <tr><th>Realizado (lo que se cobra)</th><td class="num">{{ cuenta.realizado|cordobas }}</td></tr>
+        <tr><th>Abonado</th><td class="num">{{ cuenta.abonado|cordobas }}</td></tr>
+        <tr><th>{{ "Saldo a favor del paciente" if cuenta.saldo < 0 else "Saldo pendiente" }}</th>
+          <td class="num {{ 'rojo' if cuenta.saldo > 0 else 'verde' }}"><b>{{ cuenta.saldo|abs|cordobas }}</b></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  {% if es_rol == "estudiante" %}
+  <form method="post">
+    <input type="hidden" name="accion" value="anotar">
+    <fieldset>
+      <legend>Anotar en el plan</legend>
+      {% if tarifario %}
+      <div class="campo"><span>Procedimiento: *</span>
+        <select name="procedimiento" required>
+          <option value="">Seleccione…</option>
+          {% for t in tarifario %}<option value="{{ t.id }}">{{ t.nombre }} · {{ t.precio|cordobas }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="campo"><span>Diente</span>
+        <select name="diente">
+          <option value="">Toda la boca / no aplica</option>
+          {% for d in dientes %}<option>{{ d }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="acciones"><button class="btn">Anotar</button></div>
+      {% else %}
+      <p class="tenue">La Facultad todavía no ha puesto procedimientos en el tarifario.</p>
+      {% endif %}
+    </fieldset>
+  </form>
+  {% if not p.firma %}<p class="amarillo">Falta la firma del consentimiento: se puede planificar, pero no marcar nada como realizado.</p>{% endif %}
+  {% endif %}
+
+  <h2>Plan de tratamiento</h2>
+  <div class="tabla">
+    <table>
+      <thead><tr><th>Procedimiento</th><th>Diente</th><th class="num">Precio</th><th>Estudiante</th><th>Anotado</th><th>Estado</th>
+        {% if es_rol == "estudiante" %}<th></th>{% endif %}</tr></thead>
+      <tbody>
+        {% for t in plan %}
+        <tr>
+          <td>{{ t.nombre }}</td><td>{{ t.diente or '—' }}</td><td class="num">{{ t.precio|cordobas }}</td>
+          <td>{{ nombre_de(t.estudiante) }}</td><td class="fecha">{{ t.anotado|dmy }}</td>
+          <td class="{{ 'verde' if t.realizado else 'amarillo' }}">{{ "Realizado el " ~ t.realizado|dmy if t.realizado else "Pendiente" }}</td>
+          {% if es_rol == "estudiante" %}
+          <td class="acciones">
+            {% if not t.realizado %}
+            <form method="post" class="en-linea">
+              <input type="hidden" name="id" value="{{ t.id }}">
+              <button class="btn chico" name="accion" value="realizado">Marcar realizado</button>
+              <button class="btn chico peligro" name="accion" value="quitar">Quitar</button>
+            </form>
+            {% endif %}
+          </td>
+          {% endif %}
+        </tr>
+        {% else %}
+        <tr><td class="vacio" colspan="7">Todavía no hay tratamientos en el plan.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <h2>Abonos</h2>
+  {% if es_rol == "admin" %}
+  <form method="post">
+    <input type="hidden" name="accion" value="abono">
+    <fieldset>
+      <legend>Registrar abono</legend>
+      <div class="en-linea"><label for="monto">Monto (C$)</label>
+        <input id="monto" type="number" name="monto" min="0.01" step="0.01" required>
+        <button class="btn">Registrar</button></div>
+    </fieldset>
+  </form>
+  {% endif %}
+  <div class="tabla">
+    <table>
+      <thead><tr><th>Fecha y hora</th><th class="num">Monto</th><th>Lo registró</th></tr></thead>
+      <tbody>
+        {% for a in abonos %}
+        <tr><td class="fecha">{{ a.cuando }}</td><td class="num">{{ a.monto|cordobas }}</td><td>{{ nombre_de(a.cif) }}</td></tr>
+        {% else %}
+        <tr><td class="vacio" colspan="3">Todavía no hay abonos.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if es_rol != "admin" %}<p class="tenue">Los abonos los registra la Facultad.</p>{% endif %}
+{% endblock %}

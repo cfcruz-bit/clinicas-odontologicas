@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block titulo %}Tarifario - Clínicas Odontológicas{% endblock %}
+{% block contenido %}
+  <h2>Tarifario</h2>
+  <p class="tenue">Los estudiantes eligen de aquí lo que anotan en el plan de cada paciente. El precio queda fijo en lo que
+     ya se anotó: cambiarlo aquí solo afecta lo que se anote después.</p>
+  <div class="tabla">
+    <table>
+      <thead><tr><th>Procedimiento</th><th class="num">Precio</th><th>Estado</th><th></th></tr></thead>
+      <tbody>
+        {% for t in procedimientos %}
+        <tr>
+          <td>{{ t.nombre }}</td>
+          <td class="num">{{ t.precio|cordobas }}</td>
+          <td class="{{ 'verde' if t.activo else 'tenue' }}">{{ "Se puede anotar" if t.activo else "Desactivado" }}</td>
+          <td class="acciones">
+            <form method="post" class="en-linea">
+              <input type="hidden" name="id" value="{{ t.id }}">
+              <input type="number" name="precio" min="0" step="0.01" value="{{ t.precio }}" aria-label="Precio nuevo de {{ t.nombre }}" style="width: 8em">
+              <button class="btn chico" name="accion" value="precio">Cambiar precio</button>
+              <button class="btn chico" name="accion" value="activo">{{ "Desactivar" if t.activo else "Activar" }}</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td class="vacio" colspan="4">El tarifario está vacío.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <form method="post">
+    <input type="hidden" name="accion" value="agregar">
+    <fieldset>
+      <legend>Agregar procedimiento</legend>
+      <div class="en-linea">
+        <input name="nombre" placeholder="Ej.: Profilaxis, Obturación con resina, Endodoncia unirradicular" aria-label="Procedimiento" required>
+        <label>Precio (C$) <input type="number" name="precio" min="0" step="0.01" required style="width: 8em"></label>
+        <button class="btn">Agregar</button>
+      </div>
+    </fieldset>
+  </form>
+{% endblock %}

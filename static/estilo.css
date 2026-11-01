@@ -111,11 +111,13 @@ td select { width: auto; min-height: 26px; padding: 1px 4px; }
 .arcada .diente:nth-child(9) { grid-column-start: 10; }  /* linea media */
 .diente { padding: 0; border: 0; background: none; font: inherit; font-size: 12px; color: var(--texto); cursor: pointer; text-align: center; }
 .diente span { display: block; height: 50px; border: 1px solid #5a6068; background: var(--color); margin-bottom: 2px; }
-.diente[data-estado="Extraido"] span {
+.diente[data-estado="Extraído"] span {
   background: linear-gradient(to top right, transparent calc(50% - 2px), var(--rojo) calc(50% - 2px), var(--rojo) calc(50% + 2px), transparent calc(50% + 2px)),
               linear-gradient(to top left, transparent calc(50% - 2px), var(--rojo) calc(50% - 2px), var(--rojo) calc(50% + 2px), transparent calc(50% + 2px)),
               var(--color);
 }
+a.diente { display: block; text-decoration: none; }
+div.diente { cursor: default; }
 .diente.resaltado span { outline: 2px solid var(--azul); outline-offset: 2px; }
 .diente.resaltado { font-weight: 700; }
 .odonto[data-bloqueado] .arcada { opacity: .55; }
@@ -135,7 +137,9 @@ td select { width: auto; min-height: 26px; padding: 1px 4px; }
 }
 .leyenda { display: flex; justify-content: center; flex-wrap: wrap; gap: 4px 14px; margin-top: 10px; }
 .leyenda i { display: inline-block; width: 12px; height: 12px; border: 1px solid #5a6068; vertical-align: -2px; margin-right: 4px; }
-.miniatura { display: block; width: 72px; height: 54px; object-fit: cover; border: 1px solid var(--borde); background: #f3f3f3; }
+.fotos { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+.fotos a { text-decoration: none; }
+.miniatura { display: block; width: 160px; height: 120px; object-fit: cover; border: 1px solid var(--borde); background: #f3f3f3; }
 .vista-previa[hidden] { display: none; }
 .vista-previa { display: block; max-width: 100%; max-height: 160px; border: 1px solid var(--borde); margin-top: 6px; }
 

@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block titulo %}Odontograma de {{ p.nombre }} - Clínicas Odontológicas{% endblock %}
+{% macro diente(d) %}
+  {% set f = dientes.get(d) %}{% set estado = f.estado if f else 'Sano' %}
+  {% set titulo = d ~ ': ' ~ estado ~ (' · ' ~ f.nota if f and f.nota else '') %}
+  {% if es_rol == "estudiante" %}
+  <a class="diente {{ 'resaltado' if d == elegido }}" data-estado="{{ estado }}" style="--color: {{ estados[estado] }}"
+     href="{{ url_for('odontograma', pid=p.id, diente=d) }}#editar" title="{{ titulo }}"><span></span>{{ d }}</a>
+  {% else %}
+  <div class="diente" data-estado="{{ estado }}" style="--color: {{ estados[estado] }}" title="{{ titulo }}"><span></span>{{ d }}</div>
+  {% endif %}
+{% endmacro %}
+{% block contenido %}
+  <p><a href="{{ url_for('expediente', pid=p.id) }}">&larr; Volver al expediente</a></p>
+  <h2>Odontograma de {{ p.nombre }}</h2>
+
+  <ol class="pasos">
+    <li class="{{ 'hecho' if fotos }}">Foto presencial: {{ fotos|length }} {{ "foto" if fotos|length == 1 else "fotos" }}.</li>
+    <li class="{{ 'hecho' if dientes }}">Odontograma: {{ dientes|length }} {{ "diente anotado" if dientes|length == 1 else "dientes anotados" }}; los demás están sanos.</li>
+    <li class="{{ 'hecho' if p.odonto_revision == 'aprobada' }}">Revisión del profesor:
+      <b class="{{ 'verde' if p.odonto_revision == 'aprobada' else 'amarillo' }}">{{ revisiones[p.odonto_revision] }}</b>
+      {% if p.odonto_revision in ('aprobada', 'devuelta') %}por {{ nombre_de(p.odonto_revisor) }}{% endif %}
+      {% if p.odonto_revision == 'devuelta' and p.odonto_nota %}<div class="mensaje error">Qué corregir: {{ p.odonto_nota }}</div>{% endif %}
+    </li>
+  </ol>
+
+  {% if es_rol == "estudiante" and p.odonto_revision in ('', 'devuelta') %}
+  <form method="post" class="acciones sin-imprimir">
+    <input type="hidden" name="accion" value="pedir">
+    <button class="btn">Pedir la revisión del profesor</button>
+  </form>
+  {% elif es_rol == "profesor" and p.odonto_revision == 'pedida' %}
+  <form method="post">
+    <fieldset>
+      <legend>Revisión del odontograma</legend>
+      <div class="campo"><span>Observación</span>
+        <input name="nota" placeholder="Obligatoria si lo devuelve: qué tiene que corregir el estudiante"></div>
+      <div class="acciones">
+        <button class="btn" name="accion" value="devolver">Devolver para corregir</button>
+        <button class="btn" name="accion" value="aprobar">Aprobar odontograma</button>
+      </div>
+    </fieldset>
+  </form>
+  {% endif %}
+
+  <div class="odonto">
+    <div class="arcada-titulo">Superior</div>
+    <div class="arcada">{% for d in arriba %}{{ diente(d) }}{% endfor %}</div>
+    <div class="arcada" style="margin-top: 14px">{% for d in abajo %}{{ diente(d) }}{% endfor %}</div>
+    <div class="arcada-titulo">Inferior</div>
+    <div class="leyenda">
+      {% for estado, color in estados.items() %}<span><i style="background: {{ color }}"></i>{{ estado }}{{ ' (✗)' if estado == 'Extraído' }}</span>{% endfor %}
+    </div>
+  </div>
+  {% if es_rol == "estudiante" %}<p class="tenue sin-imprimir">Toque un diente para anotar su estado.</p>{% endif %}
+
+  {% if elegido %}
+  {% set f = dientes.get(elegido) %}
+  <form method="post" id="editar">
+    <input type="hidden" name="accion" value="diente">
+    <input type="hidden" name="diente" value="{{ elegido }}">
+    <fieldset>
+      <legend>Diente {{ elegido }}</legend>
+      <div class="campo"><span>Estado: *</span>
+        <select name="estado" autofocus>
+          {% for estado in estados %}<option{{ ' selected' if (f.estado if f else 'Sano') == estado }}>{{ estado }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="campo"><span>Nota</span><input name="nota" value="{{ f.nota if f else '' }}" placeholder="Ej.: caries oclusal profunda"></div>
+      <div class="acciones">
+        <a class="btn" href="{{ url_for('odontograma', pid=p.id) }}">Cancelar</a>
+        <button class="btn">Guardar</button>
+      </div>
+    </fieldset>
+  </form>
+  {% endif %}
+
+  <h2>Hallazgos</h2>
+  <div class="tabla">
+    <table>
+      <thead><tr><th>Diente</th><th>Estado</th><th>Nota</th></tr></thead>
+      <tbody>
+        {% for d in (arriba + abajo)|sort if d in dientes and dientes[d].estado != 'Sano' %}
+        <tr><td>{{ d }}</td><td>{{ dientes[d].estado }}</td><td>{{ dientes[d].nota or '—' }}</td></tr>
+        {% else %}
+        <tr><td class="vacio" colspan="3">Sin hallazgos: todos los dientes están sanos.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <h2>Fotos presenciales</h2>
+  {% if es_rol == "estudiante" %}
+  <form method="post" enctype="multipart/form-data" class="sin-imprimir">
+    <input type="hidden" name="accion" value="foto">
+    <fieldset>
+      <legend>Subir foto</legend>
+      <div class="en-linea"><input type="file" name="foto" accept="image/*" required aria-label="Foto presencial">
+        <button class="btn">Subir</button></div>
+      <p class="tenue">En el celular o la tableta se puede tomar con la cámara. Se guarda achicada.</p>
+    </fieldset>
+  </form>
+  {% endif %}
+  <div class="fotos">
+    {% for f in fotos %}
+    <a href="{{ url_for('foto', pid=p.id, fid=f.id) }}" target="_blank" title="Abrir la foto en grande">
+      <img class="miniatura" src="{{ url_for('foto', pid=p.id, fid=f.id) }}" alt="Foto presencial del {{ f.cuando }}">
+      <small class="tenue">{{ f.cuando }} · {{ nombre_de(f.cif) }}</small>
+    </a>
+    {% else %}
+    <p class="tenue">Todavía no hay fotos.</p>
+    {% endfor %}
+  </div>
+{% endblock %}

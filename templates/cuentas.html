@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block titulo %}Cuentas - Clínicas Odontológicas{% endblock %}
+{% block contenido %}
+  <h2>Cuentas</h2>
+  <p class="tenue">La Facultad crea las cuentas y les pone la contraseña; se guarda cifrada y nadie la puede ver después.
+     Una cuenta desactivada no puede entrar, pero su nombre sigue en el historial de los pacientes y en la bitácora.</p>
+  <div class="tabla">
+    <table>
+      <thead><tr><th>CIF</th><th>Nombre</th><th>Rol</th><th>Estado</th><th></th></tr></thead>
+      <tbody>
+        {% for c in lista %}
+        <tr>
+          <td>{{ c.cif }}</td><td>{{ c.nombre }}</td><td>{{ roles[c.rol] }}</td>
+          <td class="{{ 'tenue' if not c.activa else ('rojo' if c.bloqueada else 'verde') }}">
+            {{ "Desactivada" if not c.activa else ("Bloqueada hasta las " ~ c.bloqueada if c.bloqueada else "Activa") }}</td>
+          <td class="acciones">
+            <form method="post" class="en-linea">
+              <input type="hidden" name="cif" value="{{ c.cif }}">
+              <input type="password" name="clave" minlength="{{ clave_minima }}" autocomplete="new-password"
+                     placeholder="Contraseña nueva" aria-label="Contraseña nueva de {{ c.nombre }}" style="width: 11em">
+              <button class="btn chico" name="accion" value="clave">Poner contraseña</button>
+              {% if c.cif != cif %}<button class="btn chico{{ ' peligro' if c.activa }}" name="accion" value="activa" formnovalidate>{{ "Desactivar" if c.activa else "Activar" }}</button>{% endif %}
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <form method="post">
+    <input type="hidden" name="accion" value="crear">
+    <fieldset>
+      <legend>Crear cuenta</legend>
+      <div class="campo"><span>CIF: *</span><input name="cif" required pattern="[A-Za-z0-9]+" autocomplete="off"></div>
+      <div class="campo"><span>Nombre: *</span><input name="nombre" required></div>
+      <div class="campo"><span>Rol: *</span>
+        <select name="rol" required>
+          <option value="">Seleccione…</option>
+          {% for clave_rol, nombre_rol in roles.items() %}<option value="{{ clave_rol }}">{{ nombre_rol }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="campo"><span>Contraseña: *</span><input type="password" name="clave" required minlength="{{ clave_minima }}"
+        autocomplete="new-password" placeholder="Al menos {{ clave_minima }} caracteres"></div>
+      <div class="acciones"><button class="btn">Crear cuenta</button></div>
+    </fieldset>
+  </form>
+{% endblock %}

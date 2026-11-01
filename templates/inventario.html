@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block titulo %}Inventario - Clínicas Odontológicas{% endblock %}
+{% block contenido %}
+  <h2>Inventario de materiales</h2>
+  <p class="tenue">Cuando un material llega a su mínimo, sale primero en la lista y la Facultad recibe el aviso en Inicio.
+     Cada entrada y salida queda en la bitácora.</p>
+  <div class="tabla">
+    <table>
+      <thead><tr><th>Material</th><th class="num">Hay</th><th>Unidad</th><th class="num">Mínimo</th><th>Estado</th><th></th></tr></thead>
+      <tbody>
+        {% for m in materiales %}
+        <tr>
+          <td>{{ m.nombre }}</td><td class="num">{{ m.cantidad }}</td><td>{{ m.unidad }}</td><td class="num">{{ m.minimo }}</td>
+          <td class="{{ 'rojo' if m.bajo else 'verde' }}">{{ "Se está acabando" if m.bajo else "Suficiente" }}</td>
+          <td class="acciones">
+            <form method="post" class="en-linea">
+              <input type="hidden" name="id" value="{{ m.id }}">
+              <input type="number" name="cantidad" min="1" step="1" value="1" aria-label="Cuántos de {{ m.nombre }}" style="width: 5em">
+              <button class="btn chico" name="accion" value="entrada">Entrada</button>
+              <button class="btn chico" name="accion" value="salida">Salida</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td class="vacio" colspan="6">El inventario está vacío.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <form method="post">
+    <input type="hidden" name="accion" value="agregar">
+    <fieldset>
+      <legend>Agregar material</legend>
+      <div class="campo"><span>Material: *</span><input name="nombre" required placeholder="Ej.: Guantes de nitrilo talla M"></div>
+      <div class="campo"><span>Unidad</span><input name="unidad" placeholder="Ej.: cajas, pares, jeringas"></div>
+      <div class="campo"><span>Cuántos hay: *</span><input type="number" name="cantidad" min="0" step="1" value="0" required></div>
+      <div class="campo"><span>Avisar con: *</span><input type="number" name="minimo" min="0" step="1" value="0" required
+        aria-describedby="ayuda-minimo"></div>
+      <p class="tenue" id="ayuda-minimo">Cuando queden esa cantidad o menos, se avisa que se está acabando.</p>
+      <div class="acciones"><button class="btn">Agregar</button></div>
+    </fieldset>
+  </form>
+{% endblock %}
