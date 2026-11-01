@@ -1,11 +1,13 @@
 {% extends "base.html" %}
-{% block titulo %}Salas - Clínicas Odontológicas{% endblock %}
+{% block titulo %}Clínicas - Clínicas Odontológicas{% endblock %}
 {% block contenido %}
-  <h2>Plano de la clínica</h2>
-  <p class="tenue">Cada sala muestra un ✓ si está disponible o una ✗ si no lo está.</p>
+  <h2>Plano de las salas</h2>
+  <p class="tenue">Cada clínica muestra un ✓ si está disponible o una ✗ si no lo está.</p>
+  {% for grupo in salas|groupby('en_sala') %}
   <div class="plano">
+    <div class="plano-titulo">Sala #{{ grupo.grouper }}</div>
     <div class="plano-salas">
-      {% for s in salas %}
+      {% for s in grupo.list %}
       <div class="sala {{ 'libre' if s.disponible else 'ocupada' }}">
         <span class="marca-sala">{{ '✓' if s.disponible else '✗' }}</span>
         <b>{{ s.nombre }}</b>
@@ -19,20 +21,20 @@
       </div>
       {% endfor %}
     </div>
-    <div class="plano-pasillo">Pasillo / recepción</div>
   </div>
+  {% endfor %}
 
   {% set con_falla = salas|selectattr('reporte_id')|list %}
   {% if es_rol != "estudiante" and con_falla %}
-  <h2>Salas que no funcionan</h2>
+  <h2>Clínicas que no funcionan</h2>
   <div class="tabla">
     <table>
-      <thead><tr><th>Sala</th><th>Qué no funciona</th><th>Reportó</th><th>Fecha y hora</th>
+      <thead><tr><th>Clínica</th><th>Qué no funciona</th><th>Reportó</th><th>Fecha y hora</th>
         {% if es_rol == "admin" %}<th></th>{% endif %}</tr></thead>
       <tbody>
         {% for s in con_falla %}
         <tr>
-          <td>{{ s.nombre }}</td><td>{{ s.motivo }}</td><td>{{ nombre_de(s.reporto) }}</td>
+          <td>{{ s.nombre }} (Sala #{{ s.en_sala }})</td><td>{{ s.motivo }}</td><td>{{ nombre_de(s.reporto) }}</td>
           <td class="fecha">{{ s.reportada }}</td>
           {% if es_rol == "admin" %}
           <td class="acciones">
@@ -54,8 +56,10 @@
   <form method="post">
     <input type="hidden" name="accion" value="agregar">
     <fieldset>
-      <legend>Agregar sala</legend>
-      <div class="en-linea"><input name="nombre" placeholder="Nombre de la sala" aria-label="Nombre de la sala"><button class="btn">Agregar</button></div>
+      <legend>Agregar clínica</legend>
+      <div class="en-linea"><input name="nombre" placeholder="Nombre de la clínica" aria-label="Nombre de la clínica" required>
+        <label>en la Sala # <input type="number" name="en_sala" min="1" value="1" required style="width: 5em"></label>
+        <button class="btn">Agregar</button></div>
     </fieldset>
   </form>
   {% elif es_rol == "estudiante" %}
@@ -63,12 +67,13 @@
   <form method="post">
     <input type="hidden" name="accion" value="reportar">
     <fieldset>
-      <legend>Reportar una sala que no funciona</legend>
-      <p class="tenue">La sala queda como no disponible y la Facultad recibe el aviso para solucionarlo.</p>
-      <div class="campo"><span>Sala: *</span>
+      <legend>Reportar una clínica que no funciona</legend>
+      <p class="tenue">La clínica queda como no disponible y la Facultad recibe el aviso para solucionarlo.</p>
+      <div class="campo"><span>Clínica: *</span>
         <select name="sala" required>
           <option value="">Seleccione…</option>
-          {% for s in sin_falla %}<option value="{{ s.id }}">{{ s.nombre }}</option>{% endfor %}
+          {% for grupo in sin_falla|groupby('en_sala') %}<optgroup label="Sala #{{ grupo.grouper }}">
+            {% for s in grupo.list %}<option value="{{ s.id }}">{{ s.nombre }}</option>{% endfor %}</optgroup>{% endfor %}
         </select>
       </div>
       <div class="campo arriba"><span>¿Qué no funciona? *</span>
@@ -83,6 +88,6 @@
     {% for s in con_falla %}{{ s.nombre }} ({{ s.motivo }}){{ '; ' if not loop.last }}{% endfor %}.</p>
   {% endif %}
   {% else %}
-  <p class="tenue">La Facultad es la que agrega salas y cambia su disponibilidad.</p>
+  <p class="tenue">La Facultad es la que agrega clínicas y cambia su disponibilidad.</p>
   {% endif %}
 {% endblock %}

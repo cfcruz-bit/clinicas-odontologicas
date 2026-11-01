@@ -79,7 +79,7 @@ caso("La primera cita tampoco se agenda en una fecha pasada",
 grace.post(f"/pacientes/{pid}/razon", data={"razon": "Dolor en la muela 36", "fecha": MANANA, "hora": ""})
 caso("Si se pone fecha a la primera cita, tambien hace falta la hora", cuantos("citas") == 0)
 grace.post(f"/pacientes/{pid}/razon", data={"razon": "Dolor en la muela 36", "fecha": MANANA,
-                                            "hora": "09:00", "sala": "Sala 1", "razon_cita": "Valoración"})
+                                            "hora": "09:00", "sala": "Clínica 1", "razon_cita": "Valoración"})
 caso("La razon sale al lado del nombre en la lista", "Dolor en la muela 36" in texto(grace.get("/pacientes")))
 caso("La razon de la cita y la del paciente salen en la pagina de citas",
      all(t in texto(grace.get("/citas")) for t in ("Valoración", "Dolor en la muela 36")))
@@ -95,9 +95,9 @@ caso("No se agenda en un dia anterior a hoy, aunque sea del mismo mes", cuantos(
 if HACE_UNA_HORA < ahora.strftime("%H:%M"):
     grace.post("/citas", data={"paciente_id": pid, "fecha": m.hoy(), "hora": HACE_UNA_HORA, "razon": "Control"})
     caso("Hoy no se agenda a una hora que ya paso", cuantos("citas") == 1)
-grace.post("/citas", data={"paciente_id": pid, "fecha": MANANA, "hora": "09:00", "sala": "Sala 1",
+grace.post("/citas", data={"paciente_id": pid, "fecha": MANANA, "hora": "09:00", "sala": "Clínica 1",
                            "razon": "Otra"})
-caso("No se agenda una sala ocupada a la misma hora", cuantos("citas") == 1)
+caso("No se agenda una clínica ocupada a la misma hora", cuantos("citas") == 1)
 
 grace.post("/citas", data={"paciente_id": pid, "fecha": MANANA, "hora": "11:00", "razon": "Para cancelar"})
 cancelar = uno("SELECT id FROM citas WHERE razon = 'Para cancelar'")["id"]
@@ -159,46 +159,58 @@ caso("El historial muestra que le hizo cada estudiante",
                                                                 "Profilaxis y obturación del 36")))
 caso("El paciente ya no le sale al estudiante anterior", "Luis Pérez" not in texto(grace.get("/pacientes")))
 
-plano = texto(admin.get("/salas")).split('class="plano-salas"')[1].split("plano-pasillo")[0]
-caso("El plano marca las salas disponibles con un check y las ocupadas con una X",
-     plano.count("✓") == 2 and plano.count("✗") == 1)
-sala1 = uno("SELECT id FROM salas WHERE nombre = 'Sala 1'")["id"]
+caso("Hay 20 clínicas: la 1 a la 10 en la Sala #1 y la 11 a la 20 en la Sala #2",
+     [(f["en_sala"], f["n"]) for f in base.execute("SELECT en_sala, count(*) AS n FROM salas GROUP BY en_sala ORDER BY 1")]
+     == [(1, 10), (2, 10)]
+     and uno("SELECT en_sala FROM salas WHERE nombre = 'Clínica 10'")["en_sala"] == 1
+     and uno("SELECT en_sala FROM salas WHERE nombre = 'Clínica 11'")["en_sala"] == 2)
+_, sala_1, sala_2 = texto(admin.get("/salas")).split('class="plano-titulo"')
+caso("El plano muestra cada sala con sus clínicas, con un check si están disponibles y una X si no",
+     "Sala #1" in sala_1 and "Clínica 10<" in sala_1 and "Clínica 11<" not in sala_1
+     and sala_1.count("✓") == 9 and sala_1.count("✗") == 1
+     and "Sala #2" in sala_2 and "Clínica 11<" in sala_2 and sala_2.count("✓") == 10)
+admin.post("/salas", data={"accion": "agregar", "nombre": "Clínica 21", "en_sala": "2"})
+caso("La Facultad agrega una clínica en la sala que elija",
+     uno("SELECT en_sala FROM salas WHERE nombre = 'Clínica 21'")["en_sala"] == 2)
+admin.post("/salas", data={"accion": "agregar", "nombre": "Clínica 22"})
+caso("Sin decir la sala no se agrega la clínica", uno("SELECT 1 FROM salas WHERE nombre = 'Clínica 22'") is None)
+sala1 = uno("SELECT id FROM salas WHERE nombre = 'Clínica 1'")["id"]
 admin.post("/salas", data={"sala": sala1})
-caso("La administracion cambia la disponibilidad de una sala",
+caso("La administracion cambia la disponibilidad de una clínica",
      uno("SELECT disponible FROM salas WHERE id = %s", sala1)["disponible"] is False)
-caso("El estudiante no administra las salas", "Agregar sala" not in texto(grace.get("/salas")))
+caso("El estudiante no administra las clínicas", "Agregar clínica" not in texto(grace.get("/salas")))
 
-sala2 = uno("SELECT id FROM salas WHERE nombre = 'Sala 2'")["id"]
+sala2 = uno("SELECT id FROM salas WHERE nombre = 'Clínica 2'")["id"]
 falla = lambda: uno("SELECT * FROM reportes WHERE sala_id = %s AND resuelto_cuando IS NULL", sala2)  # noqa: E731
 grace.post("/salas", data={"accion": "reportar", "sala": sala2, "motivo": "  "})
-caso("Para reportar una sala hay que decir que no funciona", falla() is None)
+caso("Para reportar una clínica hay que decir que no funciona", falla() is None)
 profe.post("/salas", data={"accion": "reportar", "sala": sala2, "motivo": "No enciende la lámpara"})
 caso("Solo los estudiantes reportan salas", falla() is None)
 grace.post("/salas", data={"accion": "reportar", "sala": sala2, "motivo": "No enciende la lámpara"})
-caso("El estudiante marca una sala como no funcional con su motivo",
+caso("El estudiante marca una clínica como no funcional con su motivo",
      falla()["motivo"] == "No enciende la lámpara" and falla()["cif"] == "00000002"
      and uno("SELECT disponible FROM salas WHERE id = %s", sala2)["disponible"] is False)
 gabriel.post("/salas", data={"accion": "reportar", "sala": sala2, "motivo": "Otra cosa"})
-caso("Una sala ya reportada no se reporta dos veces", cuantos("reportes") == 1)
-caso("La Facultad ve el aviso en Inicio y en la pestaña Salas",
-     "Hay 1 sala que no funciona" in texto(admin.get("/menu")) and "Salas (1)" in texto(admin.get("/menu")))
+caso("Una clínica ya reportada no se reporta dos veces", cuantos("reportes") == 1)
+caso("La Facultad ve el aviso en Inicio y en la pestaña Clínicas",
+     "Hay 1 clínica que no funciona" in texto(admin.get("/menu")) and "Clínicas (1)" in texto(admin.get("/menu")))
 caso("La Facultad ve qué falla y quién lo reportó",
      all(t in texto(admin.get("/salas")) for t in ("No enciende la lámpara", "Grace Alvarado", "Marcar como solucionada")))
-caso("El estudiante no ve el aviso de la Facultad", "Hay 1 sala" not in texto(grace.get("/menu")))
-gabriel.post("/citas", data={"paciente_id": pid, "fecha": MANANA, "hora": "15:00", "sala": "Sala 2", "razon": "X"})
-caso("No se agenda una cita en una sala que no funciona",
-     uno("SELECT count(*) AS n FROM citas WHERE sala = 'Sala 2' AND hora = '15:00'")["n"] == 0)
+caso("El estudiante no ve el aviso de la Facultad", "Hay 1 clínica" not in texto(grace.get("/menu")))
+gabriel.post("/citas", data={"paciente_id": pid, "fecha": MANANA, "hora": "15:00", "sala": "Clínica 2", "razon": "X"})
+caso("No se agenda una cita en una clínica que no funciona",
+     uno("SELECT count(*) AS n FROM citas WHERE sala = 'Clínica 2' AND hora = '15:00'")["n"] == 0)
 reporte = falla()["id"]
 gabriel.post("/salas", data={"accion": "resolver", "reporte": reporte})
 caso("Solo la Facultad marca una falla como solucionada", falla() is not None)
 admin.post("/salas", data={"accion": "resolver", "reporte": reporte})
 resuelto = uno("SELECT * FROM reportes WHERE id = %s", reporte)
-caso("Al solucionarla la sala vuelve a estar disponible y el aviso desaparece",
+caso("Al solucionarla la clínica vuelve a estar disponible y el aviso desaparece",
      resuelto["resuelto_por"] == "00000007" and resuelto["resuelto_cuando"] is not None
      and uno("SELECT disponible FROM salas WHERE id = %s", sala2)["disponible"] is True
-     and "Salas (" not in texto(admin.get("/menu")))
+     and "Clínicas (" not in texto(admin.get("/menu")))
 caso("La bitacora guarda el reporte y la solucion",
-     all(t in texto(admin.get("/bitacora")) for t in ("Reportó que Sala 2 no funciona", "Solucionó la falla de Sala 2")))
+     all(t in texto(admin.get("/bitacora")) for t in ("Reportó que Clínica 2 no funciona", "Solucionó la falla de Clínica 2")))
 caso("La bitacora guarda lo que hizo cada quien", "Pasó a Luis Pérez" in texto(admin.get("/bitacora")))
 bitacora = texto(admin.get("/bitacora"))
 lugar = uno("SELECT lugar FROM bitacora ORDER BY id DESC LIMIT 1")["lugar"]

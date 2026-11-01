@@ -31,11 +31,11 @@ CUENTAS_INICIALES = {"00000001": ("Dra. Grace Mendoza", "profesor"),
 CLAVE_INICIAL = os.environ.get("CLAVE_INICIAL", "uam2026")  # se guarda cifrada, nunca en texto plano
 ROLES = {"profesor": "Profesor", "estudiante": "Estudiante", "admin": "Facultad"}
 # Pestanas de cada rol: (nombre, endpoint). La bitacora la revisan el profesor y la Facultad
-MENUS = {"estudiante": [("Inicio", "menu"), ("Mis pacientes", "pacientes"), ("Mis citas", "citas"), ("Salas", "salas")],
+MENUS = {"estudiante": [("Inicio", "menu"), ("Mis pacientes", "pacientes"), ("Mis citas", "citas"), ("Clínicas", "salas")],
          # El profesor solo revisa: no registra pacientes, citas ni tratamientos
-         "profesor": [("Inicio", "menu"), ("Pacientes", "pacientes"), ("Citas", "citas"), ("Salas", "salas"),
+         "profesor": [("Inicio", "menu"), ("Pacientes", "pacientes"), ("Citas", "citas"), ("Clínicas", "salas"),
                       ("Bitácora", "bitacora")],
-         "admin": [("Inicio", "menu"), ("Pacientes", "pacientes"), ("Citas", "citas"), ("Salas", "salas"),
+         "admin": [("Inicio", "menu"), ("Pacientes", "pacientes"), ("Citas", "citas"), ("Clínicas", "salas"),
                    ("Bitácora", "bitacora")]}
 QUE_HACE = {"estudiante": ["Registrar a sus pacientes y la razón por la que vienen",
                            "Agendar sus citas con la razón de cada cita",
@@ -45,7 +45,7 @@ QUE_HACE = {"estudiante": ["Registrar a sus pacientes y la razón por la que vie
                          "Ver el historial de qué le hizo cada estudiante a cada paciente",
                          "Revisar la bitácora del sistema",
                          "No registra pacientes, citas ni tratamientos"],
-            "admin": ["Crear las cuentas y administrar las salas",
+            "admin": ["Crear las cuentas y administrar las clínicas",
                       "Cambiar un paciente de estudiante archivando el trabajo del anterior",
                       "Revisar la bitácora del sistema"]}
 EN_PROCESO = {"Odontograma": "Foto presencial y odontograma digital",
@@ -70,13 +70,15 @@ CREATE TABLE IF NOT EXISTS citas (
 CREATE TABLE IF NOT EXISTS bitacora (
     id serial PRIMARY KEY, cuando timestamptz NOT NULL DEFAULT now(), cif text, nombre text, rol text, accion text);
 ALTER TABLE bitacora ADD COLUMN IF NOT EXISTS lugar text NOT NULL DEFAULT '';
+-- La tabla salas guarda las clinicas (unidades dentales); en_sala es la sala fisica que las agrupa
+ALTER TABLE salas ADD COLUMN IF NOT EXISTS en_sala int NOT NULL DEFAULT 1;
 ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS fallos int NOT NULL DEFAULT 0,
                     ADD COLUMN IF NOT EXISTS bloqueada_hasta timestamptz;
 CREATE TABLE IF NOT EXISTS reportes (
     id serial PRIMARY KEY, sala_id int NOT NULL REFERENCES salas ON DELETE CASCADE, cif text REFERENCES cuentas,
     motivo text NOT NULL, cuando timestamptz NOT NULL DEFAULT now(),
     resuelto_por text REFERENCES cuentas, resuelto_cuando timestamptz);
--- Una sala tiene a lo sumo una falla abierta: si ya la reportaron, la Facultad ya esta avisada
+-- Una clinica tiene a lo sumo una falla abierta: si ya la reportaron, la Facultad ya esta avisada
 CREATE UNIQUE INDEX IF NOT EXISTS una_falla_abierta ON reportes (sala_id) WHERE resuelto_cuando IS NULL;
 """
 
@@ -90,7 +92,7 @@ app.config.update(SESSION_COOKIE_SAMESITE="Lax", SESSION_COOKIE_SECURE="FLY_APP_
 
 FORMATO = "%d/%m/%Y"  # las fechas se muestran como dd/mm/aaaa; se eligen en el calendario
 MANAGUA = timezone(timedelta(hours=-6))  # Nicaragua no cambia de horario; el servidor esta en UTC
-MOTIVO_MAXIMO = 500  # caracteres del motivo de una sala que no funciona
+MOTIVO_MAXIMO = 500  # caracteres del motivo de una clinica que no funciona
 FALLOS_MAXIMOS, MINUTOS_BLOQUEO = 5, 15  # tras 5 claves equivocadas seguidas la cuenta espera 15 min
 
 
@@ -117,8 +119,9 @@ def crear_tablas():
             sql("INSERT INTO cuentas VALUES (%s, %s, %s, %s) ON CONFLICT DO NOTHING",
                 cif, nombre, rol, generate_password_hash(CLAVE_INICIAL))
         if not sql("SELECT 1 FROM salas").fetchone():
-            for nombre, disponible in (("Sala 1", True), ("Sala 2", True), ("Sala 3", False)):
-                sql("INSERT INTO salas (nombre, disponible) VALUES (%s, %s)", nombre, disponible)
+            for n in range(1, 21):  # las clinicas 1 a 10 estan en la Sala #1 y las 11 a 20 en la Sala #2
+                sql("INSERT INTO salas (nombre, disponible, en_sala) VALUES (%s, %s, %s)",
+                    f"Clínica {n}", n != 3, 1 if n <= 10 else 2)
 
 @app.cli.command("crear-tablas")
 def crear_tablas_cli():
@@ -144,9 +147,9 @@ def error_de_cita(fecha, hora, sala):
     if cuando < datetime.now(MANAGUA):
         return "No se pueden agendar citas en una fecha u hora que ya pasó."
     if sala and sql("SELECT 1 FROM salas WHERE nombre = %s AND NOT disponible", sala).fetchone():
-        return "Esa sala no está disponible."
+        return "Esa clínica no está disponible."
     if sala and sql("SELECT 1 FROM citas WHERE sala = %s AND fecha = %s AND hora = %s", sala, fecha, hora).fetchone():
-        return "Esa sala ya está ocupada a esa hora."
+        return "Esa clínica ya está ocupada a esa hora."
     return None
 
 app.jinja_env.filters["dmy"] = dmy
@@ -195,7 +198,7 @@ def comun():
     """Datos que necesita la plantilla base en todas las paginas."""
     cif, nombre, rol = quien()
     pestanas, fallas = MENUS[rol], 0
-    if rol == "admin":  # la Facultad ve en la pestana cuantas salas reportaron los estudiantes
+    if rol == "admin":  # la Facultad ve en la pestana cuantas clinicas reportaron los estudiantes
         fallas = sql("SELECT count(*) AS n FROM reportes WHERE resuelto_cuando IS NULL").fetchone()["n"]
         pestanas = [(f"{t} ({fallas})" if e == "salas" and fallas else t, e) for t, e in pestanas]
     return {"cif": cif, "nombre": nombre, "rol": ROLES[rol], "es_rol": rol, "pestanas": pestanas, "fallas": fallas}
@@ -218,11 +221,11 @@ def nombre_de(cif):
     return cuentas()[cif][0] if cif in cuentas() else "sin asignar"
 
 def todas_las_salas():
-    """Las salas y, si tienen una falla sin solucionar, su motivo y quién la reportó."""
+    """Las clinicas, ordenadas por sala, y si tienen una falla sin solucionar, su motivo y quién la reportó."""
     return sql("SELECT s.*, r.id AS reporte_id, r.motivo, r.cif AS reporto,"
                " to_char(r.cuando AT TIME ZONE 'America/Managua', 'DD/MM/YYYY HH24:MI') AS reportada"
                " FROM salas s LEFT JOIN reportes r ON r.sala_id = s.id AND r.resuelto_cuando IS NULL"
-               " ORDER BY s.id").fetchall()
+               " ORDER BY s.en_sala, s.id").fetchall()
 
 
 @app.before_request
@@ -442,8 +445,8 @@ def citas():
 
 @app.route("/salas", methods=["GET", "POST"])
 def salas():
-    """Plano de la clínica: cada sala con un check si está disponible o una X si no.
-    El estudiante reporta las salas que no funcionan y la Facultad las marca como solucionadas."""
+    """Plano de las salas: cada clínica con un check si está disponible o una X si no.
+    El estudiante reporta las clínicas que no funcionan y la Facultad las marca como solucionadas."""
     cif, _, rol = quien()
     if request.method == "POST":
         accion = request.form.get("accion")
@@ -451,7 +454,7 @@ def salas():
             s = sql("SELECT id, nombre FROM salas WHERE id = %s", request.form.get("sala", type=int)).fetchone()
             motivo = request.form.get("motivo", "").strip()
             if not s or not motivo:
-                flash("Elija la sala y escriba qué es lo que no funciona.", "error")
+                flash("Elija la clínica y escriba qué es lo que no funciona.", "error")
             elif len(motivo) > MOTIVO_MAXIMO:
                 flash(f"El motivo puede tener hasta {MOTIVO_MAXIMO} caracteres.", "error")
             else:
@@ -477,14 +480,14 @@ def salas():
             if r:
                 flash(f"{s['nombre']} quedó solucionada y disponible otra vez.", "ok")
         elif rol == "admin" and accion == "agregar":
-            nombre = request.form.get("nombre", "").strip()
-            if not nombre:
-                flash("Escriba el nombre de la sala.", "error")
+            nombre, en_sala = request.form.get("nombre", "").strip(), request.form.get("en_sala", type=int)
+            if not nombre or not en_sala or en_sala < 1:
+                flash("Escriba el nombre de la clínica y la sala donde está.", "error")
             elif sql("SELECT 1 FROM salas WHERE lower(nombre) = lower(%s)", nombre).fetchone():
-                flash("Ya existe una sala con ese nombre.", "error")
+                flash("Ya existe una clínica con ese nombre.", "error")
             else:
-                sql("INSERT INTO salas (nombre) VALUES (%s)", nombre)
-                anotar(f"Agregó {nombre}")
+                sql("INSERT INTO salas (nombre, en_sala) VALUES (%s, %s)", nombre, en_sala)
+                anotar(f"Agregó {nombre} en la Sala #{en_sala}")
                 flash(f"{nombre} agregada.", "ok")
         elif rol == "admin":
             s = sql("UPDATE salas SET disponible = NOT disponible WHERE id = %s RETURNING nombre, disponible",
@@ -557,7 +560,7 @@ def expediente_pdf(pid):
         y -= 10
         linea("Citas", "Helvetica-Bold", 12)
         for c in agenda:
-            linea(f"- {dmy(c['fecha'])} {c['hora']} · {c['razon']} · {c['sala'] or 'sin sala'}", "Helvetica", 10)
+            linea(f"- {dmy(c['fecha'])} {c['hora']} · {c['razon']} · {c['sala'] or 'sin clínica'}", "Helvetica", 10)
 
     y -= 14
     linea("Consentimiento informado", "Helvetica-Bold", 12)

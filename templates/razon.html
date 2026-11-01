@@ -17,10 +17,11 @@
       <p class="tenue">Si ya quedó agendada, se crea de una vez.</p>
       <div class="campo"><span>Fecha</span><input type="date" name="fecha" min="{{ hoy }}"></div>
       <div class="campo"><span>Hora</span><input type="time" name="hora"></div>
-      <div class="campo"><span>Sala</span>
+      <div class="campo"><span>Clínica</span>
         <select name="sala">
           <option value="">Sin asignar</option>
-          {% for s in salas %}<option value="{{ s.nombre }}"{{ ' disabled' if not s.disponible }}>{{ s.nombre }}{{ '' if s.disponible else ' (no disponible)' }}</option>{% endfor %}
+          {% for grupo in salas|groupby('en_sala') %}<optgroup label="Sala #{{ grupo.grouper }}">
+            {% for s in grupo.list %}<option value="{{ s.nombre }}"{{ ' disabled' if not s.disponible }}>{{ s.nombre }}{{ '' if s.disponible else ' (no disponible)' }}</option>{% endfor %}</optgroup>{% endfor %}
         </select>
       </div>
       <div class="campo"><span>Razón de la cita</span><input name="razon_cita" placeholder="Si se deja vacío, se usa la razón de la consulta"></div>

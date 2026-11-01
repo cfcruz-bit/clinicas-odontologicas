@@ -15,10 +15,11 @@
       </div>
       <div class="campo"><span>Fecha: *</span><input type="date" name="fecha" value="{{ hoy }}" min="{{ hoy }}" required></div>
       <div class="campo"><span>Hora: *</span><input type="time" name="hora" required></div>
-      <div class="campo"><span>Sala</span>
+      <div class="campo"><span>Clínica</span>
         <select name="sala">
           <option value="">Sin asignar</option>
-          {% for s in salas %}<option value="{{ s.nombre }}"{{ ' disabled' if not s.disponible }}>{{ s.nombre }}{{ '' if s.disponible else ' (no disponible)' }}</option>{% endfor %}
+          {% for grupo in salas|groupby('en_sala') %}<optgroup label="Sala #{{ grupo.grouper }}">
+            {% for s in grupo.list %}<option value="{{ s.nombre }}"{{ ' disabled' if not s.disponible }}>{{ s.nombre }}{{ '' if s.disponible else ' (no disponible)' }}</option>{% endfor %}</optgroup>{% endfor %}
         </select>
       </div>
       <div class="campo"><span>Razón de la cita: *</span><input name="razon" placeholder="¿Para qué viene a esta cita?"></div>
@@ -35,7 +36,7 @@
   <h2>{{ "Mis citas" if es_rol == "estudiante" else "Citas" }}</h2>
   <div class="tabla">
     <table>
-      <thead><tr><th>Fecha</th><th>Hora</th><th>Paciente</th><th>Razón de la cita</th><th>Sala</th>
+      <thead><tr><th>Fecha</th><th>Hora</th><th>Paciente</th><th>Razón de la cita</th><th>Clínica</th>
         {% if es_rol != "estudiante" %}<th>Estudiante</th>{% else %}<th></th>{% endif %}</tr></thead>
       <tbody>
         {% for c in citas|sort(attribute='fecha,hora') %}

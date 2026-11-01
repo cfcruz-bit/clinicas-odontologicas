@@ -192,7 +192,7 @@ td select { width: auto; min-height: 26px; padding: 1px 4px; }
 .razon { font-size: 13px; font-weight: 400; color: var(--tenue); }
 .razon::before { content: "· "; }
 
-/* plano de la clinica: cada sala con un check si esta disponible o una X si no */
+/* plano de las salas: cada clinica con un check si esta disponible o una X si no */
 .plano { background: #fafbfc; border: 1px solid var(--borde); padding: 10px; margin-bottom: 12px; }
 .plano-titulo { font-weight: 600; margin-bottom: 8px; }
 .plano-salas { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; }
@@ -203,8 +203,6 @@ td select { width: auto; min-height: 26px; padding: 1px 4px; }
 .plano .marca-sala { display: block; font-size: 24px; line-height: 1.1; color: var(--verde); }
 .plano .sala.ocupada .marca-sala { color: var(--rojo); }
 .plano .sala small { display: block; color: var(--tenue); }
-.plano-pasillo { margin-top: 8px; padding: 6px; text-align: center; color: var(--tenue);
-                 background: #eef0f2; border: 1px dashed var(--borde); }
 
 /* hoja de consentimiento para imprimir */
 .hoja { max-width: 720px; margin: 0 auto; }

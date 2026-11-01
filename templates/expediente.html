@@ -43,7 +43,7 @@
   <h2>Citas</h2>
   <div class="tabla">
     <table>
-      <thead><tr><th>Fecha</th><th>Hora</th><th>Razón de la cita</th><th>Sala</th></tr></thead>
+      <thead><tr><th>Fecha</th><th>Hora</th><th>Razón de la cita</th><th>Clínica</th></tr></thead>
       <tbody>
         {% for c in citas|sort(attribute='fecha,hora') %}
         <tr><td class="fecha">{{ c.fecha|dmy }}</td><td>{{ c.hora }}</td><td>{{ c.razon }}</td><td>{{ c.sala or '' }}</td></tr>
