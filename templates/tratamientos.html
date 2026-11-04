@@ -16,7 +16,7 @@
     </table>
   </div>
 
-  {% if es_rol == "estudiante" %}
+  {% if es_rol == "estudiante" and not p.finalizado %}
   <form method="post">
     <input type="hidden" name="accion" value="anotar">
     <fieldset>
@@ -47,14 +47,14 @@
   <div class="tabla">
     <table>
       <thead><tr><th>Procedimiento</th><th>Diente</th><th class="num">Precio</th><th>Estudiante</th><th>Anotado</th><th>Estado</th>
-        {% if es_rol == "estudiante" %}<th></th>{% endif %}</tr></thead>
+        {% if es_rol == "estudiante" and not p.finalizado %}<th></th>{% endif %}</tr></thead>
       <tbody>
         {% for t in plan %}
         <tr>
           <td>{{ t.nombre }}</td><td>{{ t.diente or '—' }}</td><td class="num">{{ t.precio|cordobas }}</td>
           <td>{{ nombre_de(t.estudiante) }}</td><td class="fecha">{{ t.anotado|dmy }}</td>
           <td class="{{ 'verde' if t.realizado else 'amarillo' }}">{{ "Realizado el " ~ t.realizado|dmy if t.realizado else "Pendiente" }}</td>
-          {% if es_rol == "estudiante" %}
+          {% if es_rol == "estudiante" and not p.finalizado %}
           <td class="acciones">
             {% if not t.realizado %}
             <form method="post" class="en-linea">

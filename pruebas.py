@@ -364,6 +364,49 @@ admin.post("/cuentas", data={"accion": "clave", "cif": "00000009", "clave": "otr
 caso("Ponerle una contraseña nueva desbloquea la cuenta",
      m.app.test_client().post("/", data={"cif": "00000009", "clave": "otra-clave-2"}).status_code == 302)
 
+# Finalizar y eliminar pacientes: solo la Facultad
+cerrar = f"/pacientes/{pid}/cerrar"
+caso("Solo la Facultad finaliza o elimina pacientes",
+     gabriel.get(cerrar).status_code == 302 and profe.get(cerrar).status_code == 302)
+gabriel.post(cerrar, data={"accion": "finalizar", "texto": "Alta"})
+profe.post(cerrar, data={"accion": "finalizar", "texto": "Alta"})
+caso("Ni el estudiante ni el profesor lo finalizan por la fuerza", paciente()["finalizado"] is None)
+admin.post(cerrar, data={"accion": "finalizar", "texto": ""})
+caso("Para finalizarlo hay que decir como termino", paciente()["finalizado"] is None)
+admin.post(cerrar, data={"accion": "finalizar", "texto": "Completó el plan y fue dado de alta"})
+caso("La Facultad da por finalizado el tratamiento",
+     paciente()["finalizado"] == m.hoy() and paciente()["finalizado_por"] == "00000007"
+     and "Completó el plan y fue dado de alta" in texto(gabriel.get(f"/pacientes/{pid}")))
+dientes_antes, citas_antes = cuantos("dientes"), cuantos("citas")
+gabriel.post(odonto, data={"accion": "diente", "diente": "21", "estado": "Caries"})
+gabriel.post("/citas", data={"paciente_id": pid, "fecha": MANANA, "hora": "16:00", "razon": "Control"})
+gabriel.post(f"/pacientes/{pid}/editar", data={"nombre": "Cambiado", "cedula": "T-100", "telefono": ""})
+caso("Finalizado, el estudiante ya no cambia el odontograma, las citas ni los datos",
+     cuantos("dientes") == dientes_antes and cuantos("citas") == citas_antes and paciente()["nombre"] == "Luis Pérez")
+caso("Finalizado, ya no sale para agendarle citas",
+     f'<option value="{pid}"' not in texto(gabriel.get("/citas")))
+admin.post(trat, data={"accion": "abono", "monto": "300.50"})
+caso("Finalizado, la Facultad todavia registra abonos para saldar la cuenta", cuantos("abonos") == 2)
+caso("Finalizado, ya no se cambia de estudiante", admin.get(f"/pacientes/{pid}/traspaso").status_code == 302)
+admin.post(cerrar, data={"accion": "reabrir"})
+gabriel.post(odonto, data={"accion": "diente", "diente": "21", "estado": "Caries"})
+caso("Si se reabre, el estudiante vuelve a poder cambiarlo",
+     paciente()["finalizado"] is None and cuantos("dientes") == dientes_antes + 1)
+
+gabriel.post("/pacientes", data={"accion": "registrar", "nombre": "Repetido Por Error", "cedula": "T-300"})
+borrar = uno("SELECT id FROM pacientes WHERE cedula = 'T-300'")["id"]
+gabriel.post(f"/citas", data={"paciente_id": borrar, "fecha": MANANA, "hora": "17:00", "razon": "Valoración"})
+admin.post(f"/pacientes/{borrar}/cerrar", data={"accion": "eliminar", "cedula": "T-999", "texto": "Duplicado"})
+admin.post(f"/pacientes/{borrar}/cerrar", data={"accion": "eliminar", "cedula": "T-300", "texto": ""})
+caso("Para eliminarlo hay que escribir su cedula y el motivo", cuantos("pacientes") == 3)
+gabriel.post(f"/pacientes/{borrar}/cerrar", data={"accion": "eliminar", "cedula": "T-300", "texto": "Duplicado"})
+caso("El estudiante no elimina pacientes", cuantos("pacientes") == 3)
+admin.post(f"/pacientes/{borrar}/cerrar", data={"accion": "eliminar", "cedula": "T-300", "texto": "Duplicado"})
+caso("La Facultad elimina al paciente con todo su expediente",
+     cuantos("pacientes") == 2 and uno("SELECT 1 FROM citas WHERE paciente_id = %s", borrar) is None)
+caso("La eliminacion queda en la bitacora con el motivo",
+     "Eliminó al paciente Repetido Por Error (T-300): Duplicado" in texto(admin.get("/bitacora")))
+
 m.crear_tablas()
 caso("Crear las tablas otra vez no borra ni duplica nada", cuantos("pacientes") == 2 and cuantos("cuentas") == 6)
 

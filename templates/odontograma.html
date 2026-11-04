@@ -3,7 +3,7 @@
 {% macro diente(d) %}
   {% set f = dientes.get(d) %}{% set estado = f.estado if f else 'Sano' %}
   {% set titulo = d ~ ': ' ~ estado ~ (' · ' ~ f.nota if f and f.nota else '') %}
-  {% if es_rol == "estudiante" %}
+  {% if es_rol == "estudiante" and not p.finalizado %}
   <a class="diente {{ 'resaltado' if d == elegido }}" data-estado="{{ estado }}" style="--color: {{ estados[estado] }}"
      href="{{ url_for('odontograma', pid=p.id, diente=d) }}#editar" title="{{ titulo }}"><span></span>{{ d }}</a>
   {% else %}
@@ -24,12 +24,12 @@
     </li>
   </ol>
 
-  {% if es_rol == "estudiante" and p.odonto_revision in ('', 'devuelta') %}
+  {% if es_rol == "estudiante" and not p.finalizado and p.odonto_revision in ('', 'devuelta') %}
   <form method="post" class="acciones sin-imprimir">
     <input type="hidden" name="accion" value="pedir">
     <button class="btn">Pedir la revisión del profesor</button>
   </form>
-  {% elif es_rol == "profesor" and p.odonto_revision == 'pedida' %}
+  {% elif es_rol == "profesor" and p.odonto_revision == 'pedida' and not p.finalizado %}
   <form method="post">
     <fieldset>
       <legend>Revisión del odontograma</legend>
@@ -52,7 +52,7 @@
       {% for estado, color in estados.items() %}<span><i style="background: {{ color }}"></i>{{ estado }}{{ ' (✗)' if estado == 'Extraído' }}</span>{% endfor %}
     </div>
   </div>
-  {% if es_rol == "estudiante" %}<p class="tenue sin-imprimir">Toque un diente para anotar su estado.</p>{% endif %}
+  {% if es_rol == "estudiante" and not p.finalizado %}<p class="tenue sin-imprimir">Toque un diente para anotar su estado.</p>{% endif %}
 
   {% if elegido %}
   {% set f = dientes.get(elegido) %}
@@ -90,7 +90,7 @@
   </div>
 
   <h2>Fotos presenciales</h2>
-  {% if es_rol == "estudiante" %}
+  {% if es_rol == "estudiante" and not p.finalizado %}
   <form method="post" enctype="multipart/form-data" class="sin-imprimir">
     <input type="hidden" name="accion" value="foto">
     <fieldset>

@@ -116,6 +116,10 @@ CREATE TABLE IF NOT EXISTS abonos (
     id serial PRIMARY KEY, paciente_id int NOT NULL REFERENCES pacientes ON DELETE CASCADE,
     monto numeric(10, 2) NOT NULL CHECK (monto > 0), cif text REFERENCES cuentas,
     cuando timestamptz NOT NULL DEFAULT now());
+-- Tratamiento finalizado: la Facultad lo cierra y ya nadie mas cambia el expediente
+ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS finalizado text,
+                      ADD COLUMN IF NOT EXISTS finalizado_por text REFERENCES cuentas,
+                      ADD COLUMN IF NOT EXISTS finalizado_resumen text NOT NULL DEFAULT '';
 CREATE TABLE IF NOT EXISTS materiales (
     id serial PRIMARY KEY, nombre text NOT NULL UNIQUE, unidad text NOT NULL DEFAULT '',
     cantidad int NOT NULL CHECK (cantidad >= 0), minimo int NOT NULL DEFAULT 0 CHECK (minimo >= 0));
@@ -275,17 +279,21 @@ def comun():
             "fallas": avisos.get("salas", 0), "bajos": avisos.get("inventario", 0)}
 
 def paciente(pid):
-    """El paciente, solo si el usuario puede verlo: cada estudiante ve unicamente los suyos."""
+    """El paciente, solo si el usuario puede verlo: cada estudiante ve unicamente los suyos.
+    Si la Facultad dio por finalizado su tratamiento, solo ella puede cambiar algo (por ejemplo, un abono)."""
     cif, _, rol = quien()
     p = sql("SELECT * FROM pacientes WHERE id = %s", pid).fetchone()
     if p and rol == "estudiante" and p["estudiante"] != cif:
+        return None
+    if p and p["finalizado"] and rol != "admin" and request.method == "POST":
+        flash(f"El tratamiento de {p['nombre']} ya terminó: la Facultad lo dio por finalizado.", "error")
         return None
     return p
 
 def mis_pacientes():
     # La firma solo importa para saber si ya firmo; no hace falta traer la imagen
     cif, _, rol = quien()
-    return sql("SELECT id, nombre, cedula, telefono, razon, estudiante, aprobado, firma <> '' AS firma"
+    return sql("SELECT id, nombre, cedula, telefono, razon, estudiante, aprobado, firma <> '' AS firma, finalizado"
                " FROM pacientes WHERE %s OR estudiante = %s ORDER BY id", rol != "estudiante", cif).fetchall()
 
 def nombre_de(cif):
@@ -447,7 +455,7 @@ def expediente(pid):
 def traspaso(pid):
     """Cambiar de estudiante: el trabajo del anterior se archiva con el resumen de lo que le hizo."""
     p = paciente(pid)
-    if not p or quien()[2] != "admin":
+    if not p or quien()[2] != "admin" or p["finalizado"]:  # un paciente finalizado ya no cambia de estudiante
         return redirect(url_for("pacientes"))
     estudiantes = [(c, n) for c, (n, r) in cuentas().items() if r == "estudiante" and c not in g.inactivas]
     if request.method == "POST":
@@ -467,6 +475,45 @@ def traspaso(pid):
             flash(f"{p['nombre']} pasó a {nombre_de(nuevo)}. El trabajo anterior quedó archivado.", "ok")
             return redirect(url_for("expediente", pid=pid))
     return render_template("traspaso.html", **comun(), p=p, estudiantes=estudiantes, nombre_de=nombre_de)
+
+
+@app.route("/pacientes/<int:pid>/cerrar", methods=["GET", "POST"])
+def cerrar(pid):
+    """Solo la Facultad: da por finalizado el tratamiento del paciente, lo reabre o elimina al paciente."""
+    p = paciente(pid)
+    cif, _, rol = quien()
+    if not p or rol != "admin":
+        return redirect(url_for("pacientes"))
+    if request.method == "POST":
+        accion, texto = request.form.get("accion"), request.form.get("texto", "").strip()
+        if accion == "finalizar" and not p["finalizado"]:
+            if not texto:
+                flash("Escriba cómo terminó el tratamiento del paciente.", "error")
+            else:
+                sql("UPDATE pacientes SET finalizado = %s, finalizado_por = %s, finalizado_resumen = %s WHERE id = %s",
+                    hoy(), cif, texto, pid)
+                anotar(f"Dio por finalizado el tratamiento de {p['nombre']}: {texto}")
+                flash(f"Tratamiento de {p['nombre']} finalizado. Su expediente ya no se puede cambiar.", "ok")
+                return redirect(url_for("expediente", pid=pid))
+        elif accion == "reabrir" and p["finalizado"]:
+            sql("UPDATE pacientes SET finalizado = NULL, finalizado_por = NULL, finalizado_resumen = '' WHERE id = %s",
+                pid)
+            anotar(f"Reabrió el tratamiento de {p['nombre']}")
+            flash(f"Tratamiento de {p['nombre']} reabierto.", "ok")
+            return redirect(url_for("expediente", pid=pid))
+        elif accion == "eliminar":
+            # Se pide la cedula para que no se borre a nadie por un clic equivocado
+            if request.form.get("cedula", "").strip() != p["cedula"] or not texto:
+                flash("Para eliminarlo escriba la cédula del paciente y el motivo.", "error")
+            else:
+                with bd().transaction():  # sus citas, odontograma, fotos, tratamientos y abonos se borran con el
+                    sql("DELETE FROM pacientes WHERE id = %s", pid)
+                    anotar(f"Eliminó al paciente {p['nombre']} ({p['cedula']}): {texto}")
+                flash(f"{p['nombre']} fue eliminado con todo su expediente.", "ok")
+                return redirect(url_for("pacientes"))
+        return redirect(url_for("cerrar", pid=pid))
+    return render_template("cerrar.html", **comun(), p=p, nombre_de=nombre_de, cuenta=cuenta_de(pid),
+                           pendientes=[t for t in plan_de(pid) if not t["realizado"]])
 
 
 @app.route("/pacientes/<int:pid>/consentimiento", methods=["GET", "POST"])
@@ -629,7 +676,8 @@ def odontograma(pid):
     elegido = request.args.get("diente", type=int)
     return render_template(
         "odontograma.html", **comun(), p=p, nombre_de=nombre_de, arriba=ARRIBA, abajo=ABAJO, estados=ESTADOS,
-        revisiones=REVISIONES, elegido=elegido if rol == "estudiante" and elegido in DIENTES else None,
+        revisiones=REVISIONES,
+        elegido=elegido if rol == "estudiante" and not p["finalizado"] and elegido in DIENTES else None,
         dientes={f["diente"]: f for f in sql("SELECT * FROM dientes WHERE paciente_id = %s", pid)},
         fotos=sql("SELECT id, cif, to_char(cuando AT TIME ZONE 'America/Managua', 'DD/MM/YYYY HH24:MI') AS cuando"
                   " FROM fotos WHERE paciente_id = %s ORDER BY id DESC", pid).fetchall())
@@ -877,6 +925,9 @@ def expediente_pdf(pid):
                             ("Estudiante a cargo", nombre_de(p["estudiante"])),
                             ("Estado", "Aprobado" if p["aprobado"] else "Pendiente de aprobación")):
         linea(f"{etiqueta}: {valor}")
+    if p["finalizado"]:
+        linea(f"Tratamiento finalizado el {dmy(p['finalizado'])} por {nombre_de(p['finalizado_por'])}: "
+              f"{p['finalizado_resumen']}")
 
     y -= 10
     linea("Trabajo por estudiante", "Helvetica-Bold", 12)

@@ -2,6 +2,10 @@
 {% block titulo %}{{ p.nombre }} - Clínicas Odontológicas{% endblock %}
 {% block contenido %}
   <p><a href="{{ url_for('pacientes') }}">&larr; Pacientes</a></p>
+  {% if p.finalizado %}
+  <div class="mensaje ok">Tratamiento finalizado el {{ p.finalizado|dmy }} por {{ nombre_de(p.finalizado_por) }}:
+    {{ p.finalizado_resumen }}. El expediente queda como historial y ya no se puede cambiar.</div>
+  {% endif %}
 
   <div class="ficha">
     <div>
@@ -15,12 +19,13 @@
       </div>
     </div>
     <div class="en-linea">
-      {% if es_rol == "estudiante" %}<a class="btn" href="{{ url_for('editar', pid=p.id) }}">Corregir datos</a>
+      {% if es_rol == "estudiante" and not p.finalizado %}<a class="btn" href="{{ url_for('editar', pid=p.id) }}">Corregir datos</a>
       <a class="btn" href="{{ url_for('razon', pid=p.id) }}">Cambiar la razón</a>{% endif %}
       <a class="btn" href="{{ url_for('odontograma', pid=p.id) }}">Odontograma</a>
       <a class="btn" href="{{ url_for('tratamientos', pid=p.id) }}">Tratamientos y cobros</a>
       <a class="btn" href="{{ url_for('consentimiento', pid=p.id) }}">Consentimiento</a>
-      {% if es_rol == "admin" %}<a class="btn" href="{{ url_for('traspaso', pid=p.id) }}">Cambiar de estudiante</a>{% endif %}
+      {% if es_rol == "admin" %}{% if not p.finalizado %}<a class="btn" href="{{ url_for('traspaso', pid=p.id) }}">Cambiar de estudiante</a>{% endif %}
+      <a class="btn peligro" href="{{ url_for('cerrar', pid=p.id) }}">{{ "Reabrir o eliminar" if p.finalizado else "Finalizar o eliminar" }}</a>{% endif %}
     </div>
   </div>
 

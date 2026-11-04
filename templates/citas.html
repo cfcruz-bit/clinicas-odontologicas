@@ -10,7 +10,7 @@
       <div class="campo"><span>Paciente: *</span>
         <select name="paciente_id">
           <option value="">Seleccione…</option>
-          {% for p in pacientes %}<option value="{{ p.id }}">{{ p.nombre }} ({{ p.cedula }})</option>{% endfor %}
+          {% for p in pacientes if not p.finalizado %}<option value="{{ p.id }}">{{ p.nombre }} ({{ p.cedula }})</option>{% endfor %}
         </select>
       </div>
       <div class="campo"><span>Fecha: *</span><input type="date" name="fecha" value="{{ hoy }}" min="{{ hoy }}" required></div>
