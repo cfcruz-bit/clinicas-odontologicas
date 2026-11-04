@@ -1,19 +1,19 @@
 {% extends "base.html" %}
-{% block titulo %}Finalizar o eliminar a {{ p.nombre }} - Clínicas Odontológicas{% endblock %}
+{% block titulo %}Dar de alta o eliminar a {{ p.nombre }} - Clínicas Odontológicas{% endblock %}
 {% block contenido %}
   <p><a href="{{ url_for('expediente', pid=p.id) }}">&larr; Volver al expediente</a></p>
-  <h2>Finalizar o eliminar a {{ p.nombre }}</h2>
+  <h2>Dar de alta o eliminar a {{ p.nombre }}</h2>
   <p>Cédula {{ p.cedula }} · Estudiante a cargo: {{ nombre_de(p.estudiante) }}</p>
 
   {% if p.finalizado %}
-  <div class="mensaje ok">El tratamiento se dio por finalizado el {{ p.finalizado|dmy }} ({{ nombre_de(p.finalizado_por) }}):
+  <div class="mensaje ok">Recibió el alta el {{ p.finalizado|dmy }} ({{ nombre_de(p.finalizado_por) }}):
     {{ p.finalizado_resumen }}</div>
   <form method="post">
     <input type="hidden" name="accion" value="reabrir">
     <fieldset>
-      <legend>Reabrir el tratamiento</legend>
+      <legend>Anular el alta</legend>
       <p class="tenue">El estudiante a cargo vuelve a poder cambiar el expediente.</p>
-      <div class="acciones"><button class="btn">Reabrir</button></div>
+      <div class="acciones"><button class="btn">Anular el alta</button></div>
     </fieldset>
   </form>
   {% else %}
@@ -21,18 +21,18 @@
   <div class="mensaje aviso">
     {% if pendientes %}Quedan {{ pendientes|length }} {{ "tratamiento pendiente" if pendientes|length == 1 else "tratamientos pendientes" }}
       en el plan: {{ pendientes|map(attribute='nombre')|join(', ') }}.{% endif %}
-    {% if cuenta.saldo > 0 %}El paciente debe {{ cuenta.saldo|cordobas }}; los abonos se pueden registrar después de finalizar.{% endif %}
+    {% if cuenta.saldo > 0 %}El paciente debe {{ cuenta.saldo|cordobas }}; los abonos se pueden registrar después de darle de alta.{% endif %}
   </div>
   {% endif %}
   <form method="post">
     <input type="hidden" name="accion" value="finalizar">
     <fieldset>
-      <legend>Dar por finalizado el tratamiento</legend>
+      <legend>Dar de alta al paciente</legend>
       <p class="tenue">El expediente queda como historial: se sigue viendo y descargando, pero ni el estudiante ni el
-         profesor pueden cambiar nada. Si fue un error, se puede reabrir.</p>
-      <div class="campo arriba"><span>¿Cómo terminó? *</span>
-        <textarea name="texto" rows="3" required placeholder="Ej.: completó el plan de tratamiento y fue dado de alta."></textarea></div>
-      <div class="acciones"><button class="btn">Dar por finalizado</button></div>
+         profesor pueden cambiar nada. Si fue un error, se puede anular el alta.</p>
+      <div class="campo arriba"><span>¿Cómo terminó el tratamiento? *</span>
+        <textarea name="texto" rows="3" required placeholder="Ej.: completó todo el plan de tratamiento."></textarea></div>
+      <div class="acciones"><button class="btn">Dar de alta</button></div>
     </fieldset>
   </form>
   {% endif %}
@@ -42,7 +42,7 @@
     <fieldset>
       <legend>Eliminar al paciente</legend>
       <p class="rojo">Se borra todo su expediente: citas, odontograma, fotos, tratamientos, abonos y consentimiento. No se
-         puede deshacer. Si el paciente solo terminó su tratamiento, use "Dar por finalizado".</p>
+         puede deshacer. Si el paciente solo terminó su tratamiento, use "Dar de alta".</p>
       <div class="campo arriba"><span>Motivo: *</span>
         <textarea name="texto" rows="2" required placeholder="Ej.: se registró dos veces por error."></textarea></div>
       <div class="campo"><span>Escriba su cédula: *</span>

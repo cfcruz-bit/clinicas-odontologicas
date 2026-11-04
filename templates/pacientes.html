@@ -38,7 +38,7 @@
           {% if es_rol != "estudiante" %}<td>{{ nombre_de(p.estudiante) }}</td>{% endif %}
           <td class="{{ 'verde' if p.aprobado else 'amarillo' }}">{{ "Aprobado" if p.aprobado else "Pendiente" }}</td>
           <td class="{{ 'verde' if p.firma else 'amarillo' }}">{{ "Firmado" if p.firma else "Falta firma" }}</td>
-          <td class="{{ 'tenue' if p.finalizado else 'verde' }}">{{ "Finalizado" if p.finalizado else "En curso" }}</td>
+          <td class="{{ 'tenue' if p.finalizado else 'verde' }}">{{ "De alta" if p.finalizado else "En tratamiento" }}</td>
           <td class="acciones">
             {% if es_rol == "profesor" %}
             <form method="post" class="en-linea">
@@ -50,7 +50,7 @@
             <a class="btn chico" href="{{ url_for('expediente_pdf', pid=p.id) }}">Descargar expediente (PDF)</a>
             {% elif es_rol == "admin" %}
             {% if not p.finalizado %}<a class="btn chico" href="{{ url_for('traspaso', pid=p.id) }}">Cambiar de estudiante</a>{% endif %}
-            <a class="btn chico" href="{{ url_for('cerrar', pid=p.id) }}">{{ "Reabrir o eliminar" if p.finalizado else "Finalizar o eliminar" }}</a>
+            <a class="btn chico" href="{{ url_for('cerrar', pid=p.id) }}">{{ "Anular el alta o eliminar" if p.finalizado else "Dar de alta o eliminar" }}</a>
             {% endif %}
           </td>
         </tr>

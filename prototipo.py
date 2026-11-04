@@ -116,7 +116,7 @@ CREATE TABLE IF NOT EXISTS abonos (
     id serial PRIMARY KEY, paciente_id int NOT NULL REFERENCES pacientes ON DELETE CASCADE,
     monto numeric(10, 2) NOT NULL CHECK (monto > 0), cif text REFERENCES cuentas,
     cuando timestamptz NOT NULL DEFAULT now());
--- Tratamiento finalizado: la Facultad lo cierra y ya nadie mas cambia el expediente
+-- Alta del paciente (finalizado): la Facultad lo cierra y ya nadie mas cambia el expediente
 ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS finalizado text,
                       ADD COLUMN IF NOT EXISTS finalizado_por text REFERENCES cuentas,
                       ADD COLUMN IF NOT EXISTS finalizado_resumen text NOT NULL DEFAULT '';
@@ -280,13 +280,13 @@ def comun():
 
 def paciente(pid):
     """El paciente, solo si el usuario puede verlo: cada estudiante ve unicamente los suyos.
-    Si la Facultad dio por finalizado su tratamiento, solo ella puede cambiar algo (por ejemplo, un abono)."""
+    Si la Facultad le dio de alta, solo ella puede cambiar algo (por ejemplo, un abono)."""
     cif, _, rol = quien()
     p = sql("SELECT * FROM pacientes WHERE id = %s", pid).fetchone()
     if p and rol == "estudiante" and p["estudiante"] != cif:
         return None
     if p and p["finalizado"] and rol != "admin" and request.method == "POST":
-        flash(f"El tratamiento de {p['nombre']} ya terminó: la Facultad lo dio por finalizado.", "error")
+        flash(f"{p['nombre']} ya recibió el alta: su expediente ya no se puede cambiar.", "error")
         return None
     return p
 
@@ -479,7 +479,7 @@ def traspaso(pid):
 
 @app.route("/pacientes/<int:pid>/cerrar", methods=["GET", "POST"])
 def cerrar(pid):
-    """Solo la Facultad: da por finalizado el tratamiento del paciente, lo reabre o elimina al paciente."""
+    """Solo la Facultad: da de alta al paciente, anula el alta o elimina al paciente."""
     p = paciente(pid)
     cif, _, rol = quien()
     if not p or rol != "admin":
@@ -492,14 +492,14 @@ def cerrar(pid):
             else:
                 sql("UPDATE pacientes SET finalizado = %s, finalizado_por = %s, finalizado_resumen = %s WHERE id = %s",
                     hoy(), cif, texto, pid)
-                anotar(f"Dio por finalizado el tratamiento de {p['nombre']}: {texto}")
-                flash(f"Tratamiento de {p['nombre']} finalizado. Su expediente ya no se puede cambiar.", "ok")
+                anotar(f"Dio de alta a {p['nombre']}: {texto}")
+                flash(f"{p['nombre']} recibió el alta. Su expediente ya no se puede cambiar.", "ok")
                 return redirect(url_for("expediente", pid=pid))
         elif accion == "reabrir" and p["finalizado"]:
             sql("UPDATE pacientes SET finalizado = NULL, finalizado_por = NULL, finalizado_resumen = '' WHERE id = %s",
                 pid)
-            anotar(f"Reabrió el tratamiento de {p['nombre']}")
-            flash(f"Tratamiento de {p['nombre']} reabierto.", "ok")
+            anotar(f"Anuló el alta de {p['nombre']}")
+            flash(f"Se anuló el alta de {p['nombre']}.", "ok")
             return redirect(url_for("expediente", pid=pid))
         elif accion == "eliminar":
             # Se pide la cedula para que no se borre a nadie por un clic equivocado
@@ -926,7 +926,7 @@ def expediente_pdf(pid):
                             ("Estado", "Aprobado" if p["aprobado"] else "Pendiente de aprobación")):
         linea(f"{etiqueta}: {valor}")
     if p["finalizado"]:
-        linea(f"Tratamiento finalizado el {dmy(p['finalizado'])} por {nombre_de(p['finalizado_por'])}: "
+        linea(f"Recibió el alta el {dmy(p['finalizado'])} por {nombre_de(p['finalizado_por'])}: "
               f"{p['finalizado_resumen']}")
 
     y -= 10
