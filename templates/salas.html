@@ -25,7 +25,9 @@
   {% endfor %}
 
   {% set con_falla = salas|selectattr('reporte_id')|list %}
-  {% if es_rol != "estudiante" and con_falla %}
+  {% if es_rol != "estudiante" and not con_falla %}
+  <p class="vacio"><b>Todas las clínicas funcionan</b>No hay fallas reportadas por los estudiantes.</p>
+  {% elif es_rol != "estudiante" %}
   <h2>Clínicas que no funcionan</h2>
   <div class="tabla">
     <table>

@@ -56,7 +56,7 @@
         {% for c in citas|sort(attribute='fecha,hora') %}
         <tr><td class="fecha">{{ c.fecha|dmy }}</td><td>{{ c.hora }}</td><td>{{ c.razon }}</td><td>{{ c.sala or '' }}</td></tr>
         {% else %}
-        <tr><td class="vacio" colspan="4">Este paciente no tiene citas.</td></tr>
+        <tr><td class="vacio" colspan="4"><b>Este paciente no tiene citas</b>{% if es_rol == "estudiante" and not p.finalizado %}<a href="{{ url_for('citas') }}">Agendar una cita</a>{% endif %}</td></tr>
         {% endfor %}
       </tbody>
     </table>

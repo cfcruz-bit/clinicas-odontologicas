@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="{{ url_for('static', filename='cargando.js') }}" defer></script>
 <title>Iniciar sesión - Clínicas Odontológicas</title>
 <style>
   * { box-sizing: border-box; }
@@ -26,6 +27,12 @@
   button { height: 52px; margin-top: 8px; font: inherit; font-size: 16px; font-weight: 600;
            color: #fff; background: #14707a; border: 0; border-radius: 10px; cursor: pointer; }
   button:hover { filter: brightness(.92); }
+  /* cargando: el boton que se toco gira mientras el servidor responde (static/cargando.js) */
+  .cargando::before { content: ""; display: inline-block; width: 1em; height: 1em; margin-right: 6px; vertical-align: -2px;
+                      border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: girar .7s linear infinite; }
+  @keyframes girar { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .cargando::before { animation-duration: 2s; } }
+  form[aria-busy="true"] button { pointer-events: none; opacity: .7; }
   .error { margin: 0; font-size: 13px; color: #b3261e; }
   .aviso { margin: 0; padding: 10px 12px; font-size: 13px; border-radius: 8px;
            background: #e7f1f0; border-left: 4px solid #14707a; }

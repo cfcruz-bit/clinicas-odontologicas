@@ -57,7 +57,7 @@
             </form>{% endif %}</td>{% endif %}
         </tr>
         {% else %}
-        <tr><td class="vacio" colspan="6">Todavía no hay citas.</td></tr>
+        <tr><td class="vacio" colspan="6"><b>No hay citas agendadas</b>{{ "Agende la primera con el formulario de arriba." if es_rol == "estudiante" and pacientes else "Aparecen aquí cuando un estudiante agenda una." }}</td></tr>
         {% endfor %}
       </tbody>
     </table>

@@ -239,8 +239,21 @@ div.diente { cursor: default; }
   .tabla:has(thead) tr { background: #fff; border: 1px solid var(--borde); border-radius: 3px; margin-bottom: 8px; }
   .tabla:has(thead) td { display: flex; gap: 8px; align-items: baseline; text-align: left; white-space: normal; }
   .tabla:has(thead) td::before { content: attr(data-label); flex: none; width: 38%; font-weight: 600; color: var(--tenue); }
-  .tabla:has(thead) td:is([data-label=""], .vacio) { flex-wrap: wrap; justify-content: flex-start; }
+  .tabla:has(thead) td[data-label=""] { flex-wrap: wrap; justify-content: flex-start; }
+  .tabla:has(thead) td.vacio { display: block; text-align: center; }
   .tabla:has(thead) td:is([data-label=""], .vacio)::before { display: none; }
   .tabla:has(thead) td[data-label=""]:not(:has(*)) { display: none; }
   .tabla:has(thead) tbody tr:hover td { background: none; }
 }
+
+/* cargando: el boton que se toco gira mientras el servidor responde (static/cargando.js) */
+.cargando::before { content: ""; display: inline-block; width: 1em; height: 1em; margin-right: 6px; vertical-align: -2px;
+                    border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: girar .7s linear infinite; }
+@keyframes girar { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .cargando::before { animation-duration: 2s; } }
+form[aria-busy="true"] button { pointer-events: none; opacity: .7; }
+
+/* sin datos: que se vea que esta vacio y que hacer a continuacion */
+td.vacio, .vacio { text-align: center; color: var(--tenue); padding: 18px 12px; }
+.vacio b { display: block; color: var(--texto); font-weight: 600; margin-bottom: 2px; }
+p.vacio { border: 1px dashed var(--borde); border-radius: 3px; background: #fafbfc; }

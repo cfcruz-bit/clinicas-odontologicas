@@ -83,7 +83,7 @@
         {% for d in (arriba + abajo)|sort if d in dientes and dientes[d].estado != 'Sano' %}
         <tr><td>{{ d }}</td><td>{{ dientes[d].estado }}</td><td>{{ dientes[d].nota or '—' }}</td></tr>
         {% else %}
-        <tr><td class="vacio" colspan="3">Sin hallazgos: todos los dientes están sanos.</td></tr>
+        <tr><td class="vacio" colspan="3"><b>Sin hallazgos</b>Todos los dientes están sanos.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -108,7 +108,7 @@
       <small class="tenue">{{ f.cuando }} · {{ nombre_de(f.cif) }}</small>
     </a>
     {% else %}
-    <p class="tenue">Todavía no hay fotos.</p>
+    <p class="vacio"><b>Todavía no hay fotos</b>{{ "Suba la primera con el formulario de arriba." if es_rol == "estudiante" and not p.finalizado else "Las sube el estudiante a cargo." }}</p>
     {% endfor %}
   </div>
 {% endblock %}

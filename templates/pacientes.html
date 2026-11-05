@@ -55,7 +55,7 @@
           </td>
         </tr>
         {% else %}
-        <tr><td class="vacio" colspan="9">Todavía no hay pacientes registrados.</td></tr>
+        <tr><td class="vacio" colspan="9">{% if es_rol == "estudiante" %}<b>Todavía no tiene pacientes</b>Registre el primero con el formulario de arriba.{% else %}<b>Todavía no hay pacientes</b>Aparecen aquí cuando un estudiante registra uno.{% endif %}</td></tr>
         {% endfor %}
       </tbody>
     </table>

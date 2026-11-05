@@ -67,7 +67,7 @@
           {% endif %}
         </tr>
         {% else %}
-        <tr><td class="vacio" colspan="7">Todavía no hay tratamientos en el plan.</td></tr>
+        <tr><td class="vacio" colspan="7"><b>Todavía no hay tratamientos en el plan</b>{{ "Anote el primero con el formulario de arriba." if es_rol == "estudiante" and not p.finalizado and tarifario else "Los anota el estudiante a cargo." }}</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -92,7 +92,7 @@
         {% for a in abonos %}
         <tr><td class="fecha">{{ a.cuando }}</td><td class="num">{{ a.monto|cordobas }}</td><td>{{ nombre_de(a.cif) }}</td></tr>
         {% else %}
-        <tr><td class="vacio" colspan="3">Todavía no hay abonos.</td></tr>
+        <tr><td class="vacio" colspan="3"><b>Todavía no hay abonos</b>{{ "Registre el primero con el formulario de abajo." if es_rol == "admin" else "Los registra la Facultad." }}</td></tr>
         {% endfor %}
       </tbody>
     </table>
