@@ -71,7 +71,7 @@ input:focus, select:focus, textarea:focus { outline: 0; border-color: var(--azul
 .filtros { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
 .filtros > * { width: auto; flex: 1; min-width: 160px; }
 .filtros .btn { flex: none; min-width: 0; }
-@media (max-width: 700px) {  /* tamanos comodos para el dedo y sin zoom automatico en iPhone */
+@media (max-width: 700px), (pointer: coarse) {  /* tamanos comodos para el dedo (celular y tableta) y sin zoom automatico en iPhone/iPad */
   input, select, textarea { font-size: 16px; min-height: 38px; }
   .btn { min-height: 38px; }
   .btn.chico { min-height: 32px; }
@@ -223,3 +223,24 @@ div.diente { cursor: default; }
 .firma { display: flex; align-items: flex-end; justify-content: center; max-width: none; height: 90px; border: 0; }
 .firma-trazo { max-width: 100%; max-height: 90px; }
 .plano .sala form { margin-top: 6px; }
+
+/* celular: las pestanas se acomodan en varias filas y cada fila de una tabla se ve como una tarjeta.
+   El nombre de cada columna lo copia a la celda el script de base.html (data-label) */
+@media screen and (max-width: 600px) {
+  .app { padding: 6px 6px 16px; }
+  .panel { padding: 10px; min-height: 0; }
+  .en-linea > input:not([type=number], [type=file]) { flex-basis: 100%; }
+  .pestanas { flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+  .pestanas a { flex: 1 1 auto; text-align: center; border-bottom: 1px solid var(--borde); border-radius: 3px; padding: 8px 10px; }
+  .pestanas a.activa { border-color: var(--azul); border-bottom-color: var(--azul); }
+  .tabla:has(thead) { border: 0; overflow: visible; }
+  .tabla:has(thead) thead { display: none; }
+  .tabla:has(thead) :is(table, tbody, tr) { display: block; background: none; }
+  .tabla:has(thead) tr { background: #fff; border: 1px solid var(--borde); border-radius: 3px; margin-bottom: 8px; }
+  .tabla:has(thead) td { display: flex; gap: 8px; align-items: baseline; text-align: left; white-space: normal; }
+  .tabla:has(thead) td::before { content: attr(data-label); flex: none; width: 38%; font-weight: 600; color: var(--tenue); }
+  .tabla:has(thead) td:is([data-label=""], .vacio) { flex-wrap: wrap; justify-content: flex-start; }
+  .tabla:has(thead) td:is([data-label=""], .vacio)::before { display: none; }
+  .tabla:has(thead) td[data-label=""]:not(:has(*)) { display: none; }
+  .tabla:has(thead) tbody tr:hover td { background: none; }
+}

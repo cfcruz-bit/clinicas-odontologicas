@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 {% block titulo %}Clínicas - Clínicas Odontológicas{% endblock %}
 {% block contenido %}
-  <h2>Plano de las salas</h2>
+  <h2>Plano de las clínicas</h2>
   <p class="tenue">Cada clínica muestra un ✓ si está disponible o una ✗ si no lo está.</p>
   {% for grupo in salas|groupby('en_sala') %}
   <div class="plano">
-    <div class="plano-titulo">Sala #{{ grupo.grouper }}</div>
+    <div class="plano-titulo">{{ GRUPOS[grupo.grouper] }}</div>
     <div class="plano-salas">
       {% for s in grupo.list %}
       <div class="sala {{ 'libre' if s.disponible else 'ocupada' }}">
@@ -34,7 +34,7 @@
       <tbody>
         {% for s in con_falla %}
         <tr>
-          <td>{{ s.nombre }} (Sala #{{ s.en_sala }})</td><td>{{ s.motivo }}</td><td>{{ nombre_de(s.reporto) }}</td>
+          <td>{{ s.nombre }} ({{ GRUPOS[s.en_sala] }})</td><td>{{ s.motivo }}</td><td>{{ nombre_de(s.reporto) }}</td>
           <td class="fecha">{{ s.reportada }}</td>
           {% if es_rol == "admin" %}
           <td class="acciones">
@@ -58,7 +58,7 @@
     <fieldset>
       <legend>Agregar clínica</legend>
       <div class="en-linea"><input name="nombre" placeholder="Nombre de la clínica" aria-label="Nombre de la clínica" required>
-        <label>en la Sala # <input type="number" name="en_sala" min="1" value="1" required style="width: 5em"></label>
+        <select name="en_sala" aria-label="Pregrado o posgrado">{% for n, g in GRUPOS.items() %}<option value="{{ n }}">{{ g }}</option>{% endfor %}</select>
         <button class="btn">Agregar</button></div>
     </fieldset>
   </form>
@@ -72,7 +72,7 @@
       <div class="campo"><span>Clínica: *</span>
         <select name="sala" required>
           <option value="">Seleccione…</option>
-          {% for grupo in sin_falla|groupby('en_sala') %}<optgroup label="Sala #{{ grupo.grouper }}">
+          {% for grupo in sin_falla|groupby('en_sala') %}<optgroup label="{{ GRUPOS[grupo.grouper] }}">
             {% for s in grupo.list %}<option value="{{ s.id }}">{{ s.nombre }}</option>{% endfor %}</optgroup>{% endfor %}
         </select>
       </div>

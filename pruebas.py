@@ -163,21 +163,22 @@ caso("El historial muestra que le hizo cada estudiante",
                                                                 "Profilaxis y obturación del 36")))
 caso("El paciente ya no le sale al estudiante anterior", "Luis Pérez" not in texto(grace.get("/pacientes")))
 
-caso("Hay 20 clínicas: la 1 a la 10 en la Sala #1 y la 11 a la 20 en la Sala #2",
+caso("Hay 20 clínicas: la 1 a la 10 de pregrado y la 11 a la 20 de posgrado",
      [(f["en_sala"], f["n"]) for f in base.execute("SELECT en_sala, count(*) AS n FROM salas GROUP BY en_sala ORDER BY 1")]
      == [(1, 10), (2, 10)]
      and uno("SELECT en_sala FROM salas WHERE nombre = 'Clínica 10'")["en_sala"] == 1
      and uno("SELECT en_sala FROM salas WHERE nombre = 'Clínica 11'")["en_sala"] == 2)
 _, sala_1, sala_2 = texto(admin.get("/salas")).split('class="plano-titulo"')
-caso("El plano muestra cada sala con sus clínicas, con un check si están disponibles y una X si no",
-     "Sala #1" in sala_1 and "Clínica 10<" in sala_1 and "Clínica 11<" not in sala_1
+caso("El plano muestra pregrado y posgrado con sus clínicas, con un check si están disponibles y una X si no",
+     "Clínicas pregrado" in sala_1 and "Clínica 10<" in sala_1 and "Clínica 11<" not in sala_1
      and sala_1.count("✓") == 9 and sala_1.count("✗") == 1
-     and "Sala #2" in sala_2 and "Clínica 11<" in sala_2 and sala_2.count("✓") == 10)
+     and "Clínicas posgrado" in sala_2 and "Clínica 11<" in sala_2 and sala_2.count("✓") == 10)
 admin.post("/salas", data={"accion": "agregar", "nombre": "Clínica 21", "en_sala": "2"})
-caso("La Facultad agrega una clínica en la sala que elija",
+caso("La Facultad agrega una clínica en pregrado o posgrado",
      uno("SELECT en_sala FROM salas WHERE nombre = 'Clínica 21'")["en_sala"] == 2)
 admin.post("/salas", data={"accion": "agregar", "nombre": "Clínica 22"})
-caso("Sin decir la sala no se agrega la clínica", uno("SELECT 1 FROM salas WHERE nombre = 'Clínica 22'") is None)
+admin.post("/salas", data={"accion": "agregar", "nombre": "Clínica 22", "en_sala": "3"})
+caso("Sin decir si es de pregrado o posgrado no se agrega la clínica", uno("SELECT 1 FROM salas WHERE nombre = 'Clínica 22'") is None)
 sala1 = uno("SELECT id FROM salas WHERE nombre = 'Clínica 1'")["id"]
 admin.post("/salas", data={"sala": sala1})
 caso("La administracion cambia la disponibilidad de una clínica",

@@ -18,7 +18,7 @@
       <div class="campo"><span>Clínica</span>
         <select name="sala">
           <option value="">Sin asignar</option>
-          {% for grupo in salas|groupby('en_sala') %}<optgroup label="Sala #{{ grupo.grouper }}">
+          {% for grupo in salas|groupby('en_sala') %}<optgroup label="{{ GRUPOS[grupo.grouper] }}">
             {% for s in grupo.list %}<option value="{{ s.nombre }}"{{ ' disabled' if not s.disponible }}>{{ s.nombre }}{{ '' if s.disponible else ' (no disponible)' }}</option>{% endfor %}</optgroup>{% endfor %}
         </select>
       </div>

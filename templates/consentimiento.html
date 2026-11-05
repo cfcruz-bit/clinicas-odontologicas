@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block titulo %}Consentimiento de {{ p.nombre }}{% endblock %}
+{% block titulo %}Consentimiento informado de {{ p.nombre }}{% endblock %}
 {% block contenido %}
   <div class="en-linea sin-imprimir" style="justify-content: space-between">
     <a href="{{ url_for('expediente', pid=p.id) }}">&larr; Volver al expediente</a>

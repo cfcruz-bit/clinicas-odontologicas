@@ -44,7 +44,7 @@ QUE_HACE = {"estudiante": ["Registrar a sus pacientes y la razón por la que vie
                            "Agendar sus citas con la razón de cada cita",
                            "Subir la foto presencial, llenar el odontograma y pedir la revisión del profesor",
                            "Anotar el plan de tratamiento y marcar lo realizado",
-                           "Recoger la firma del paciente en el consentimiento e imprimirlo"],
+                           "Recoger la firma del paciente en el consentimiento informado e imprimirlo"],
             "profesor": ["Revisar y aprobar lo que registra cada estudiante",
                          "Aprobar el odontograma o devolverlo con lo que hay que corregir",
                          "Ver el historial de qué le hizo cada estudiante a cada paciente",
@@ -83,7 +83,7 @@ CREATE TABLE IF NOT EXISTS citas (
 CREATE TABLE IF NOT EXISTS bitacora (
     id serial PRIMARY KEY, cuando timestamptz NOT NULL DEFAULT now(), cif text, nombre text, rol text, accion text);
 ALTER TABLE bitacora ADD COLUMN IF NOT EXISTS lugar text NOT NULL DEFAULT '';
--- La tabla salas guarda las clinicas (unidades dentales); en_sala es la sala fisica que las agrupa
+-- La tabla salas guarda las clinicas (unidades dentales); en_sala es el grupo: 1 pregrado, 2 posgrado
 ALTER TABLE salas ADD COLUMN IF NOT EXISTS en_sala int NOT NULL DEFAULT 1;
 ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS fallos int NOT NULL DEFAULT 0,
                     ADD COLUMN IF NOT EXISTS bloqueada_hasta timestamptz,
@@ -136,6 +136,7 @@ app.config.update(SESSION_COOKIE_SAMESITE="Lax", SESSION_COOKIE_SECURE="FLY_APP_
 
 FORMATO = "%d/%m/%Y"  # las fechas se muestran como dd/mm/aaaa; se eligen en el calendario
 MANAGUA = timezone(timedelta(hours=-6))  # Nicaragua no cambia de horario; el servidor esta en UTC
+GRUPOS = {1: "Clínicas pregrado", 2: "Clínicas posgrado"}  # valor de salas.en_sala
 MOTIVO_MAXIMO = 500  # caracteres del motivo de una clinica que no funciona
 FALLOS_MAXIMOS, MINUTOS_BLOQUEO = 5, 15  # tras 5 claves equivocadas seguidas la cuenta espera 15 min
 CLAVE_MINIMA = 8  # caracteres de la contraseña que la Facultad le pone a una cuenta
@@ -165,7 +166,7 @@ def crear_tablas():
             sql("INSERT INTO cuentas VALUES (%s, %s, %s, %s) ON CONFLICT DO NOTHING",
                 cif, nombre, rol, generate_password_hash(CLAVE_INICIAL))
         if not sql("SELECT 1 FROM salas").fetchone():
-            for n in range(1, 21):  # las clinicas 1 a 10 estan en la Sala #1 y las 11 a 20 en la Sala #2
+            for n in range(1, 21):  # las clinicas 1 a 10 son de pregrado y las 11 a 20 de posgrado
                 sql("INSERT INTO salas (nombre, disponible, en_sala) VALUES (%s, %s, %s)",
                     f"Clínica {n}", n != 3, 1 if n <= 10 else 2)
 
@@ -199,6 +200,7 @@ def error_de_cita(fecha, hora, sala):
     return None
 
 app.jinja_env.filters["dmy"] = dmy
+app.jinja_env.globals["GRUPOS"] = GRUPOS
 
 def monto(texto):
     """'1250.5' -> Decimal('1250.50'); None si no es un monto valido (cabe en numeric(10, 2))."""
@@ -518,7 +520,7 @@ def cerrar(pid):
 
 @app.route("/pacientes/<int:pid>/consentimiento", methods=["GET", "POST"])
 def consentimiento(pid):
-    """Consentimiento del paciente, que firma con el dedo o el mouse. El docente no firma."""
+    """Consentimiento informado del paciente, que firma con el dedo o el mouse. El docente no firma."""
     p = paciente(pid)
     if not p:
         return redirect(url_for("pacientes"))
@@ -528,8 +530,8 @@ def consentimiento(pid):
             flash("Falta la firma del paciente: dibújela con el dedo o el mouse.", "error")
         else:
             sql("UPDATE pacientes SET firma = %s, firma_fecha = %s WHERE id = %s", firma, hoy(), pid)
-            anotar(f"Recogió la firma del consentimiento de {p['nombre']}")
-            flash("Consentimiento firmado. Ya se puede imprimir.", "ok")
+            anotar(f"Recogió la firma del consentimiento informado de {p['nombre']}")
+            flash("Consentimiento informado firmado. Ya se puede imprimir.", "ok")
         return redirect(url_for("consentimiento", pid=pid))
     return render_template("consentimiento.html", **comun(), p=p, nombre_de=nombre_de)
 
@@ -604,13 +606,13 @@ def salas():
                 flash(f"{s['nombre']} quedó solucionada y disponible otra vez.", "ok")
         elif rol == "admin" and accion == "agregar":
             nombre, en_sala = request.form.get("nombre", "").strip(), request.form.get("en_sala", type=int)
-            if not nombre or not en_sala or en_sala < 1:
-                flash("Escriba el nombre de la clínica y la sala donde está.", "error")
+            if not nombre or en_sala not in GRUPOS:
+                flash("Escriba el nombre de la clínica y elija si es de pregrado o de posgrado.", "error")
             elif sql("SELECT 1 FROM salas WHERE lower(nombre) = lower(%s)", nombre).fetchone():
                 flash("Ya existe una clínica con ese nombre.", "error")
             else:
                 sql("INSERT INTO salas (nombre, en_sala) VALUES (%s, %s)", nombre, en_sala)
-                anotar(f"Agregó {nombre} en la Sala #{en_sala}")
+                anotar(f"Agregó {nombre} en {GRUPOS[en_sala]}")
                 flash(f"{nombre} agregada.", "ok")
         elif rol == "admin":
             s = sql("UPDATE salas SET disponible = NOT disponible WHERE id = %s RETURNING nombre, disponible",
@@ -732,7 +734,7 @@ def tratamientos(pid):
                     " WHERE t.id = %s AND t.paciente_id = %s AND t.realizado IS NULL",
                     request.form.get("id", type=int), pid).fetchone()
             if t and accion == "realizado" and not p["firma"]:
-                flash("Falta la firma del consentimiento: sin ella no se realiza ningún tratamiento.", "error")
+                flash("Falta la firma del consentimiento informado: sin ella no se realiza ningún tratamiento.", "error")
             elif t and accion == "realizado":
                 sql("UPDATE tratamientos SET realizado = %s WHERE id = %s", hoy(), t["id"])
                 anotar(f"Realizó a {p['nombre']}: {t['nombre']}")

@@ -29,5 +29,12 @@
     Para imprimir, use Ctrl+P (⌘P en Mac).
   </p>
 </div>
+<script>
+  // En el celular cada fila de una tabla se ve como una tarjeta: cada celda lleva el nombre de su columna
+  for (const t of document.querySelectorAll("table:has(thead)")) {
+    const titulos = [...t.querySelectorAll("thead th")].map(th => th.textContent.trim());
+    for (const tr of t.tBodies[0]?.rows ?? []) [...tr.cells].forEach((td, i) => td.dataset.label = titulos[i] ?? "");
+  }
+</script>
 </body>
 </html>
