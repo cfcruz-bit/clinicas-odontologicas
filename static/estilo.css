@@ -257,3 +257,7 @@ form[aria-busy="true"] button { pointer-events: none; opacity: .7; }
 td.vacio, .vacio { text-align: center; color: var(--tenue); padding: 18px 12px; }
 .vacio b { display: block; color: var(--texto); font-weight: 600; margin-bottom: 2px; }
 p.vacio { border: 1px dashed var(--borde); border-radius: 3px; background: #fafbfc; }
+
+/* hoja de control de recibos: usa todo el ancho; al imprimir, la firma sin firmar queda en blanco para firmarla a mano */
+.hoja-control { max-width: none; }
+@media print { .hoja-control td { padding-top: 10px; padding-bottom: 10px; } }
