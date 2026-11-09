@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block titulo %}Hoja de control - Clínicas Odontológicas{% endblock %}
+{% block contenido %}
+  {% if es_rol == "estudiante" %}
+  <form method="post" enctype="multipart/form-data" class="sin-imprimir">
+    <input type="hidden" name="accion" value="subir">
+    <fieldset>
+      <legend>Subir recibo de pago</legend>
+      {% if pendientes %}
+      <div class="campo"><span>Paciente y tratamiento: *</span>
+        <select name="tratamiento" required>
+          <option value="">Seleccione…</option>
+          {% for grupo in pendientes|groupby("paciente") %}
+          <optgroup label="{{ grupo.grouper }}">
+            {% for t in grupo.list %}<option value="{{ t.id }}">{{ t.tratamiento }}</option>{% endfor %}
+          </optgroup>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="campo"><span>Nº de recibo: *</span>
+        <input name="numero" maxlength="{{ recibo_maximo }}" required autocomplete="off"></div>
+      <div class="campo"><span>Fecha de facturación: *</span>
+        <input type="date" name="fecha" max="{{ hoy }}" value="{{ hoy }}" required></div>
+      <div class="campo"><span>Foto del recibo: *</span>
+        <input type="file" name="foto" accept="image/*" required aria-label="Foto del recibo"></div>
+      <p class="tenue">Tómele foto al recibo con el celular: así el número se lee bien y el profesor lo firma aquí,
+         sin copiar los números a mano.</p>
+      <div class="acciones"><button class="btn">Agregar a la hoja</button></div>
+      {% else %}
+      <p class="tenue">Primero anote los tratamientos en el plan de sus pacientes (Mis pacientes → Tratamientos y
+         cobros). Después aquí sube el recibo de pago de cada uno.</p>
+      {% endif %}
+    </fieldset>
+  </form>
+  {% else %}
+  <form method="get" class="sin-imprimir en-linea">
+    <label for="estudiante">Estudiante</label>
+    <select id="estudiante" name="estudiante" onchange="this.form.submit()">
+      <option value="">Todos</option>
+      {% for c, n in estudiantes %}<option value="{{ c }}" {{ 'selected' if c == elegido }}>{{ n }} ({{ c }})</option>{% endfor %}
+    </select>
+    <noscript><button class="btn chico">Ver</button></noscript>
+  </form>
+  {% endif %}
+
+  <div class="hoja hoja-control">
+    <div class="hoja-encabezado">
+      <img src="{{ url_for('static', filename='logo-uam.png') }}" alt="Universidad Americana (UAM)">
+      <div><b>Hoja de control de expediente y recibos de pago de tratamiento</b><br>
+        Clínicas Odontológicas · Facultad de Odontología UAM<br>
+        {% if elegido %}Estudiante: {{ nombre_de(elegido) }} (CIF {{ elegido }}){% else %}Todos los estudiantes{% endif %}
+        · {{ hoy|dmy }}</div>
+    </div>
+
+    <div class="tabla">
+      <table>
+        <thead><tr>
+          <th class="num">Nº de paciente</th><th>Nº de expediente</th><th>Nº de recibo</th>
+          <th>Tratamiento facturado</th><th>Fecha de facturación</th><th>Firma del docente</th>
+          {% if not elegido %}<th>Estudiante</th>{% endif %}
+          <th class="sin-imprimir"></th>
+        </tr></thead>
+        <tbody>
+          {% for r in recibos %}
+          <tr>
+            <td class="num">{{ r.pid }}</td>
+            <td>{{ r.expediente or '—' }}</td>
+            <td><b>{{ r.numero }}</b></td>
+            <td>{{ r.tratamiento }}<div class="tenue">{{ r.paciente }}</div></td>
+            <td class="fecha">{{ r.fecha|dmy }}</td>
+            <td>{% if r.firmado %}<span class="verde">{{ nombre_de(r.firmado_por) }}</span><div class="tenue">{{ r.firmado|dmy }}</div>
+                {% else %}<span class="amarillo sin-imprimir">Pendiente</span>{% endif %}</td>
+            {% if not elegido %}<td>{{ nombre_de(r.estudiante) }}</td>{% endif %}
+            <td class="acciones sin-imprimir">
+              <a class="btn chico" href="{{ url_for('recibo_foto', rid=r.id) }}" target="_blank">Ver foto</a>
+              {% if es_rol == "profesor" and not r.firmado %}
+              <form method="post" class="en-linea"><input type="hidden" name="id" value="{{ r.id }}">
+                <button class="btn chico" name="accion" value="firmar">Firmar</button></form>
+              {% elif es_rol == "profesor" and r.firmado_por == cif %}
+              <form method="post" class="en-linea"><input type="hidden" name="id" value="{{ r.id }}">
+                <button class="btn chico" name="accion" value="quitar_firma">Quitar firma</button></form>
+              {% elif es_rol == "estudiante" and not r.firmado %}
+              <form method="post" class="en-linea"><input type="hidden" name="id" value="{{ r.id }}">
+                <button class="btn chico peligro" name="accion" value="quitar">Quitar</button></form>
+              {% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr><td class="vacio" colspan="8"><b>Todavía no hay recibos</b>{{ "Suba el primero con el formulario de arriba." if es_rol == "estudiante" else "Aparecen aquí cuando los estudiantes suben la foto de sus recibos." }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if recibos %}
+    <p class="tenue">{{ recibos|length }} recibo{{ 's' if recibos|length != 1 }} ·
+      {{ recibos|selectattr('firmado')|list|length }} firmado{{ 's' if recibos|selectattr('firmado')|list|length != 1 }} por el docente.</p>
+    {% endif %}
+  </div>
+{% endblock %}

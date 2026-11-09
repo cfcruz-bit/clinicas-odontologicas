@@ -33,21 +33,24 @@ CUENTAS_INICIALES = {"00000001": ("Dra. Grace Mendoza", "profesor"),
 CLAVE_INICIAL = os.environ.get("CLAVE_INICIAL", "uam2026")  # se guarda cifrada, nunca en texto plano
 ROLES = {"profesor": "Profesor", "estudiante": "Estudiante", "admin": "Facultad"}
 # Pestanas de cada rol: (nombre, endpoint). La bitacora la revisan el profesor y la Facultad
-MENUS = {"estudiante": [("Inicio", "menu"), ("Mis pacientes", "pacientes"), ("Mis citas", "citas"), ("Clínicas", "salas")],
+MENUS = {"estudiante": [("Inicio", "menu"), ("Mis pacientes", "pacientes"), ("Mis citas", "citas"), ("Clínicas", "salas"),
+                        ("Hoja de control", "control")],
          # El profesor solo revisa: no registra pacientes, citas ni tratamientos
          "profesor": [("Inicio", "menu"), ("Pacientes", "pacientes"), ("Citas", "citas"), ("Clínicas", "salas"),
-                      ("Bitácora", "bitacora")],
+                      ("Hoja de control", "control"), ("Bitácora", "bitacora")],
          "admin": [("Inicio", "menu"), ("Pacientes", "pacientes"), ("Citas", "citas"), ("Clínicas", "salas"),
                    ("Tarifario", "tarifario"), ("Inventario", "inventario"), ("Cuentas", "administrar_cuentas"),
-                   ("Bitácora", "bitacora")]}
+                   ("Hoja de control", "control"), ("Bitácora", "bitacora")]}
 QUE_HACE = {"estudiante": ["Registrar a sus pacientes y la razón por la que vienen",
                            "Agendar sus citas con la razón de cada cita",
                            "Subir la foto presencial, llenar el odontograma y pedir la revisión del profesor",
                            "Anotar el plan de tratamiento y marcar lo realizado",
-                           "Recoger la firma del paciente en el consentimiento informado e imprimirlo"],
+                           "Recoger la firma del paciente en el consentimiento informado e imprimirlo",
+                           "Subir la foto de cada recibo de pago y entregar impresa la hoja de control"],
             "profesor": ["Revisar y aprobar lo que registra cada estudiante",
                          "Aprobar el odontograma o devolverlo con lo que hay que corregir",
                          "Ver el historial de qué le hizo cada estudiante a cada paciente",
+                         "Firmar los recibos de pago de la hoja de control de cada estudiante",
                          "Revisar la bitácora del sistema",
                          "No registra pacientes, citas ni tratamientos"],
             "admin": ["Crear las cuentas, ponerles contraseña y desactivarlas",
@@ -123,6 +126,14 @@ ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS finalizado text,
 CREATE TABLE IF NOT EXISTS materiales (
     id serial PRIMARY KEY, nombre text NOT NULL UNIQUE, unidad text NOT NULL DEFAULT '',
     cantidad int NOT NULL CHECK (cantidad >= 0), minimo int NOT NULL DEFAULT 0 CHECK (minimo >= 0));
+-- Hoja de control: el numero del expediente fisico y los recibos de pago de cada tratamiento con su foto,
+-- para que el numero se lea bien y el profesor lo firme sin copiar a mano numero tras numero
+ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS expediente text NOT NULL DEFAULT '';
+CREATE TABLE IF NOT EXISTS recibos (
+    id serial PRIMARY KEY, tratamiento_id int NOT NULL REFERENCES tratamientos ON DELETE CASCADE,
+    numero text NOT NULL, fecha text NOT NULL, foto bytea NOT NULL, estudiante text REFERENCES cuentas,
+    cuando timestamptz NOT NULL DEFAULT now(), firmado_por text REFERENCES cuentas, firmado text,
+    UNIQUE (tratamiento_id, numero));
 """
 
 app = Flask(__name__)
@@ -138,6 +149,7 @@ FORMATO = "%d/%m/%Y"  # las fechas se muestran como dd/mm/aaaa; se eligen en el 
 MANAGUA = timezone(timedelta(hours=-6))  # Nicaragua no cambia de horario; el servidor esta en UTC
 GRUPOS = {1: "Clínicas pregrado", 2: "Clínicas posgrado"}  # valor de salas.en_sala
 MOTIVO_MAXIMO = 500  # caracteres del motivo de una clinica que no funciona
+RECIBO_MAXIMO = 40  # caracteres del numero de recibo
 FALLOS_MAXIMOS, MINUTOS_BLOQUEO = 5, 15  # tras 5 claves equivocadas seguidas la cuenta espera 15 min
 CLAVE_MINIMA = 8  # caracteres de la contraseña que la Facultad le pone a una cuenta
 FOTO_LADO = 1600  # pixeles del lado mas largo de la foto presencial guardada
@@ -276,6 +288,8 @@ def comun():
     if rol == "admin":  # la Facultad ve en la pestana cuantas clinicas fallan y cuantos materiales se acaban
         avisos = sql("SELECT (SELECT count(*) FROM reportes WHERE resuelto_cuando IS NULL) AS salas,"
                      " (SELECT count(*) FROM materiales WHERE cantidad <= minimo) AS inventario").fetchone()
+    elif rol == "profesor":  # y el profesor, cuantos recibos esperan su firma
+        avisos = sql("SELECT count(*) AS control FROM recibos WHERE firmado IS NULL").fetchone()
     pestanas = [(f"{t} ({avisos[e]})" if avisos.get(e) else t, e) for t, e in MENUS[rol]]
     return {"cif": cif, "nombre": nombre, "rol": ROLES[rol], "es_rol": rol, "pestanas": pestanas,
             "fallas": avisos.get("salas", 0), "bajos": avisos.get("inventario", 0)}
@@ -368,15 +382,16 @@ def pacientes():
     if request.method == "POST":
         accion = request.form.get("accion")
         if accion == "registrar" and rol == "estudiante":
-            form = {c: request.form.get(c, "").strip() for c in ("nombre", "cedula", "telefono")}
+            form = {c: request.form.get(c, "").strip() for c in ("nombre", "cedula", "telefono", "expediente")}
             if not form["nombre"] or not form["cedula"]:
                 flash("El nombre y la cédula del paciente son obligatorios.", "error")
             elif sql("SELECT 1 FROM pacientes WHERE cedula = %s", form["cedula"]).fetchone():
                 flash("Ya existe un paciente con esa cédula.", "error")
             else:
                 with bd().transaction():
-                    pid = sql("INSERT INTO pacientes (nombre, cedula, telefono, estudiante) VALUES (%s, %s, %s, %s)"
-                              " RETURNING id", form["nombre"], form["cedula"], form["telefono"], cif).fetchone()["id"]
+                    pid = sql("INSERT INTO pacientes (nombre, cedula, telefono, expediente, estudiante)"
+                              " VALUES (%s, %s, %s, %s, %s) RETURNING id", form["nombre"], form["cedula"],
+                              form["telefono"], form["expediente"], cif).fetchone()["id"]
                     sql("INSERT INTO trabajo (paciente_id, estudiante, desde) VALUES (%s, %s, %s)", pid, cif, hoy())
                     anotar(f"Registró al paciente {form['nombre']} ({form['cedula']})")
                 # Paso siguiente: la razon por la que esta el paciente
@@ -428,15 +443,15 @@ def editar(pid):
     if not p or quien()[2] != "estudiante":
         return redirect(url_for("pacientes"))
     if request.method == "POST":
-        form = {c: request.form.get(c, "").strip() for c in ("nombre", "cedula", "telefono")}
+        form = {c: request.form.get(c, "").strip() for c in ("nombre", "cedula", "telefono", "expediente")}
         p.update(form)  # si hay error, el formulario vuelve con lo que se escribio
         if not form["nombre"] or not form["cedula"]:
             flash("El nombre y la cédula del paciente son obligatorios.", "error")
         elif sql("SELECT 1 FROM pacientes WHERE cedula = %s AND id <> %s", form["cedula"], pid).fetchone():
             flash("Ya existe otro paciente con esa cédula.", "error")
         else:
-            sql("UPDATE pacientes SET nombre = %s, cedula = %s, telefono = %s WHERE id = %s",
-                form["nombre"], form["cedula"], form["telefono"], pid)
+            sql("UPDATE pacientes SET nombre = %s, cedula = %s, telefono = %s, expediente = %s WHERE id = %s",
+                form["nombre"], form["cedula"], form["telefono"], form["expediente"], pid)
             anotar(f"Corrigió los datos de {form['nombre']} ({form['cedula']})")
             flash("Datos del paciente guardados.", "ok")
             return redirect(url_for("expediente", pid=pid))
@@ -739,6 +754,8 @@ def tratamientos(pid):
                 sql("UPDATE tratamientos SET realizado = %s WHERE id = %s", hoy(), t["id"])
                 anotar(f"Realizó a {p['nombre']}: {t['nombre']}")
                 flash(f"{t['nombre']} quedó como realizado.", "ok")
+            elif t and sql("SELECT 1 FROM recibos WHERE tratamiento_id = %s", t["id"]).fetchone():
+                flash(f"{t['nombre']} ya tiene un recibo de pago en la hoja de control: no se puede quitar.", "error")
             elif t:  # lo pendiente se puede quitar; lo realizado ya es historial
                 sql("DELETE FROM tratamientos WHERE id = %s", t["id"])
                 anotar(f"Quitó del plan de {p['nombre']}: {t['nombre']}")
@@ -878,6 +895,93 @@ def administrar_cuentas():
         " FROM cuentas ORDER BY activa DESC, rol, nombre").fetchall())
 
 
+def recibos_de(estudiante=None, paciente_id=None):
+    """Los recibos de la hoja de control con su paciente y tratamiento; de un estudiante o de un paciente."""
+    return sql("SELECT r.id, r.numero, r.fecha, r.estudiante, r.firmado, r.firmado_por, p.id AS pid,"
+               " p.nombre AS paciente, p.expediente, a.nombre || coalesce(' del ' || t.diente, '') AS tratamiento"
+               " FROM recibos r JOIN tratamientos t ON t.id = r.tratamiento_id"
+               " JOIN pacientes p ON p.id = t.paciente_id JOIN tarifario a ON a.id = t.procedimiento_id"
+               " WHERE (%s::text IS NULL OR r.estudiante = %s) AND (%s::int IS NULL OR p.id = %s)"
+               " ORDER BY r.fecha, r.id", estudiante, estudiante, paciente_id, paciente_id).fetchall()
+
+
+@app.route("/control", methods=["GET", "POST"])
+def control():
+    """Hoja de control de expediente y recibos de pago de tratamiento. El estudiante sube la foto de cada
+    recibo con su numero, fecha y tratamiento; el profesor firma cada uno; al final del curso se imprime."""
+    cif, _, rol = quien()
+    if request.method == "POST":
+        accion = request.form.get("accion")
+        if rol == "estudiante" and accion == "subir":
+            t = sql("SELECT t.id, t.paciente_id, a.nombre FROM tratamientos t JOIN tarifario a ON a.id = t.procedimiento_id"
+                    " WHERE t.id = %s", request.form.get("tratamiento", type=int)).fetchone()
+            p = t and paciente(t["paciente_id"])  # solo de sus pacientes que no estan de alta
+            numero = request.form.get("numero", "").strip()
+            fecha = request.form.get("fecha", "").strip()
+            try:
+                fecha_ok = datetime.strptime(fecha, "%Y-%m-%d").date().isoformat() <= hoy()
+            except ValueError:
+                fecha_ok = False
+            imagen = foto_jpeg(request.files.get("foto"))
+            if not p or p["estudiante"] != cif:
+                flash("Elija el paciente y el tratamiento que se pagó.", "error")
+            elif not numero or len(numero) > RECIBO_MAXIMO:
+                flash(f"Escriba el número del recibo (hasta {RECIBO_MAXIMO} caracteres).", "error")
+            elif not fecha_ok:
+                flash("Elija en el calendario la fecha del recibo; no puede ser una fecha que no ha llegado.", "error")
+            elif not imagen:
+                flash("Suba la foto del recibo (JPG o PNG, o tómela con la cámara).", "error")
+            elif sql("INSERT INTO recibos (tratamiento_id, numero, fecha, foto, estudiante) VALUES (%s, %s, %s, %s, %s)"
+                     " ON CONFLICT DO NOTHING RETURNING id", t["id"], numero, fecha, imagen, cif).fetchone():
+                anotar(f"Subió el recibo {numero} de {p['nombre']}: {t['nombre']}")
+                flash(f"Recibo {numero} agregado a la hoja de control.", "ok")
+            else:
+                flash("Ese recibo ya está anotado para ese tratamiento.", "error")
+        elif rol == "estudiante" and accion == "quitar":
+            # Lo firmado por el profesor ya no se quita
+            r = sql("DELETE FROM recibos WHERE id = %s AND estudiante = %s AND firmado IS NULL RETURNING numero",
+                    request.form.get("id", type=int), cif).fetchone()
+            if r:
+                anotar(f"Quitó el recibo {r['numero']} de su hoja de control")
+                flash(f"Recibo {r['numero']} quitado.", "ok")
+        elif rol == "profesor" and accion in ("firmar", "quitar_firma"):
+            if accion == "firmar":
+                r = sql("UPDATE recibos SET firmado_por = %s, firmado = %s WHERE id = %s AND firmado IS NULL"
+                        " RETURNING numero, estudiante", cif, hoy(), request.form.get("id", type=int)).fetchone()
+            else:  # solo el profesor que firmó puede quitar su firma
+                r = sql("UPDATE recibos SET firmado_por = NULL, firmado = NULL WHERE id = %s AND firmado_por = %s"
+                        " RETURNING numero, estudiante", request.form.get("id", type=int), cif).fetchone()
+            if r:
+                anotar(("Firmó" if accion == "firmar" else "Quitó su firma de")
+                       + f" el recibo {r['numero']} de {nombre_de(r['estudiante'])}")
+                flash(f"Recibo {r['numero']} " + ("firmado." if accion == "firmar" else "sin firma otra vez."), "ok")
+        return redirect(url_for("control", estudiante=request.args.get("estudiante") or None))
+    estudiantes = sorted(((c, n) for c, (n, r) in cuentas().items() if r == "estudiante"), key=lambda e: e[1])
+    elegido = cif if rol == "estudiante" else request.args.get("estudiante") or None
+    if elegido not in dict(estudiantes):
+        elegido = None
+    pendientes = []  # tratamientos de sus pacientes en tratamiento, para elegir a cuál corresponde el recibo
+    if rol == "estudiante":
+        pendientes = sql("SELECT t.id, p.nombre AS paciente, a.nombre || coalesce(' del ' || t.diente, '') AS tratamiento"
+                         " FROM tratamientos t JOIN pacientes p ON p.id = t.paciente_id"
+                         " JOIN tarifario a ON a.id = t.procedimiento_id"
+                         " WHERE p.estudiante = %s AND p.finalizado IS NULL ORDER BY p.nombre, t.id", cif).fetchall()
+    return render_template("control.html", **comun(), recibos=recibos_de(estudiante=elegido), elegido=elegido,
+                           estudiantes=estudiantes, pendientes=pendientes, hoy=hoy(), nombre_de=nombre_de,
+                           recibo_maximo=RECIBO_MAXIMO)
+
+
+@app.route("/control/recibos/<int:rid>.jpg")
+def recibo_foto(rid):
+    # El estudiante ve solo sus recibos; el profesor y la Facultad, todos
+    cif, _, rol = quien()
+    r = sql("SELECT foto FROM recibos WHERE id = %s AND (%s OR estudiante = %s)", rid, rol != "estudiante",
+            cif).fetchone()
+    if not r:
+        return redirect(url_for("control"))
+    return Response(bytes(r["foto"]), mimetype="image/jpeg")
+
+
 @app.route("/bitacora")
 def bitacora():
     """Quién hizo qué y a qué hora. La revisan el profesor y la Facultad."""
@@ -922,7 +1026,8 @@ def expediente_pdf(pid):
 
     linea("Expediente clínico", "Helvetica-Bold", 16, 20)
     linea(f"Clínicas Odontológicas · Facultad de Odontología UAM · {dmy(hoy())}", "Helvetica", 9, 28)
-    for etiqueta, valor in (("Nombre", p["nombre"]), ("Cédula", p["cedula"]), ("Teléfono", p["telefono"] or "—"),
+    for etiqueta, valor in (("Nº de paciente", p["id"]), ("Nº de expediente", p["expediente"] or "—"),
+                            ("Nombre", p["nombre"]), ("Cédula", p["cedula"]), ("Teléfono", p["telefono"] or "—"),
                             ("Razón de la consulta", p["razon"] or "—"),
                             ("Estudiante a cargo", nombre_de(p["estudiante"])),
                             ("Estado", "Aprobado" if p["aprobado"] else "Pendiente de aprobación")):
@@ -963,6 +1068,10 @@ def expediente_pdf(pid):
     c = cuenta_de(pid)
     linea(f"Realizado: {cordobas(c['realizado'])} · Abonado: {cordobas(c['abonado'])} · "
           f"Saldo pendiente: {cordobas(c['saldo'])}", "Helvetica", 10)
+    for r in recibos_de(paciente_id=pid):
+        linea(f"- Recibo {r['numero']} · {dmy(r['fecha'])} · {r['tratamiento']} · "
+              + (f"firmado por {nombre_de(r['firmado_por'])}" if r["firmado"] else "sin firma del docente"),
+              "Helvetica", 10)
 
     y -= 14
     linea("Consentimiento informado", "Helvetica-Bold", 12)
