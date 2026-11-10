@@ -237,9 +237,11 @@ div.diente { cursor: default; }
   .tabla:has(thead) thead { display: none; }
   .tabla:has(thead) :is(table, tbody, tr) { display: block; background: none; }
   .tabla:has(thead) tr { background: #fff; border: 1px solid var(--borde); border-radius: 3px; margin-bottom: 8px; }
-  .tabla:has(thead) td { display: flex; gap: 8px; align-items: baseline; text-align: left; white-space: normal; }
-  .tabla:has(thead) td::before { content: attr(data-label); flex: none; width: 38%; font-weight: 600; color: var(--tenue); }
-  .tabla:has(thead) td[data-label=""] { flex-wrap: wrap; justify-content: flex-start; }
+  /* rejilla: el nombre de la columna a la izquierda y todo lo de la celda apilado a la derecha */
+  .tabla:has(thead) td { display: grid; grid-template-columns: 38% 1fr; gap: 0 8px; align-items: baseline; text-align: left; white-space: normal; }
+  .tabla:has(thead) td::before { content: attr(data-label); grid-column: 1; grid-row: 1 / span 4; font-weight: 600; color: var(--tenue); }
+  .tabla:has(thead) td > * { grid-column: 2; }
+  .tabla:has(thead) td[data-label=""] { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-start; }
   .tabla:has(thead) td.vacio { display: block; text-align: center; }
   .tabla:has(thead) td:is([data-label=""], .vacio)::before { display: none; }
   .tabla:has(thead) td[data-label=""]:not(:has(*)) { display: none; }
@@ -257,3 +259,7 @@ form[aria-busy="true"] button { pointer-events: none; opacity: .7; }
 td.vacio, .vacio { text-align: center; color: var(--tenue); padding: 18px 12px; }
 .vacio b { display: block; color: var(--texto); font-weight: 600; margin-bottom: 2px; }
 p.vacio { border: 1px dashed var(--borde); border-radius: 3px; background: #fafbfc; }
+
+/* hoja de control de recibos: usa todo el ancho; al imprimir, la firma sin firmar queda en blanco para firmarla a mano */
+.hoja-control { max-width: none; }
+@media print { .hoja-control td { padding-top: 10px; padding-bottom: 10px; } }

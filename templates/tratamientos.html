@@ -98,4 +98,24 @@
     </table>
   </div>
   {% if es_rol != "admin" %}<p class="tenue">Los abonos los registra la Facultad.</p>{% endif %}
+
+  <h2>Recibos de pago</h2>
+  <p class="tenue">Los sube el estudiante en la <a href="{{ url_for('control') }}">Hoja de control</a>; aquí se comparan con los abonos.</p>
+  <div class="tabla">
+    <table>
+      <thead><tr><th>Nº de recibo</th><th>Fecha de facturación</th><th>Tratamiento facturado</th><th>Lo subió</th>
+        <th>Firma del docente</th><th class="sin-imprimir"></th></tr></thead>
+      <tbody>
+        {% for r in recibos %}
+        <tr><td><b>{{ r.numero }}</b></td><td class="fecha">{{ r.fecha|dmy }}</td><td>{{ r.tratamiento }}</td>
+          <td>{{ nombre_de(r.estudiante) }}</td>
+          <td>{% if r.firmado %}<span class="verde">{{ nombre_de(r.firmado_por) }}</span><div class="tenue">{{ r.firmado|dmy }}</div>
+              {% else %}<span class="amarillo">Pendiente</span>{% endif %}</td>
+          <td class="acciones sin-imprimir">{% if es_rol != "estudiante" or r.estudiante == cif %}<a class="btn chico" href="{{ url_for('recibo_foto', rid=r.id) }}" target="_blank">Ver foto</a>{% endif %}</td></tr>
+        {% else %}
+        <tr><td class="vacio" colspan="6"><b>Todavía no hay recibos de pago</b>{{ "Súbalos en la Hoja de control cuando el paciente pague." if es_rol == "estudiante" else "Aparecen aquí cuando el estudiante sube la foto del recibo." }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 {% endblock %}

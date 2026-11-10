@@ -10,6 +10,7 @@
   <div class="ficha">
     <div>
       <h1>{{ p.nombre }}{% if p.razon %} <small class="razon">{{ p.razon }}</small>{% endif %}</h1>
+      <div class="tenue">Nº de paciente {{ p.id }} · Nº de expediente {{ p.expediente or '—' }}</div>
       <div class="tenue">Cédula {{ p.cedula }}{% if p.telefono %} · Tel. {{ p.telefono }}{% endif %}</div>
       <div class="tenue">Estudiante a cargo: {{ nombre_de(p.estudiante) }}</div>
       <div>

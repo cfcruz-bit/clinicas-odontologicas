@@ -17,7 +17,7 @@ os.environ["DATABASE_URL"] = os.environ["PRUEBAS_DATABASE_URL"]
 import prototipo as m  # noqa: E402
 
 base = psycopg.connect(os.environ["DATABASE_URL"], autocommit=True, row_factory=dict_row, prepare_threshold=None)
-base.execute("DROP TABLE IF EXISTS abonos, tratamientos, tarifario, materiales, fotos, dientes, reportes, bitacora,"
+base.execute("DROP TABLE IF EXISTS recibos, abonos, tratamientos, tarifario, materiales, fotos, dientes, reportes, bitacora,"
              " citas, trabajo, pacientes, salas, cuentas")
 m.crear_tablas()
 
@@ -321,6 +321,59 @@ caso("Un procedimiento desactivado ya no se anota", cuantos("tratamientos") == 2
 pdf = gabriel.get(f"/pacientes/{pid}/expediente.pdf")
 caso("El expediente en PDF sale con el odontograma y los tratamientos", pdf.data[:4] == b"%PDF")
 
+# Hoja de control de expediente y recibos de pago
+def recibo_jpg():
+    b = io.BytesIO()
+    Image.new("RGB", (800, 600), "white").save(b, "JPEG")
+    b.seek(0)
+    return b, "recibo.jpg"
+
+gabriel.post(f"/pacientes/{pid}/editar", data={"nombre": "Luis Pérez", "cedula": "T-100", "telefono": "",
+                                                "expediente": "EXP-0457"})
+caso("El estudiante anota el número de expediente del paciente", paciente()["expediente"] == "EXP-0457")
+subir = lambda c, **d: c.post("/control", data={"accion": "subir", "tratamiento": hecho, "numero": "A-0083",  # noqa: E731
+                                                 "fecha": m.hoy(), "foto": recibo_jpg(), **d})
+subir(gabriel, numero="")
+subir(gabriel, fecha=MANANA)
+subir(gabriel, foto=(io.BytesIO(b"no es una imagen"), "recibo.jpg"))
+caso("El recibo necesita número, una fecha que ya llegó y la foto", cuantos("recibos") == 0)
+subir(grace)
+caso("Un estudiante no sube recibos de tratamientos que hizo otro", cuantos("recibos") == 0)
+subir(gabriel, tratamiento=uno("SELECT id FROM tratamientos WHERE realizado IS NULL")["id"])
+caso("El recibo es solo de un tratamiento ya realizado", cuantos("recibos") == 0)
+subir(gabriel)
+subir(gabriel)
+caso("El estudiante sube el recibo con su foto, sin repetirlo", cuantos("recibos") == 1)
+recibo = uno("SELECT id FROM recibos")["id"]
+hoja = texto(gabriel.get("/control"))
+caso("La hoja muestra nº de paciente, de expediente, de recibo, tratamiento y fecha",
+     all(t in hoja for t in (f">{pid}<", "EXP-0457", "A-0083", "Obturación con resina del 36", m.dmy(m.hoy()))))
+caso("La foto del recibo la ven el estudiante y el profesor, no otro estudiante",
+     gabriel.get(f"/control/recibos/{recibo}.jpg").mimetype == "image/jpeg"
+     and profe.get(f"/control/recibos/{recibo}.jpg").mimetype == "image/jpeg"
+     and grace.get(f"/control/recibos/{recibo}.jpg").status_code == 302)
+caso("Otro estudiante no ve el recibo en su hoja", "A-0083" not in texto(grace.get("/control")))
+caso("Al profesor le aparece cuántos recibos esperan su firma", "Hoja de control (1)" in texto(profe.get("/menu")))
+gabriel.post("/control", data={"accion": "firmar", "id": recibo})
+caso("El estudiante no firma sus recibos", uno("SELECT firmado FROM recibos")["firmado"] is None)
+profe.post("/control", data={"accion": "firmar", "id": recibo})
+caso("El profesor firma el recibo con su nombre y la fecha",
+     uno("SELECT firmado_por, firmado FROM recibos")["firmado_por"] == "00000001"
+     and "Dra. Grace Mendoza" in texto(gabriel.get("/control")))
+gabriel.post("/control", data={"accion": "quitar", "id": recibo})
+caso("Un recibo firmado ya no se quita", cuantos("recibos") == 1)
+cliente("00000004").post("/control", data={"accion": "quitar_firma", "id": recibo})
+caso("Solo el profesor que firmó puede quitar su firma",
+     uno("SELECT firmado_por FROM recibos")["firmado_por"] == "00000001")
+caso("Los recibos del paciente se ven junto a sus abonos", "A-0083" in texto(admin.get(trat)))
+admin.post(f"/pacientes/{pid}/cerrar", data={"accion": "eliminar", "cedula": "T-100", "texto": "Prueba"})
+caso("Un paciente con recibos firmados por el docente no se elimina",
+     paciente() is not None and cuantos("recibos") == 1)
+caso("La Facultad filtra la hoja por estudiante",
+     "A-0083" in texto(admin.get("/control?estudiante=00000005"))
+     and "A-0083" not in texto(admin.get("/control?estudiante=00000002")))
+caso("El expediente en PDF sale con los recibos", gabriel.get(f"/pacientes/{pid}/expediente.pdf").data[:4] == b"%PDF")
+
 # Inventario
 caso("Solo la Facultad lleva el inventario", grace.get("/inventario").status_code == 302)
 admin.post("/inventario", data={"accion": "agregar", "nombre": "Guantes", "unidad": "cajas", "cantidad": "10",
@@ -388,6 +441,9 @@ caso("De alta, ya no sale para agendarle citas",
      f'<option value="{pid}"' not in texto(gabriel.get("/citas")))
 admin.post(trat, data={"accion": "abono", "monto": "300.50"})
 caso("De alta, la Facultad todavia registra abonos para saldar la cuenta", cuantos("abonos") == 2)
+gabriel.post("/control", data={"accion": "subir", "tratamiento": hecho, "numero": "A-0120", "fecha": m.hoy(),
+                               "foto": recibo_jpg()})
+caso("De alta, todavía se sube un recibo que llegó tarde", cuantos("recibos") == 2)
 caso("De alta, ya no se cambia de estudiante", admin.get(f"/pacientes/{pid}/traspaso").status_code == 302)
 admin.post(cerrar, data={"accion": "reabrir"})
 gabriel.post(odonto, data={"accion": "diente", "diente": "21", "estado": "Caries"})
