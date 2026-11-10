@@ -417,6 +417,29 @@ for _ in range(m.FALLOS_MAXIMOS):
 admin.post("/cuentas", data={"accion": "clave", "cif": "00000009", "clave": "otra-clave-2"})
 caso("Ponerle una contraseña nueva desbloquea la cuenta",
      m.app.test_client().post("/", data={"cif": "00000009", "clave": "otra-clave-2"}).status_code == 302)
+varios = lambda lista: admin.post("/cuentas", data={"accion": "varios", "lista": lista})  # noqa: E731
+varios("G001, Ana Grupo\nG002 sin coma\nG003, Luis Grupo")
+varios("G001, Ana Grupo\nG001, Repetida")
+grace.post("/cuentas", data={"accion": "varios", "lista": "G001, Ana Grupo"})
+caso("Si una línea del grupo está mal no se crea ninguna cuenta, y solo la Facultad agrega grupos",
+     cuantos("cuentas") == 6)
+hoja = texto(varios("CIF\tNombre\nG001\tAna Grupo\nG002; Beto Grupo\n\nG003, Pérez, Carla\n00000002, Ya Existe"))
+claves = {f["cif"]: f["clave"] for f in base.execute("SELECT cif, clave FROM cuentas WHERE cif LIKE 'G00_'")}
+caso("La Facultad agrega un grupo de estudiantes pegando la lista, sin tocar las cuentas que ya existían",
+     sorted(claves) == ["G001", "G002", "G003"] and uno("SELECT nombre, rol FROM cuentas WHERE cif = 'G003'")
+     == {"nombre": "Pérez, Carla", "rol": "estudiante"}
+     and uno("SELECT nombre FROM cuentas WHERE cif = '00000002'")["nombre"] == "Grace Alvarado")
+import re  # noqa: E402
+dadas = dict(re.findall(r"<td>(G00\d)</td><td>[^<]+</td><td><code class=\"clave\">(\w+)</code>", hoja))
+caso("Cada estudiante del grupo recibe una contraseña distinta, que se muestra una sola vez y se guarda cifrada",
+     len(set(dadas.values())) == 3 and all(len(c) >= m.CLAVE_MINIMA and c not in claves[cif] for cif, c in dadas.items())
+     and not any(c in texto(admin.get("/cuentas")) for c in dadas.values()))
+caso("La hoja del grupo trae el QR y la dirección de la página de inicio de sesión",
+     'src="data:image/svg+xml;base64,' in hoja and "http://localhost/<" in hoja)
+caso("El estudiante del grupo entra con la contraseña que le tocó",
+     m.app.test_client().post("/", data={"cif": "G002", "clave": dadas.get("G002", "")}).status_code == 302)
+caso("La bitácora anota el grupo creado, sin las contraseñas",
+     uno("SELECT accion FROM bitacora WHERE accion LIKE 'Creó 3 cuentas%%'")["accion"].endswith("G001, G002, G003"))
 
 # Dar de alta y eliminar pacientes: solo la Facultad
 cerrar = f"/pacientes/{pid}/cerrar"
@@ -465,7 +488,7 @@ caso("La eliminacion queda en la bitacora con el motivo",
      "Eliminó al paciente Repetido Por Error (T-300): Duplicado" in texto(admin.get("/bitacora")))
 
 m.crear_tablas()
-caso("Crear las tablas otra vez no borra ni duplica nada", cuantos("pacientes") == 2 and cuantos("cuentas") == 6)
+caso("Crear las tablas otra vez no borra ni duplica nada", cuantos("pacientes") == 2 and cuantos("cuentas") == 9)
 
 print(f"\n{'Todo correcto.' if not fallos else str(len(fallos)) + ' fallos.'}")
 sys.exit(1 if fallos else 0)

@@ -263,3 +263,9 @@ p.vacio { border: 1px dashed var(--borde); border-radius: 3px; background: #fafb
 /* hoja de control de recibos: usa todo el ancho; al imprimir, la firma sin firmar queda en blanco para firmarla a mano */
 .hoja-control { max-width: none; }
 @media print { .hoja-control td { padding-top: 10px; padding-bottom: 10px; } }
+
+/* contraseñas de las cuentas nuevas: letra de ancho fijo y grande para copiarlas sin equivocarse */
+.clave { font: 600 15px/1.2 Consolas, "Courier New", monospace; letter-spacing: .08em; }
+.qr-entrada { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 12px; }
+.qr-entrada img { width: 150px; height: 150px; }
+.qr-entrada .clave { overflow-wrap: anywhere; }

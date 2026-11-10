@@ -1,6 +1,32 @@
 {% extends "base.html" %}
 {% block titulo %}Cuentas - Clínicas Odontológicas{% endblock %}
 {% block contenido %}
+  {% if nuevas %}
+  <div class="hoja">
+    <div class="hoja-encabezado">
+      <img src="{{ url_for('static', filename='logo-uam.png') }}" alt="Universidad Americana (UAM)">
+      <div><b>Cuentas nuevas de estudiantes</b><br>Clínicas Odontológicas · Facultad de Odontología UAM<br>{{ hoy|dmy }}</div>
+    </div>
+    <div class="mensaje aviso sin-imprimir"><b>Imprima o copie esta lista ahora (Ctrl+P).</b> Las contraseñas se muestran
+      solo esta vez: se guardan cifradas y al salir de esta página ya nadie las puede ver. Entréguele a cada estudiante
+      la suya en privado. Si una se pierde, póngale una nueva en la tabla de abajo.</div>
+    <div class="qr-entrada">
+      <img src="{{ entrada[1] }}" alt="Código QR de la página de inicio de sesión">
+      <div><b>Para entrar al sistema</b><br>Escanee el código con la cámara del celular, o escriba esta dirección:<br>
+        <span class="clave">{{ entrada[0] }}</span><br>Después escriba su CIF y la contraseña de esta lista.</div>
+    </div>
+    <div class="tabla">
+      <table>
+        <thead><tr><th>CIF</th><th>Nombre</th><th>Contraseña</th></tr></thead>
+        <tbody>
+          {% for c, n, clave in nuevas %}<tr><td>{{ c }}</td><td>{{ n }}</td><td><code class="clave">{{ clave }}</code></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+  <div class="{{ 'sin-imprimir' if nuevas }}">
   <h2>Cuentas</h2>
   <p class="tenue">La Facultad crea las cuentas y les pone la contraseña; se guarda cifrada y nadie la puede ver después.
      Una cuenta desactivada no puede entrar, pero su nombre sigue en el historial de los pacientes y en la bitácora.</p>
@@ -29,9 +55,22 @@
   </div>
 
   <form method="post">
+    <input type="hidden" name="accion" value="varios">
+    <fieldset>
+      <legend>Agregar un grupo de estudiantes</legend>
+      <p class="tenue">Pegue la lista del grupo, una línea por estudiante: el CIF, una coma y el nombre. También se puede
+        copiar de Excel las dos columnas (CIF y nombre) y pegarlas aquí. El sistema le pone a cada uno una contraseña
+        distinta y le muestra la lista para imprimirla y repartirla.</p>
+      <textarea name="lista" rows="8" required aria-label="Lista de estudiantes: CIF y nombre"
+                placeholder="21010234, María José López&#10;21010871, Carlos Hernández&#10;…"></textarea>
+      <div class="acciones"><button class="btn">Crear las cuentas</button></div>
+    </fieldset>
+  </form>
+
+  <form method="post">
     <input type="hidden" name="accion" value="crear">
     <fieldset>
-      <legend>Crear cuenta</legend>
+      <legend>Crear una sola cuenta</legend>
       <div class="campo"><span>CIF: *</span><input name="cif" required pattern="[A-Za-z0-9]+" autocomplete="off"></div>
       <div class="campo"><span>Nombre: *</span><input name="nombre" required></div>
       <div class="campo"><span>Rol: *</span>
@@ -45,4 +84,5 @@
       <div class="acciones"><button class="btn">Crear cuenta</button></div>
     </fieldset>
   </form>
+  </div>
 {% endblock %}

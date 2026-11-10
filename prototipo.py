@@ -9,6 +9,7 @@ import io
 import ipaddress
 import json
 import os
+import re
 import secrets
 import urllib.request
 from datetime import datetime, timedelta, timezone
@@ -19,6 +20,9 @@ from flask import (Flask, Response, flash, g, redirect, render_template, request
                    session, url_for)
 from PIL import Image, ImageOps
 from psycopg.rows import dict_row
+from reportlab.graphics import renderSVG
+from reportlab.graphics.barcode.qr import QrCodeWidget
+from reportlab.graphics.shapes import Drawing
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
@@ -152,6 +156,8 @@ MOTIVO_MAXIMO = 500  # caracteres del motivo de una clinica que no funciona
 RECIBO_MAXIMO = 40  # caracteres del numero de recibo
 FALLOS_MAXIMOS, MINUTOS_BLOQUEO = 5, 15  # tras 5 claves equivocadas seguidas la cuenta espera 15 min
 CLAVE_MINIMA = 8  # caracteres de la contraseña que la Facultad le pone a una cuenta
+GRUPO_MAXIMO = 200  # estudiantes que se agregan de una sola vez
+LETRAS_CLAVE = "abcdefghjkmnpqrstuvwxyz23456789"  # sin 0/o ni 1/l/i, que se confunden al copiarlas del papel
 FOTO_LADO = 1600  # pixeles del lado mas largo de la foto presencial guardada
 
 
@@ -877,6 +883,12 @@ def administrar_cuentas():
                     cif, nombre, rol_nuevo, generate_password_hash(clave))
                 anotar(f"Creó la cuenta de {nombre} ({cif}, {ROLES[rol_nuevo]})")
                 flash(f"Cuenta de {nombre} creada. Dele la contraseña en privado.", "ok")
+        elif accion == "varios":
+            nuevas = crear_varios(request.form.get("lista", ""))
+            if nuevas:  # las contraseñas se muestran solo esta vez: no se guardan en claro ni quedan en el navegador
+                respuesta = Response(pagina_de_cuentas(nuevas))
+                respuesta.headers["Cache-Control"] = "no-store"
+                return respuesta
         elif accion == "clave":
             if len(clave) < CLAVE_MINIMA:
                 flash(f"La contraseña debe tener al menos {CLAVE_MINIMA} caracteres.", "error")
@@ -892,10 +904,63 @@ def administrar_cuentas():
                 anotar(("Activó" if fila["activa"] else "Desactivó") + f" la cuenta de {fila['nombre']} ({cif})")
                 flash(f"Cuenta de {fila['nombre']} " + ("activada." if fila["activa"] else "desactivada."), "ok")
         return redirect(url_for("administrar_cuentas"))
-    return render_template("cuentas.html", **comun(), roles=ROLES, clave_minima=CLAVE_MINIMA, lista=sql(
+    return pagina_de_cuentas()
+
+def qr_de_entrada():
+    """La dirección de la página de inicio de sesión y su código QR (SVG listo para un <img>), para la hoja
+    de cuentas nuevas: el estudiante lo escanea con el celular y entra con su CIF y su contraseña."""
+    direccion = url_for("entrar", _external=True, _scheme="https" if "FLY_APP_NAME" in os.environ else None)
+    dibujo = Drawing(120, 120)
+    dibujo.add(QrCodeWidget(direccion, barWidth=120, barHeight=120, barLevel="M"))
+    svg = base64.b64encode(renderSVG.drawToString(dibujo).encode()).decode()
+    return direccion, "data:image/svg+xml;base64," + svg
+
+def pagina_de_cuentas(nuevas=None):
+    return render_template("cuentas.html", **comun(), roles=ROLES, clave_minima=CLAVE_MINIMA, nuevas=nuevas,
+                           entrada=qr_de_entrada() if nuevas else None,
+                           grupo_maximo=GRUPO_MAXIMO, hoy=hoy(), lista=sql(
         "SELECT cif, nombre, rol, activa, CASE WHEN bloqueada_hasta > now() THEN"
         " to_char(bloqueada_hasta AT TIME ZONE 'America/Managua', 'HH24:MI') END AS bloqueada"
         " FROM cuentas ORDER BY activa DESC, rol, nombre").fetchall())
+
+def crear_varios(lista):
+    """Crea las cuentas de un grupo de estudiantes pegado desde Excel: una línea por estudiante, CIF y nombre.
+    A cada uno le pone una contraseña al azar. Devuelve [(cif, nombre, contraseña)] de las cuentas creadas.
+    Si alguna línea está mal no crea ninguna, para que la lista se corrija y se pegue otra vez completa."""
+    filas, malas, ya = {}, [], []
+    lineas = [linea for linea in lista.splitlines() if linea.strip()]
+    for n, linea in enumerate(lineas, 1):
+        cif, nombre = (re.split(r"[\t,;]", linea.strip(), maxsplit=1) + [""])[:2]
+        cif, nombre = cif.strip(), nombre.strip()
+        if cif.lower() == "cif":  # el encabezado de la hoja de Excel
+            continue
+        if not cif.isalnum() or not nombre or cif in filas:
+            malas.append(str(n))
+        elif cif in cuentas():
+            ya.append(cif)
+        else:
+            filas[cif] = nombre
+    if len(lineas) > GRUPO_MAXIMO:
+        flash(f"Son demasiados de una vez: pegue hasta {GRUPO_MAXIMO} estudiantes.", "error")
+    elif malas:
+        flash("No se creó ninguna cuenta. Revise la línea " + ", ".join(malas) + ": cada una lleva el CIF (solo"
+              " números y letras), una coma y el nombre, y un CIF no se repite.", "error")
+    elif not filas:
+        flash("Pegue la lista: una línea por estudiante, con el CIF y el nombre." if not ya else
+              "Todos los CIF de la lista ya tenían cuenta: no se cambió nada.", "error")
+    else:
+        nuevas = [(cif, nombre, "".join(secrets.choice(LETRAS_CLAVE) for _ in range(CLAVE_MINIMA)))
+                  for cif, nombre in filas.items()]
+        with bd().transaction():
+            for cif, nombre, clave in nuevas:
+                sql("INSERT INTO cuentas (cif, nombre, rol, clave) VALUES (%s, %s, 'estudiante', %s)",
+                    cif, nombre, generate_password_hash(clave))
+            anotar(f"Creó {len(nuevas)} cuentas de estudiante: " + ", ".join(filas))
+        g.pop("cuentas", None)  # para que la lista de la página ya las traiga
+        flash(f"Se crearon {len(nuevas)} cuentas de estudiante."
+              + (f" Ya tenían cuenta y no se cambiaron: {', '.join(ya)}." if ya else ""), "ok")
+        return nuevas
+    return []
 
 
 def recibos_de(estudiante=None, paciente_id=None):
