@@ -264,8 +264,8 @@ p.vacio { border: 1px dashed var(--borde); border-radius: 3px; background: #fafb
 .hoja-control { max-width: none; }
 @media print { .hoja-control td { padding-top: 10px; padding-bottom: 10px; } }
 
-/* contraseñas de las cuentas nuevas: letra de ancho fijo y grande para copiarlas sin equivocarse */
-.clave { font: 600 15px/1.2 Consolas, "Courier New", monospace; letter-spacing: .08em; }
-.qr-entrada { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 12px; }
-.qr-entrada img { width: 150px; height: 150px; }
-.qr-entrada .clave { overflow-wrap: anywhere; }
+/* código QR del grupo de estudiantes: grande, para proyectarlo o imprimirlo */
+.qr-registro { text-align: center; }
+.qr-registro img { display: block; width: min(100%, 300px); height: auto; aspect-ratio: 1; margin: 0 auto 8px; }
+.qr-registro ol { display: inline-block; text-align: left; margin: 8px 0 12px; padding-left: 22px; }
+.clave { font: 600 15px/1.3 Consolas, "Courier New", monospace; overflow-wrap: anywhere; }  /* la dirección escrita */

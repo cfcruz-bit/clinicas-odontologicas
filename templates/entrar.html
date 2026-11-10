@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script src="{{ url_for('static', filename='cargando.js') }}" defer></script>
-<title>Iniciar sesión - Clínicas Odontológicas</title>
+<title>{% block titulo %}Iniciar sesión{% endblock %} - Clínicas Odontológicas</title>
 <style>
   * { box-sizing: border-box; }
   body {
@@ -34,6 +34,8 @@
   @media (prefers-reduced-motion: reduce) { .cargando::before { animation-duration: 2s; } }
   form[aria-busy="true"] button { pointer-events: none; opacity: .7; }
   .error { margin: 0; font-size: 13px; color: #b3261e; }
+  .nota { margin: 0; font-size: 13px; text-align: center; }
+  a { color: #14707a; }
   .aviso { margin: 0; padding: 10px 12px; font-size: 13px; border-radius: 8px;
            background: #e7f1f0; border-left: 4px solid #14707a; }
 </style>
@@ -66,6 +68,7 @@
     </div>
   </div>
 
+  {% block formulario %}
   <h1>Iniciar sesión</h1>
 
   {% if aviso %}<p class="aviso">{{ aviso }}</p>{% endif %}
@@ -81,6 +84,7 @@
   {% if error_clave %}<p class="error">{{ error_clave }}</p>{% endif %}
 
   <button>Iniciar sesión</button>
+  {% endblock %}
 </form>
 
 </body>

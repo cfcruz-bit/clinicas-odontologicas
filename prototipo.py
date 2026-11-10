@@ -1,7 +1,7 @@
 """Clínicas Odontológicas (Flask + HTML), con los datos en Neon (PostgreSQL en la nube).
 
 Necesita:  pip install -r requirements.txt
-Variables: DATABASE_URL (cadena de conexión de Neon), SECRET_KEY y, opcional, CLAVE_INICIAL
+Variables: DATABASE_URL (cadena de conexión de Neon), SECRET_KEY y, opcionales, CLAVE_INICIAL y SITIO
 Ejecutar:  python prototipo.py   (crea las tablas si no existen)
 """
 import base64
@@ -9,7 +9,6 @@ import io
 import ipaddress
 import json
 import os
-import re
 import secrets
 import urllib.request
 from datetime import datetime, timedelta, timezone
@@ -35,6 +34,9 @@ CUENTAS_INICIALES = {"00000001": ("Dra. Grace Mendoza", "profesor"),
                      "00000005": ("Gabriel Espinoza", "estudiante"),
                      "00000007": ("Gina Saavedra", "admin")}
 CLAVE_INICIAL = os.environ.get("CLAVE_INICIAL", "uam2026")  # se guarda cifrada, nunca en texto plano
+# Dirección pública del sistema: es la que va en el QR de los grupos, para que abra desde el celular del
+# estudiante aunque la Facultad tenga el sistema abierto en otra dirección (por ejemplo, localhost)
+SITIO = os.environ.get("SITIO", "https://clinicas-odontologicas-uam.fly.dev").rstrip("/")
 ROLES = {"profesor": "Profesor", "estudiante": "Estudiante", "admin": "Facultad"}
 # Pestanas de cada rol: (nombre, endpoint). La bitacora la revisan el profesor y la Facultad
 MENUS = {"estudiante": [("Inicio", "menu"), ("Mis pacientes", "pacientes"), ("Mis citas", "citas"), ("Clínicas", "salas"),
@@ -138,6 +140,13 @@ CREATE TABLE IF NOT EXISTS recibos (
     numero text NOT NULL, fecha text NOT NULL, foto bytea NOT NULL, estudiante text REFERENCES cuentas,
     cuando timestamptz NOT NULL DEFAULT now(), firmado_por text REFERENCES cuentas, firmado text,
     UNIQUE (tratamiento_id, numero));
+-- Grupos de estudiantes: la Facultad crea un codigo (va en un QR) y cada estudiante crea su cuenta con el.
+-- El codigo vence, tiene cupo y se puede cerrar; cada cuenta recuerda con que grupo se registro
+CREATE TABLE IF NOT EXISTS invitaciones (
+    id serial PRIMARY KEY, nombre text NOT NULL, codigo text NOT NULL UNIQUE, cupo int NOT NULL CHECK (cupo > 0),
+    vence timestamptz NOT NULL, cerrado boolean NOT NULL DEFAULT false, creado_por text REFERENCES cuentas,
+    cuando timestamptz NOT NULL DEFAULT now());
+ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS invitacion_id int REFERENCES invitaciones;
 """
 
 app = Flask(__name__)
@@ -156,8 +165,8 @@ MOTIVO_MAXIMO = 500  # caracteres del motivo de una clinica que no funciona
 RECIBO_MAXIMO = 40  # caracteres del numero de recibo
 FALLOS_MAXIMOS, MINUTOS_BLOQUEO = 5, 15  # tras 5 claves equivocadas seguidas la cuenta espera 15 min
 CLAVE_MINIMA = 8  # caracteres de la contraseña que la Facultad le pone a una cuenta
-GRUPO_MAXIMO = 200  # estudiantes que se agregan de una sola vez
-LETRAS_CLAVE = "abcdefghjkmnpqrstuvwxyz23456789"  # sin 0/o ni 1/l/i, que se confunden al copiarlas del papel
+CUPO_MAXIMO, DIAS_MAXIMO = 200, 30  # de un grupo: cuántos estudiantes se registran con su QR y cuánto dura
+CIF_MAXIMO, NOMBRE_MAXIMO = 20, 80  # caracteres de lo que escribe el estudiante al registrarse
 FOTO_LADO = 1600  # pixeles del lado mas largo de la foto presencial guardada
 
 
@@ -331,7 +340,7 @@ def todas_las_salas():
 
 @app.before_request
 def exigir_sesion():
-    if request.endpoint not in ("entrar", "static") and quien() is None:
+    if request.endpoint not in ("entrar", "registro", "static") and quien() is None:
         return redirect(url_for("entrar"))
 
 
@@ -883,12 +892,19 @@ def administrar_cuentas():
                     cif, nombre, rol_nuevo, generate_password_hash(clave))
                 anotar(f"Creó la cuenta de {nombre} ({cif}, {ROLES[rol_nuevo]})")
                 flash(f"Cuenta de {nombre} creada. Dele la contraseña en privado.", "ok")
-        elif accion == "varios":
-            nuevas = crear_varios(request.form.get("lista", ""))
-            if nuevas:  # las contraseñas se muestran solo esta vez: no se guardan en claro ni quedan en el navegador
-                respuesta = Response(pagina_de_cuentas(nuevas))
-                respuesta.headers["Cache-Control"] = "no-store"
-                return respuesta
+        elif accion == "grupo":
+            nombre = request.form.get("nombre", "").strip()
+            cupo, dias = request.form.get("cupo", type=int), request.form.get("dias", type=int)
+            if (not nombre or len(nombre) > NOMBRE_MAXIMO or not cupo or not dias
+                    or not 1 <= cupo <= CUPO_MAXIMO or not 1 <= dias <= DIAS_MAXIMO):
+                flash(f"Escriba el nombre del grupo, cuántos estudiantes son (hasta {CUPO_MAXIMO}) y cuántos días"
+                      f" queda abierto el registro (hasta {DIAS_MAXIMO}).", "error")
+            else:
+                gid = sql("INSERT INTO invitaciones (nombre, codigo, cupo, vence, creado_por)"
+                          " VALUES (%s, %s, %s, now() + %s * interval '1 day', %s) RETURNING id",
+                          nombre, secrets.token_urlsafe(12), cupo, dias, yo).fetchone()["id"]
+                anotar(f"Creó el grupo de estudiantes {nombre} (cupo {cupo}, registro abierto {dias} días)")
+                return redirect(url_for("grupo", gid=gid))
         elif accion == "clave":
             if len(clave) < CLAVE_MINIMA:
                 flash(f"La contraseña debe tener al menos {CLAVE_MINIMA} caracteres.", "error")
@@ -904,63 +920,92 @@ def administrar_cuentas():
                 anotar(("Activó" if fila["activa"] else "Desactivó") + f" la cuenta de {fila['nombre']} ({cif})")
                 flash(f"Cuenta de {fila['nombre']} " + ("activada." if fila["activa"] else "desactivada."), "ok")
         return redirect(url_for("administrar_cuentas"))
-    return pagina_de_cuentas()
-
-def qr_de_entrada():
-    """La dirección de la página de inicio de sesión y su código QR (SVG listo para un <img>), para la hoja
-    de cuentas nuevas: el estudiante lo escanea con el celular y entra con su CIF y su contraseña."""
-    direccion = url_for("entrar", _external=True, _scheme="https" if "FLY_APP_NAME" in os.environ else None)
-    dibujo = Drawing(120, 120)
-    dibujo.add(QrCodeWidget(direccion, barWidth=120, barHeight=120, barLevel="M"))
-    svg = base64.b64encode(renderSVG.drawToString(dibujo).encode()).decode()
-    return direccion, "data:image/svg+xml;base64," + svg
-
-def pagina_de_cuentas(nuevas=None):
-    return render_template("cuentas.html", **comun(), roles=ROLES, clave_minima=CLAVE_MINIMA, nuevas=nuevas,
-                           entrada=qr_de_entrada() if nuevas else None,
-                           grupo_maximo=GRUPO_MAXIMO, hoy=hoy(), lista=sql(
+    return render_template("cuentas.html", **comun(), roles=ROLES, clave_minima=CLAVE_MINIMA,
+                           cupo_maximo=CUPO_MAXIMO, dias_maximo=DIAS_MAXIMO,
+                           grupos=sql(INVITACIONES + " ORDER BY i.id DESC").fetchall(), lista=sql(
         "SELECT cif, nombre, rol, activa, CASE WHEN bloqueada_hasta > now() THEN"
         " to_char(bloqueada_hasta AT TIME ZONE 'America/Managua', 'HH24:MI') END AS bloqueada"
         " FROM cuentas ORDER BY activa DESC, rol, nombre").fetchall())
 
-def crear_varios(lista):
-    """Crea las cuentas de un grupo de estudiantes pegado desde Excel: una línea por estudiante, CIF y nombre.
-    A cada uno le pone una contraseña al azar. Devuelve [(cif, nombre, contraseña)] de las cuentas creadas.
-    Si alguna línea está mal no crea ninguna, para que la lista se corrija y se pegue otra vez completa."""
-    filas, malas, ya = {}, [], []
-    lineas = [linea for linea in lista.splitlines() if linea.strip()]
-    for n, linea in enumerate(lineas, 1):
-        cif, nombre = (re.split(r"[\t,;]", linea.strip(), maxsplit=1) + [""])[:2]
-        cif, nombre = cif.strip(), nombre.strip()
-        if cif.lower() == "cif":  # el encabezado de la hoja de Excel
-            continue
-        if not cif.isalnum() or not nombre or cif in filas:
-            malas.append(str(n))
+
+# Cada grupo con cuántos se han registrado y si su código todavía sirve
+INVITACIONES = ("SELECT i.*, to_char(i.vence AT TIME ZONE 'America/Managua', 'DD/MM/YYYY HH24:MI') AS hasta, n.registrados,"
+                " CASE WHEN i.cerrado THEN 'Cerrado' WHEN i.vence <= now() THEN 'Vencido'"
+                " WHEN n.registrados >= i.cupo THEN 'Lleno' ELSE 'Abierto' END AS estado FROM invitaciones i,"
+                " LATERAL (SELECT count(*) AS registrados FROM cuentas WHERE invitacion_id = i.id) n")
+
+def qr(direccion):
+    """El código QR de una dirección, como SVG listo para el src de un <img>."""
+    dibujo = Drawing(120, 120)
+    dibujo.add(QrCodeWidget(direccion, barWidth=120, barHeight=120, barLevel="M"))
+    return "data:image/svg+xml;base64," + base64.b64encode(renderSVG.drawToString(dibujo).encode()).decode()
+
+
+@app.route("/cuentas/grupos/<int:gid>", methods=["GET", "POST"])
+def grupo(gid):
+    """El código QR del grupo, para proyectarlo o imprimirlo, y quiénes se han registrado con él."""
+    if quien()[2] != "admin":
+        return redirect(url_for("menu"))
+    if request.method == "POST":  # cerrar el registro: el código deja de servir
+        cerrado = sql("UPDATE invitaciones SET cerrado = true WHERE id = %s AND NOT cerrado RETURNING nombre",
+                      gid).fetchone()
+        if cerrado:
+            anotar(f"Cerró el registro del grupo {cerrado['nombre']}")
+            flash("Registro cerrado: el código ya no sirve.", "ok")
+        return redirect(url_for("grupo", gid=gid))
+    invitacion = sql(INVITACIONES + " WHERE i.id = %s", gid).fetchone()
+    if not invitacion:
+        return redirect(url_for("administrar_cuentas"))
+    direccion = SITIO + url_for("registro", codigo=invitacion["codigo"])
+    return render_template(
+        "grupo.html", **comun(), grupo=invitacion, direccion=direccion, qr=qr(direccion), clave_minima=CLAVE_MINIMA,
+        registrados=sql("SELECT cif, nombre, activa FROM cuentas WHERE invitacion_id = %s ORDER BY nombre",
+                        gid).fetchall())
+
+
+@app.route("/registro/<codigo>", methods=["GET", "POST"])
+def registro(codigo):
+    """Página a la que lleva el QR de un grupo: el estudiante escribe su CIF y su nombre y crea su contraseña.
+    No pide sesión; la protege el código del grupo, que vence, tiene cupo y la Facultad puede cerrar.
+    Solo crea cuentas de estudiante, y un estudiante nuevo no ve a ningún paciente."""
+    invitacion = sql(INVITACIONES + " WHERE i.codigo = %s", codigo).fetchone()
+    datos = {"cif": "", "nombre": "", "errores": {}}
+    if request.method == "POST" and invitacion and invitacion["estado"] == "Abierto":
+        cif, nombre = (request.form.get(c, "").strip() for c in ("cif", "nombre"))
+        clave, errores = request.form.get("clave", ""), datos["errores"]
+        datos.update(cif=cif, nombre=nombre)
+        ya_existe = "Ya existe una cuenta con ese CIF. Si es suya, entre con su contraseña; si no, avise a la Facultad."
+        if not cif.isalnum() or len(cif) > CIF_MAXIMO:
+            errores["cif"] = "Escriba su CIF, solo con números y letras."
         elif cif in cuentas():
-            ya.append(cif)
-        else:
-            filas[cif] = nombre
-    if len(lineas) > GRUPO_MAXIMO:
-        flash(f"Son demasiados de una vez: pegue hasta {GRUPO_MAXIMO} estudiantes.", "error")
-    elif malas:
-        flash("No se creó ninguna cuenta. Revise la línea " + ", ".join(malas) + ": cada una lleva el CIF (solo"
-              " números y letras), una coma y el nombre, y un CIF no se repite.", "error")
-    elif not filas:
-        flash("Pegue la lista: una línea por estudiante, con el CIF y el nombre." if not ya else
-              "Todos los CIF de la lista ya tenían cuenta: no se cambió nada.", "error")
-    else:
-        nuevas = [(cif, nombre, "".join(secrets.choice(LETRAS_CLAVE) for _ in range(CLAVE_MINIMA)))
-                  for cif, nombre in filas.items()]
-        with bd().transaction():
-            for cif, nombre, clave in nuevas:
-                sql("INSERT INTO cuentas (cif, nombre, rol, clave) VALUES (%s, %s, 'estudiante', %s)",
-                    cif, nombre, generate_password_hash(clave))
-            anotar(f"Creó {len(nuevas)} cuentas de estudiante: " + ", ".join(filas))
-        g.pop("cuentas", None)  # para que la lista de la página ya las traiga
-        flash(f"Se crearon {len(nuevas)} cuentas de estudiante."
-              + (f" Ya tenían cuenta y no se cambiaron: {', '.join(ya)}." if ya else ""), "ok")
-        return nuevas
-    return []
+            errores["cif"] = ya_existe
+        if not nombre or len(nombre) > NOMBRE_MAXIMO:
+            errores["nombre"] = "Escriba su nombre completo."
+        if len(clave) < CLAVE_MINIMA:
+            errores["clave"] = f"La contraseña debe tener al menos {CLAVE_MINIMA} caracteres."
+        elif clave != request.form.get("clave2", ""):
+            errores["clave2"] = "Las dos contraseñas no son iguales."
+        if not errores:
+            cifrada = generate_password_hash(clave)
+            with bd().transaction():
+                # FOR UPDATE: si dos se registran a la vez por el último cupo, el segundo espera y ya lo ve lleno
+                sql("SELECT 1 FROM invitaciones WHERE id = %s FOR UPDATE", invitacion["id"])
+                invitacion = sql(INVITACIONES + " WHERE i.id = %s", invitacion["id"]).fetchone()
+                creada = invitacion["estado"] == "Abierto" and sql(
+                    "INSERT INTO cuentas (cif, nombre, rol, clave, invitacion_id) VALUES (%s, %s, 'estudiante', %s, %s)"
+                    " ON CONFLICT DO NOTHING RETURNING cif", cif, nombre, cifrada, invitacion["id"]).fetchone()
+            if creada:
+                g.pop("cuentas", None)  # para que la sesión ya encuentre la cuenta nueva
+                session.clear()
+                session.permanent = True
+                session["cif"] = cif
+                anotar(f"Creó su cuenta con el código del grupo {invitacion['nombre']}")
+                flash("Cuenta creada. La próxima vez entre con su CIF y la contraseña que acaba de crear.", "ok")
+                return redirect(url_for("menu"))
+            if invitacion["estado"] == "Abierto":  # otro la creó con ese CIF en el mismo instante
+                errores["cif"] = ya_existe
+    return render_template("registro.html", **datos, grupo=invitacion, clave_minima=CLAVE_MINIMA,
+                           cif_maximo=CIF_MAXIMO, nombre_maximo=NOMBRE_MAXIMO)
 
 
 def recibos_de(estudiante=None, paciente_id=None):

@@ -1,32 +1,6 @@
 {% extends "base.html" %}
 {% block titulo %}Cuentas - Clínicas Odontológicas{% endblock %}
 {% block contenido %}
-  {% if nuevas %}
-  <div class="hoja">
-    <div class="hoja-encabezado">
-      <img src="{{ url_for('static', filename='logo-uam.png') }}" alt="Universidad Americana (UAM)">
-      <div><b>Cuentas nuevas de estudiantes</b><br>Clínicas Odontológicas · Facultad de Odontología UAM<br>{{ hoy|dmy }}</div>
-    </div>
-    <div class="mensaje aviso sin-imprimir"><b>Imprima o copie esta lista ahora (Ctrl+P).</b> Las contraseñas se muestran
-      solo esta vez: se guardan cifradas y al salir de esta página ya nadie las puede ver. Entréguele a cada estudiante
-      la suya en privado. Si una se pierde, póngale una nueva en la tabla de abajo.</div>
-    <div class="qr-entrada">
-      <img src="{{ entrada[1] }}" alt="Código QR de la página de inicio de sesión">
-      <div><b>Para entrar al sistema</b><br>Escanee el código con la cámara del celular, o escriba esta dirección:<br>
-        <span class="clave">{{ entrada[0] }}</span><br>Después escriba su CIF y la contraseña de esta lista.</div>
-    </div>
-    <div class="tabla">
-      <table>
-        <thead><tr><th>CIF</th><th>Nombre</th><th>Contraseña</th></tr></thead>
-        <tbody>
-          {% for c, n, clave in nuevas %}<tr><td>{{ c }}</td><td>{{ n }}</td><td><code class="clave">{{ clave }}</code></td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-  {% endif %}
-  <div class="{{ 'sin-imprimir' if nuevas }}">
   <h2>Cuentas</h2>
   <p class="tenue">La Facultad crea las cuentas y les pone la contraseña; se guarda cifrada y nadie la puede ver después.
      Una cuenta desactivada no puede entrar, pero su nombre sigue en el historial de los pacientes y en la bitácora.</p>
@@ -54,16 +28,34 @@
     </table>
   </div>
 
+  <h2>Grupos de estudiantes</h2>
+  <p class="tenue">Para no crear las cuentas una por una: cree un grupo y el sistema le da un código QR. Cada estudiante lo
+     escanea con su celular, escribe su CIF y su nombre y crea su propia contraseña.</p>
+  {% if grupos %}
+  <div class="tabla">
+    <table>
+      <thead><tr><th>Grupo</th><th>Registrados</th><th>Registro</th><th></th></tr></thead>
+      <tbody>
+        {% for g in grupos %}
+        <tr>
+          <td>{{ g.nombre }}</td><td>{{ g.registrados }} de {{ g.cupo }}</td>
+          <td class="{{ 'verde' if g.estado == 'Abierto' else 'tenue' }}">{{ "Abierto hasta el " ~ g.hasta if g.estado == "Abierto" else g.estado }}</td>
+          <td class="acciones"><a class="btn chico" href="{{ url_for('grupo', gid=g.id) }}">{{ "Ver el QR y la lista" if g.estado == "Abierto" else "Ver la lista" }}</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
   <form method="post">
-    <input type="hidden" name="accion" value="varios">
+    <input type="hidden" name="accion" value="grupo">
     <fieldset>
-      <legend>Agregar un grupo de estudiantes</legend>
-      <p class="tenue">Pegue la lista del grupo, una línea por estudiante: el CIF, una coma y el nombre. También se puede
-        copiar de Excel las dos columnas (CIF y nombre) y pegarlas aquí. El sistema le pone a cada uno una contraseña
-        distinta y le muestra la lista para imprimirla y repartirla.</p>
-      <textarea name="lista" rows="8" required aria-label="Lista de estudiantes: CIF y nombre"
-                placeholder="21010234, María José López&#10;21010871, Carlos Hernández&#10;…"></textarea>
-      <div class="acciones"><button class="btn">Crear las cuentas</button></div>
+      <legend>Crear un grupo de estudiantes</legend>
+      <div class="campo"><span>Nombre del grupo: *</span><input name="nombre" required maxlength="80" placeholder="Ej.: Operatoria II, grupo A"></div>
+      <div class="campo"><span>¿Cuántos estudiantes son? *</span><input type="number" name="cupo" required min="1" max="{{ cupo_maximo }}" value="30"></div>
+      <div class="campo"><span>Días que queda abierto el registro: *</span><input type="number" name="dias" required min="1" max="{{ dias_maximo }}" value="7"></div>
+      <p class="tenue">Con el cupo lleno o pasados esos días el código deja de servir. También lo puede cerrar antes.</p>
+      <div class="acciones"><button class="btn">Crear el grupo y ver el QR</button></div>
     </fieldset>
   </form>
 
@@ -84,5 +76,4 @@
       <div class="acciones"><button class="btn">Crear cuenta</button></div>
     </fieldset>
   </form>
-  </div>
 {% endblock %}

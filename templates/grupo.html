@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block titulo %}Grupo {{ grupo.nombre }} - Clínicas Odontológicas{% endblock %}
+{% block contenido %}
+  <p class="sin-imprimir"><a href="{{ url_for('administrar_cuentas') }}">&larr; Volver a Cuentas</a></p>
+  <div class="hoja">
+    <div class="hoja-encabezado">
+      <img src="{{ url_for('static', filename='logo-uam.png') }}" alt="Universidad Americana (UAM)">
+      <div><b>Crear mi cuenta de estudiante</b><br>Clínicas Odontológicas · Facultad de Odontología UAM<br>Grupo: {{ grupo.nombre }}</div>
+    </div>
+    {% if grupo.estado == "Abierto" %}
+    <div class="qr-registro">
+      <img src="{{ qr }}" alt="Código QR para crear la cuenta">
+      <ol>
+        <li>Escanee el código con la cámara de su celular.</li>
+        <li>Escriba su CIF y su nombre completo.</li>
+        <li>Cree su contraseña (al menos {{ clave_minima }} caracteres) y no la comparta.</li>
+      </ol>
+      <p>Si no puede escanearlo, escriba esta dirección en el navegador:<br><span class="clave">{{ direccion }}</span></p>
+      <p class="tenue">Registro abierto hasta el {{ grupo.hasta }}.</p>
+    </div>
+    {% else %}
+    <p class="vacio"><b>El registro de este grupo está {{ grupo.estado|lower }}</b>El código ya no sirve. Si faltan estudiantes, cree
+      otro grupo en Cuentas.</p>
+    {% endif %}
+  </div>
+
+  <div class="sin-imprimir">
+    {% if grupo.estado == "Abierto" %}
+    <p class="tenue">Proyecte esta página en clase o imprímala (Ctrl+P): sale solo el código, sin la lista. Quien tenga el
+       código puede crear una cuenta de estudiante, así que ciérrelo cuando ya estén todos.</p>
+    <form method="post" class="acciones"><button class="btn peligro">Cerrar el registro</button></form>
+    {% endif %}
+
+    <h2>Estudiantes registrados: {{ grupo.registrados }} de {{ grupo.cupo }}</h2>
+    <div class="tabla">
+      <table>
+        <thead><tr><th>CIF</th><th>Nombre</th><th>Estado</th></tr></thead>
+        <tbody>
+          {% for c in registrados %}
+          <tr><td>{{ c.cif }}</td><td>{{ c.nombre }}</td>
+            <td class="{{ 'verde' if c.activa else 'tenue' }}">{{ "Activa" if c.activa else "Desactivada" }}</td></tr>
+          {% else %}
+          <tr><td class="vacio" colspan="3"><b>Todavía no se registra nadie</b>{{ "Aparecen aquí cuando escanean el código; actualice la página para verlos." if grupo.estado == "Abierto" else "Nadie usó el código de este grupo." }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if registrados %}<p class="tenue">Si alguien se registró con un CIF que no es el suyo, desactive esa cuenta en
+       <a href="{{ url_for('administrar_cuentas') }}">Cuentas</a>.</p>{% endif %}
+  </div>
+{% endblock %}

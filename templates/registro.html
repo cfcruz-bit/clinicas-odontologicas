@@ -1,0 +1,36 @@
+{% extends "entrar.html" %}
+{% block titulo %}Crear mi cuenta{% endblock %}
+{% block formulario %}
+  <h1>Crear mi cuenta</h1>
+  {% if not grupo or grupo.estado != "Abierto" %}
+  <p class="aviso">Este código de registro ya no está disponible{{ {"Cerrado": ": la Facultad cerró el registro", "Vencido": ": ya venció",
+     "Lleno": ": el grupo ya está completo"}[grupo.estado] if grupo }}. Pídale a la Facultad un código nuevo.</p>
+  <p class="nota"><a href="{{ url_for('entrar') }}">Ya tengo cuenta: iniciar sesión</a></p>
+  {% else %}
+  <p class="aviso">Grupo <b>{{ grupo.nombre }}</b>. Escriba sus datos y cree la contraseña con la que va a entrar.</p>
+
+  <label>CIF
+    <input name="cif" value="{{ cif }}" required maxlength="{{ cif_maximo }}" autocomplete="username" autocapitalize="none">
+  </label>
+  {% if errores.cif %}<p class="error">{{ errores.cif }}</p>{% endif %}
+
+  <label>Nombre completo
+    <input name="nombre" value="{{ nombre }}" required maxlength="{{ nombre_maximo }}" autocomplete="name">
+  </label>
+  {% if errores.nombre %}<p class="error">{{ errores.nombre }}</p>{% endif %}
+
+  <label>Contraseña (al menos {{ clave_minima }} caracteres)
+    <input name="clave" type="password" required minlength="{{ clave_minima }}" autocomplete="new-password">
+  </label>
+  {% if errores.clave %}<p class="error">{{ errores.clave }}</p>{% endif %}
+
+  <label>Repita la contraseña
+    <input name="clave2" type="password" required minlength="{{ clave_minima }}" autocomplete="new-password">
+  </label>
+  {% if errores.clave2 %}<p class="error">{{ errores.clave2 }}</p>{% endif %}
+
+  <button>Crear mi cuenta</button>
+  <p class="nota">Nadie más puede ver su contraseña. Si la olvida, la Facultad le pone una nueva.<br>
+    <a href="{{ url_for('entrar') }}">Ya tengo cuenta: iniciar sesión</a></p>
+  {% endif %}
+{% endblock %}

@@ -18,7 +18,7 @@ import prototipo as m  # noqa: E402
 
 base = psycopg.connect(os.environ["DATABASE_URL"], autocommit=True, row_factory=dict_row, prepare_threshold=None)
 base.execute("DROP TABLE IF EXISTS recibos, abonos, tratamientos, tarifario, materiales, fotos, dientes, reportes, bitacora,"
-             " citas, trabajo, pacientes, salas, cuentas")
+             " citas, trabajo, pacientes, salas, cuentas, invitaciones CASCADE")
 m.crear_tablas()
 
 def uno(consulta, *args):
@@ -417,29 +417,66 @@ for _ in range(m.FALLOS_MAXIMOS):
 admin.post("/cuentas", data={"accion": "clave", "cif": "00000009", "clave": "otra-clave-2"})
 caso("Ponerle una contraseña nueva desbloquea la cuenta",
      m.app.test_client().post("/", data={"cif": "00000009", "clave": "otra-clave-2"}).status_code == 302)
-varios = lambda lista: admin.post("/cuentas", data={"accion": "varios", "lista": lista})  # noqa: E731
-varios("G001, Ana Grupo\nG002 sin coma\nG003, Luis Grupo")
-varios("G001, Ana Grupo\nG001, Repetida")
-grace.post("/cuentas", data={"accion": "varios", "lista": "G001, Ana Grupo"})
-caso("Si una línea del grupo está mal no se crea ninguna cuenta, y solo la Facultad agrega grupos",
+# Grupos de estudiantes: la Facultad crea un código QR y cada estudiante crea su propia cuenta
+grupo = lambda c=admin, **d: c.post("/cuentas", data={"accion": "grupo", "nombre": "Operatoria 2026", "cupo": "2",  # noqa: E731
+                                                       "dias": "7", **d})
+grupo(nombre="")
+grupo(cupo="0")
+grupo(dias="400")
+grupo(grace)
+caso("Solo la Facultad crea grupos, con nombre, cupo y días válidos", cuantos("invitaciones") == 0)
+creado = grupo()
+inv = uno("SELECT id, codigo FROM invitaciones")
+del_grupo, reg = f"/cuentas/grupos/{inv['id']}", f"/registro/{inv['codigo']}"
+pagina = texto(admin.get(del_grupo))
+caso("Al crear el grupo la Facultad ve su código QR y la dirección pública para registrarse, no localhost",
+     creado.headers["Location"].endswith(del_grupo) and 'src="data:image/svg+xml;base64,' in pagina
+     and f"{m.SITIO}{reg}<" in pagina and m.SITIO.startswith("https://") and "localhost" not in m.SITIO)
+caso("Ni el estudiante ni el profesor ven el código del grupo",
+     grace.get(del_grupo).status_code == 302 and profe.get(del_grupo).status_code == 302)
+anon = m.app.test_client()
+caso("La página de registro abre sin sesión y dice de qué grupo es", "Operatoria 2026" in texto(anon.get(reg)))
+datos = {"cif": "R001", "nombre": "Rosa Registro", "clave": "mi-clave-123", "clave2": "mi-clave-123"}
+anon.post("/registro/codigo-inventado", data=datos)
+caso("Con un código inventado no se crea ninguna cuenta",
+     cuantos("cuentas") == 6 and "ya no está disponible" in texto(anon.get("/registro/codigo-inventado")))
+for mal in ({"cif": "R 001"}, {"cif": "00000002"}, {"nombre": ""}, {"clave": "corta", "clave2": "corta"},
+            {"clave2": "otra-clave-123"}):
+    anon.post(reg, data={**datos, **mal})
+caso("Para registrarse hace falta un CIF nuevo, el nombre y una contraseña de 8 caracteres escrita dos veces",
      cuantos("cuentas") == 6)
-hoja = texto(varios("CIF\tNombre\nG001\tAna Grupo\nG002; Beto Grupo\n\nG003, Pérez, Carla\n00000002, Ya Existe"))
-claves = {f["cif"]: f["clave"] for f in base.execute("SELECT cif, clave FROM cuentas WHERE cif LIKE 'G00_'")}
-caso("La Facultad agrega un grupo de estudiantes pegando la lista, sin tocar las cuentas que ya existían",
-     sorted(claves) == ["G001", "G002", "G003"] and uno("SELECT nombre, rol FROM cuentas WHERE cif = 'G003'")
-     == {"nombre": "Pérez, Carla", "rol": "estudiante"}
-     and uno("SELECT nombre FROM cuentas WHERE cif = '00000002'")["nombre"] == "Grace Alvarado")
-import re  # noqa: E402
-dadas = dict(re.findall(r"<td>(G00\d)</td><td>[^<]+</td><td><code class=\"clave\">(\w+)</code>", hoja))
-caso("Cada estudiante del grupo recibe una contraseña distinta, que se muestra una sola vez y se guarda cifrada",
-     len(set(dadas.values())) == 3 and all(len(c) >= m.CLAVE_MINIMA and c not in claves[cif] for cif, c in dadas.items())
-     and not any(c in texto(admin.get("/cuentas")) for c in dadas.values()))
-caso("La hoja del grupo trae el QR y la dirección de la página de inicio de sesión",
-     'src="data:image/svg+xml;base64,' in hoja and "http://localhost/<" in hoja)
-caso("El estudiante del grupo entra con la contraseña que le tocó",
-     m.app.test_client().post("/", data={"cif": "G002", "clave": dadas.get("G002", "")}).status_code == 302)
-caso("La bitácora anota el grupo creado, sin las contraseñas",
-     uno("SELECT accion FROM bitacora WHERE accion LIKE 'Creó 3 cuentas%%'")["accion"].endswith("G001, G002, G003"))
+entra = anon.post(reg, data=datos)
+rosa = uno("SELECT * FROM cuentas WHERE cif = 'R001'") or {}
+caso("El estudiante crea su cuenta con su CIF, su nombre y su contraseña, guardada cifrada",
+     rosa.get("nombre") == "Rosa Registro" and rosa["rol"] == "estudiante" and rosa["invitacion_id"] == inv["id"]
+     and "mi-clave-123" not in rosa["clave"])
+caso("Al registrarse queda dentro del sistema como estudiante, sin pacientes de nadie",
+     entra.status_code == 302 and "Rosa Registro (Estudiante)" in texto(anon.get("/menu"))
+     and "Luis Pérez" not in texto(anon.get("/pacientes")))
+caso("Después entra con su CIF y la contraseña que creó",
+     m.app.test_client().post("/", data={"cif": "R001", "clave": "mi-clave-123"}).status_code == 302)
+caso("El registro queda en la bitácora",
+     uno("SELECT 1 FROM bitacora WHERE cif = 'R001' AND accion LIKE 'Creó su cuenta%%Operatoria 2026'"))
+m.app.test_client().post(reg, data={**datos, "cif": "R002", "nombre": "Raúl Registro"})
+m.app.test_client().post(reg, data={**datos, "cif": "R003", "nombre": "Sobra Uno"})
+caso("Cuando se llena el cupo ya no se registra nadie más",
+     cuantos("cuentas") == 8 and "el grupo ya está completo" in texto(m.app.test_client().get(reg)))
+caso("La Facultad ve quiénes se registraron en el grupo",
+     all(t in texto(admin.get(del_grupo)) for t in ("Rosa Registro", "Raúl Registro", "2 de 2")))
+grupo(nombre="Grupo B", cupo="5")
+inv_b = uno("SELECT id, codigo FROM invitaciones WHERE nombre = 'Grupo B'")
+grace.post(f"/cuentas/grupos/{inv_b['id']}")
+caso("Solo la Facultad cierra el registro de un grupo",
+     not uno("SELECT cerrado FROM invitaciones WHERE id = %s", inv_b["id"])["cerrado"])
+admin.post(f"/cuentas/grupos/{inv_b['id']}")
+m.app.test_client().post(f"/registro/{inv_b['codigo']}", data={**datos, "cif": "R004"})
+caso("Con el registro cerrado el código ya no sirve",
+     cuantos("cuentas") == 8 and "cerró el registro" in texto(m.app.test_client().get(f"/registro/{inv_b['codigo']}")))
+grupo(nombre="Grupo C", cupo="5")
+base.execute("UPDATE invitaciones SET vence = now() - interval '1 second' WHERE nombre = 'Grupo C'")
+inv_c = uno("SELECT codigo FROM invitaciones WHERE nombre = 'Grupo C'")
+m.app.test_client().post(f"/registro/{inv_c['codigo']}", data={**datos, "cif": "R005"})
+caso("Pasada la fecha el código vence", cuantos("cuentas") == 8)
 
 # Dar de alta y eliminar pacientes: solo la Facultad
 cerrar = f"/pacientes/{pid}/cerrar"
@@ -488,7 +525,7 @@ caso("La eliminacion queda en la bitacora con el motivo",
      "Eliminó al paciente Repetido Por Error (T-300): Duplicado" in texto(admin.get("/bitacora")))
 
 m.crear_tablas()
-caso("Crear las tablas otra vez no borra ni duplica nada", cuantos("pacientes") == 2 and cuantos("cuentas") == 9)
+caso("Crear las tablas otra vez no borra ni duplica nada", cuantos("pacientes") == 2 and cuantos("cuentas") == 8)
 
 print(f"\n{'Todo correcto.' if not fallos else str(len(fallos)) + ' fallos.'}")
 sys.exit(1 if fallos else 0)
