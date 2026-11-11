@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block titulo %}Comentarios - Clínicas Odontológicas{% endblock %}
+{% block contenido %}
+  <h2>Comentarios para mejorar el sistema</h2>
+  <p>Cuéntenos cómo le fue usando el sistema: qué le costó encontrar, qué falló, qué le falta y qué cambiaría. Con sus
+     observaciones lo vamos mejorando.</p>
+  <p class="acciones" style="justify-content: flex-start">
+    <a class="btn" href="{{ formulario }}" target="_blank" rel="noopener noreferrer">Abrir el formulario de comentarios</a>
+  </p>
+  <p class="tenue">Se abre en una pestaña nueva, en Google Forms; puede llenarlo las veces que quiera. No escriba ahí
+     nombres ni datos de pacientes.</p>
+{% endblock %}

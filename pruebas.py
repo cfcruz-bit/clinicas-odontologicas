@@ -377,6 +377,18 @@ caso("La Facultad filtra la hoja por estudiante",
      and "A-0083" not in texto(admin.get("/control?estudiante=00000002")))
 caso("El expediente en PDF sale con los recibos", gabriel.get(f"/pacientes/{pid}/expediente.pdf").data[:4] == b"%PDF")
 
+# Comentarios: una pestaña que lleva al formulario de Google, para estudiantes y profesores
+caso("Sin el enlace del formulario la pestaña Comentarios no aparece ni abre",
+     ">Comentarios<" not in texto(grace.get("/menu")) and grace.get("/comentarios").status_code == 302)
+m.COMENTARIOS = "https://forms.gle/formulario-de-prueba"
+pagina = texto(grace.get("/comentarios"))
+caso("El estudiante y el profesor ven la pestaña Comentarios, que abre el formulario en una pestaña nueva",
+     ">Comentarios<" in texto(grace.get("/menu")) and ">Comentarios<" in texto(profe.get("/menu"))
+     and 'href="https://forms.gle/formulario-de-prueba" target="_blank"' in pagina
+     and profe.get("/comentarios").status_code == 200)
+caso("La Facultad no tiene la pestaña Comentarios",
+     ">Comentarios<" not in texto(admin.get("/menu")) and admin.get("/comentarios").status_code == 302)
+
 # Inventario
 caso("Solo la Facultad lleva el inventario", grace.get("/inventario").status_code == 302)
 admin.post("/inventario", data={"accion": "agregar", "nombre": "Guantes", "unidad": "cajas", "cantidad": "10",

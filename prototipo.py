@@ -1,7 +1,7 @@
 """Clínicas Odontológicas (Flask + HTML), con los datos en Neon (PostgreSQL en la nube).
 
 Necesita:  pip install -r requirements.txt
-Variables: DATABASE_URL (cadena de conexión de Neon), SECRET_KEY y, opcionales, CLAVE_INICIAL y SITIO
+Variables: DATABASE_URL (cadena de conexión de Neon), SECRET_KEY y, opcionales, CLAVE_INICIAL, SITIO y COMENTARIOS
 Ejecutar:  python prototipo.py   (crea las tablas si no existen)
 """
 import base64
@@ -37,13 +37,17 @@ CLAVE_INICIAL = os.environ.get("CLAVE_INICIAL", "uam2026")  # se guarda cifrada,
 # Dirección pública del sistema: es la que va en el QR de los grupos, para que abra desde el celular del
 # estudiante aunque la Facultad tenga el sistema abierto en otra dirección (por ejemplo, localhost)
 SITIO = os.environ.get("SITIO", "https://clinicas-odontologicas-uam.fly.dev").rstrip("/")
+# Enlace del formulario de Google donde estudiantes y profesores dejan sus observaciones para mejorar el
+# sistema. Mientras no esté puesto (o no sea una dirección https), la pestaña Comentarios no aparece
+COMENTARIOS = os.environ.get("COMENTARIOS", "").strip()
+COMENTARIOS = COMENTARIOS if COMENTARIOS.startswith("https://") else ""
 ROLES = {"profesor": "Profesor", "estudiante": "Estudiante", "admin": "Facultad"}
 # Pestanas de cada rol: (nombre, endpoint). La bitacora la revisan el profesor y la Facultad
 MENUS = {"estudiante": [("Inicio", "menu"), ("Mis pacientes", "pacientes"), ("Mis citas", "citas"), ("Clínicas", "salas"),
-                        ("Hoja de control", "control")],
+                        ("Hoja de control", "control"), ("Comentarios", "comentarios")],
          # El profesor solo revisa: no registra pacientes, citas ni tratamientos
          "profesor": [("Inicio", "menu"), ("Pacientes", "pacientes"), ("Citas", "citas"), ("Clínicas", "salas"),
-                      ("Hoja de control", "control"), ("Bitácora", "bitacora")],
+                      ("Hoja de control", "control"), ("Bitácora", "bitacora"), ("Comentarios", "comentarios")],
          "admin": [("Inicio", "menu"), ("Pacientes", "pacientes"), ("Citas", "citas"), ("Clínicas", "salas"),
                    ("Tarifario", "tarifario"), ("Inventario", "inventario"), ("Cuentas", "administrar_cuentas"),
                    ("Hoja de control", "control"), ("Bitácora", "bitacora")]}
@@ -313,7 +317,8 @@ def comun():
                      " (SELECT count(*) FROM materiales WHERE cantidad <= minimo) AS inventario").fetchone()
     elif rol == "profesor":  # y el profesor, cuantos recibos esperan su firma
         avisos = sql("SELECT count(*) AS control FROM recibos WHERE firmado IS NULL").fetchone()
-    pestanas = [(f"{t} ({avisos[e]})" if avisos.get(e) else t, e) for t, e in MENUS[rol]]
+    pestanas = [(f"{t} ({avisos[e]})" if avisos.get(e) else t, e) for t, e in MENUS[rol]
+                if e != "comentarios" or COMENTARIOS]
     return {"cif": cif, "nombre": nombre, "rol": ROLES[rol], "es_rol": rol, "pestanas": pestanas,
             "fallas": avisos.get("salas", 0), "bajos": avisos.get("inventario", 0)}
 
@@ -1105,6 +1110,14 @@ def recibo_foto(rid):
     if not r:
         return redirect(url_for("control"))
     return Response(bytes(r["foto"]), mimetype="image/jpeg")
+
+
+@app.route("/comentarios")
+def comentarios():
+    """Lleva al formulario de Google donde estudiantes y profesores dejan sus observaciones del sistema."""
+    if not COMENTARIOS or ("Comentarios", "comentarios") not in MENUS[quien()[2]]:
+        return redirect(url_for("menu"))
+    return render_template("comentarios.html", **comun(), formulario=COMENTARIOS)
 
 
 @app.route("/bitacora")
