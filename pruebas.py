@@ -378,6 +378,7 @@ caso("La Facultad filtra la hoja por estudiante",
 caso("El expediente en PDF sale con los recibos", gabriel.get(f"/pacientes/{pid}/expediente.pdf").data[:4] == b"%PDF")
 
 # Comentarios: una pestaña que lleva al formulario de Google, para estudiantes y profesores
+m.COMENTARIOS = ""
 caso("Sin el enlace del formulario la pestaña Comentarios no aparece ni abre",
      ">Comentarios<" not in texto(grace.get("/menu")) and grace.get("/comentarios").status_code == 302)
 m.COMENTARIOS = "https://forms.gle/formulario-de-prueba"

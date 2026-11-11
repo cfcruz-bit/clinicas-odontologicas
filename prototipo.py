@@ -38,8 +38,9 @@ CLAVE_INICIAL = os.environ.get("CLAVE_INICIAL", "uam2026")  # se guarda cifrada,
 # estudiante aunque la Facultad tenga el sistema abierto en otra dirección (por ejemplo, localhost)
 SITIO = os.environ.get("SITIO", "https://clinicas-odontologicas-uam.fly.dev").rstrip("/")
 # Enlace del formulario de Google donde estudiantes y profesores dejan sus observaciones para mejorar el
-# sistema. Mientras no esté puesto (o no sea una dirección https), la pestaña Comentarios no aparece
-COMENTARIOS = os.environ.get("COMENTARIOS", "").strip()
+# sistema. Si se deja vacío (o no es una dirección https), la pestaña Comentarios no aparece
+COMENTARIOS = os.environ.get("COMENTARIOS", "https://docs.google.com/forms/d/e/1FAIpQLSe1BhT__8TPsUv_Iowl4nalISPvR-"
+                                            "0GqE3LUA0LYqvooZVDjw/viewform").strip()
 COMENTARIOS = COMENTARIOS if COMENTARIOS.startswith("https://") else ""
 ROLES = {"profesor": "Profesor", "estudiante": "Estudiante", "admin": "Facultad"}
 # Pestanas de cada rol: (nombre, endpoint). La bitacora la revisan el profesor y la Facultad
