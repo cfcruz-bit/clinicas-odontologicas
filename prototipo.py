@@ -92,7 +92,7 @@ CREATE TABLE IF NOT EXISTS citas (
 CREATE TABLE IF NOT EXISTS bitacora (
     id serial PRIMARY KEY, cuando timestamptz NOT NULL DEFAULT now(), cif text, nombre text, rol text, accion text);
 ALTER TABLE bitacora ADD COLUMN IF NOT EXISTS lugar text NOT NULL DEFAULT '';
--- La tabla salas guarda las clinicas (unidades dentales); en_sala es el grupo: 1 pregrado, 2 posgrado
+-- La tabla salas guarda las clinicas (unidades dentales); en_sala es su sala: 1 pregrado, 2 posgrado
 ALTER TABLE salas ADD COLUMN IF NOT EXISTS en_sala int NOT NULL DEFAULT 1;
 ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS fallos int NOT NULL DEFAULT 0,
                     ADD COLUMN IF NOT EXISTS bloqueada_hasta timestamptz,
@@ -161,6 +161,9 @@ app.config.update(SESSION_COOKIE_SAMESITE="Lax", SESSION_COOKIE_SECURE="FLY_APP_
 FORMATO = "%d/%m/%Y"  # las fechas se muestran como dd/mm/aaaa; se eligen en el calendario
 MANAGUA = timezone(timedelta(hours=-6))  # Nicaragua no cambia de horario; el servidor esta en UTC
 GRUPOS = {1: "Clínicas pregrado", 2: "Clínicas posgrado"}  # valor de salas.en_sala
+# Las salas reales, según el plano del edificio: pregrado tiene 30 unidades (3 filas de 10) y posgrado 20
+# (columnas de 7, 7 y 6). Se numeran seguidas: de la 1 a la 30 pregrado y de la 31 a la 50 posgrado
+PREGRADO, POSGRADO = 30, 20
 MOTIVO_MAXIMO = 500  # caracteres del motivo de una clinica que no funciona
 RECIBO_MAXIMO = 40  # caracteres del numero de recibo
 FALLOS_MAXIMOS, MINUTOS_BLOQUEO = 5, 15  # tras 5 claves equivocadas seguidas la cuenta espera 15 min
@@ -192,10 +195,15 @@ def crear_tablas():
         for cif, (nombre, rol) in CUENTAS_INICIALES.items():
             sql("INSERT INTO cuentas VALUES (%s, %s, %s, %s) ON CONFLICT DO NOTHING",
                 cif, nombre, rol, generate_password_hash(CLAVE_INICIAL))
-        if not sql("SELECT 1 FROM salas").fetchone():
-            for n in range(1, 21):  # las clinicas 1 a 10 son de pregrado y las 11 a 20 de posgrado
-                sql("INSERT INTO salas (nombre, disponible, en_sala) VALUES (%s, %s, %s)",
-                    f"Clínica {n}", n != 3, 1 if n <= 10 else 2)
+        # Las clínicas se completan una sola vez, hasta que existe la última. Una base que nació con 20
+        # (10 y 10) conserva las suyas con sus citas y reportes: de la 11 a la 20 pasan a pregrado
+        if not sql("SELECT 1 FROM salas WHERE nombre = %s", f"Clínica {PREGRADO + POSGRADO}").fetchone():
+            with bd().transaction():
+                sql("UPDATE salas SET en_sala = 1 WHERE nombre = ANY(%s)",
+                    [f"Clínica {n}" for n in range(1, PREGRADO + 1)])
+                for n in range(1, PREGRADO + POSGRADO + 1):
+                    sql("INSERT INTO salas (nombre, disponible, en_sala) VALUES (%s, %s, %s)"
+                        " ON CONFLICT (nombre) DO NOTHING", f"Clínica {n}", n != 3, 1 if n <= PREGRADO else 2)
 
 @app.cli.command("crear-tablas")
 def crear_tablas_cli():
@@ -331,11 +339,12 @@ def nombre_de(cif):
     return cuentas()[cif][0] if cif in cuentas() else "sin asignar"
 
 def todas_las_salas():
-    """Las clinicas, ordenadas por sala, y si tienen una falla sin solucionar, su motivo y quién la reportó."""
+    """Las clinicas, ordenadas por sala y por su número (así salen en su lugar del plano), y si tienen una
+    falla sin solucionar, su motivo y quién la reportó."""
     return sql("SELECT s.*, r.id AS reporte_id, r.motivo, r.cif AS reporto,"
                " to_char(r.cuando AT TIME ZONE 'America/Managua', 'DD/MM/YYYY HH24:MI') AS reportada"
                " FROM salas s LEFT JOIN reportes r ON r.sala_id = s.id AND r.resuelto_cuando IS NULL"
-               " ORDER BY s.en_sala, s.id").fetchall()
+               " ORDER BY s.en_sala, substring(s.nombre FROM '[0-9]+')::numeric NULLS LAST, s.id").fetchall()
 
 
 @app.before_request
@@ -603,7 +612,7 @@ def citas():
 
 @app.route("/salas", methods=["GET", "POST"])
 def salas():
-    """Plano de las salas: cada clínica con un check si está disponible o una X si no.
+    """Plano de las clínicas, acomodadas como en las salas reales, con un check si están disponibles o una X si no.
     El estudiante reporta las clínicas que no funcionan y la Facultad las marca como solucionadas."""
     cif, _, rol = quien()
     if request.method == "POST":

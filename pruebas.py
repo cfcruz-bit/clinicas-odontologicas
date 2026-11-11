@@ -163,22 +163,25 @@ caso("El historial muestra que le hizo cada estudiante",
                                                                 "Profilaxis y obturación del 36")))
 caso("El paciente ya no le sale al estudiante anterior", "Luis Pérez" not in texto(grace.get("/pacientes")))
 
-caso("Hay 20 clínicas: la 1 a la 10 de pregrado y la 11 a la 20 de posgrado",
+caso("Hay 50 clínicas, como en el plano: de la 1 a la 30 de pregrado y de la 31 a la 50 de posgrado",
      [(f["en_sala"], f["n"]) for f in base.execute("SELECT en_sala, count(*) AS n FROM salas GROUP BY en_sala ORDER BY 1")]
-     == [(1, 10), (2, 10)]
-     and uno("SELECT en_sala FROM salas WHERE nombre = 'Clínica 10'")["en_sala"] == 1
-     and uno("SELECT en_sala FROM salas WHERE nombre = 'Clínica 11'")["en_sala"] == 2)
+     == [(1, 30), (2, 20)]
+     and uno("SELECT en_sala FROM salas WHERE nombre = 'Clínica 30'")["en_sala"] == 1
+     and uno("SELECT en_sala FROM salas WHERE nombre = 'Clínica 31'")["en_sala"] == 2)
 _, sala_1, sala_2 = texto(admin.get("/salas")).split('class="plano-titulo"')
-caso("El plano muestra pregrado y posgrado con sus clínicas, con un check si están disponibles y una X si no",
-     "Clínicas pregrado" in sala_1 and "Clínica 10<" in sala_1 and "Clínica 11<" not in sala_1
-     and sala_1.count("✓") == 9 and sala_1.count("✗") == 1
-     and "Clínicas posgrado" in sala_2 and "Clínica 11<" in sala_2 and sala_2.count("✓") == 10)
-admin.post("/salas", data={"accion": "agregar", "nombre": "Clínica 21", "en_sala": "2"})
+import re  # noqa: E402
+en_orden = lambda html: [int(n) for n in re.findall(r'title="Clínica (\d+):', html)]  # noqa: E731
+caso("El plano muestra cada sala con sus clínicas en orden, con un check si están disponibles y una X si no",
+     "Clínicas pregrado" in sala_1 and en_orden(sala_1) == list(range(1, 31))
+     and sala_1.count('"marca-sala">✓') == 29 and sala_1.count('"marca-sala">✗') == 1
+     and "Clínicas posgrado" in sala_2 and en_orden(sala_2) == list(range(31, 51))
+     and sala_2.count('"marca-sala">✓') == 20)
+admin.post("/salas", data={"accion": "agregar", "nombre": "Clínica 51", "en_sala": "2"})
 caso("La Facultad agrega una clínica en pregrado o posgrado",
-     uno("SELECT en_sala FROM salas WHERE nombre = 'Clínica 21'")["en_sala"] == 2)
-admin.post("/salas", data={"accion": "agregar", "nombre": "Clínica 22"})
-admin.post("/salas", data={"accion": "agregar", "nombre": "Clínica 22", "en_sala": "3"})
-caso("Sin decir si es de pregrado o posgrado no se agrega la clínica", uno("SELECT 1 FROM salas WHERE nombre = 'Clínica 22'") is None)
+     uno("SELECT en_sala FROM salas WHERE nombre = 'Clínica 51'")["en_sala"] == 2)
+admin.post("/salas", data={"accion": "agregar", "nombre": "Clínica 52"})
+admin.post("/salas", data={"accion": "agregar", "nombre": "Clínica 52", "en_sala": "3"})
+caso("Sin decir si es de pregrado o posgrado no se agrega la clínica", uno("SELECT 1 FROM salas WHERE nombre = 'Clínica 52'") is None)
 sala1 = uno("SELECT id FROM salas WHERE nombre = 'Clínica 1'")["id"]
 admin.post("/salas", data={"sala": sala1})
 caso("La administracion cambia la disponibilidad de una clínica",
@@ -526,6 +529,19 @@ caso("La eliminacion queda en la bitacora con el motivo",
 
 m.crear_tablas()
 caso("Crear las tablas otra vez no borra ni duplica nada", cuantos("pacientes") == 2 and cuantos("cuentas") == 8)
+
+# Una base que nació con 20 clínicas (10 y 10) se completa a las 50 del plano sin perder lo que tenía
+base.execute("DELETE FROM salas WHERE substring(nombre FROM '[0-9]+')::int > 20")
+base.execute("UPDATE salas SET en_sala = 2 WHERE substring(nombre FROM '[0-9]+')::int > 10")
+base.execute("UPDATE salas SET disponible = false WHERE nombre = 'Clínica 15'")
+citas_antes = cuantos("citas")
+m.crear_tablas()
+m.crear_tablas()
+caso("Una base con las 20 clínicas de antes pasa a las 50 del plano y conserva lo que tenía",
+     [(f["en_sala"], f["n"]) for f in base.execute("SELECT en_sala, count(*) AS n FROM salas GROUP BY en_sala ORDER BY 1")]
+     == [(1, 30), (2, 20)]
+     and uno("SELECT en_sala, disponible FROM salas WHERE nombre = 'Clínica 15'") == {"en_sala": 1, "disponible": False}
+     and uno("SELECT en_sala FROM salas WHERE nombre = 'Clínica 31'")["en_sala"] == 2 and cuantos("citas") == citas_antes)
 
 print(f"\n{'Todo correcto.' if not fallos else str(len(fallos)) + ' fallos.'}")
 sys.exit(1 if fallos else 0)

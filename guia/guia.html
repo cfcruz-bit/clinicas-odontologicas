@@ -2,7 +2,8 @@
 <!--
   Fuente de guia-defensa.pdf. Para volver a generar el PDF despues de editar este archivo:
   "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --headless=new --no-pdf-header-footer --print-to-pdf=guia-defensa.pdf guia\guia.html
-  Las capturas usan datos ficticios de la rama 'capturas' de Neon.
+  Las capturas usan datos ficticios de la rama 'capturas' de Neon. Las de la aplicacion se toman a 1280 px de
+  ancho (escala 1,25) y las de celular a 390 px; las de la consola de Neon (n1 a n6) son de la primera version.
 -->
 <html lang="es">
 <head>
@@ -30,6 +31,8 @@
   figure { margin: 8px 0 14px; break-inside: avoid; }
   figure img { width: 100%; border: 1px solid #c9d3dd; border-radius: 4px; display: block; }
   figure.media img { width: 78%; margin: 0 auto; }
+  figure.celular img { width: 34%; margin: 0 auto; }
+  figure.media figcaption, figure.celular figcaption { text-align: center; }
   figcaption { font-size: 8.5pt; color: #6b7a8c; margin-top: 4px; }
   .nota { background: #eef4f8; border-left: 4px solid #1b6f8a; padding: 7px 10px; margin: 8px 0 12px; font-size: 9.5pt; }
   .salto { break-before: page; }
@@ -41,12 +44,13 @@
 <body>
 
 <h1>Guía de defensa</h1>
-<p class="sub">Clínicas Odontológicas · Facultad de Odontología UAM</p>
+<p class="sub">Clínicas Odontológicas · Facultad de Odontología UAM · actualizada el 11/11/2026</p>
 
 <h2>1. Qué es lo que entrego</h2>
 <p>Una aplicación web <b>funcional</b> para las Clínicas Odontológicas de la Facultad de Odontología de la UAM.
 Está hecha en Python con <b>Flask</b> y plantillas HTML, guarda todo en una base de datos <b>PostgreSQL en Neon</b>
-(en la nube) y está publicada en <b>Fly.io</b>, así que se usa desde cualquier navegador.</p>
+(en la nube) y está publicada en <b>Fly.io</b>, así que se usa desde cualquier navegador, también desde el
+<b>teléfono y la tableta</b>.</p>
 <table>
   <tr><th style="width:28%">Qué</th><th>Dónde</th></tr>
   <tr><td>Aplicación publicada</td><td><code>https://clinicas-odontologicas-uam.fly.dev</code></td></tr>
@@ -55,14 +59,15 @@ Está hecha en Python con <b>Flask</b> y plantillas HTML, guarda todo en una bas
 </table>
 <p>Archivos del proyecto:</p>
 <ul>
-  <li><code>prototipo.py</code>: toda la lógica: rutas, roles, validaciones, tablas de la base de datos, bitácora y el expediente en PDF.</li>
+  <li><code>prototipo.py</code>: toda la lógica: rutas, roles, validaciones, tablas de la base de datos, bitácora, el código QR de los grupos y el expediente en PDF.</li>
   <li><code>templates/</code>: las plantillas Jinja de cada pantalla (<code>base.html</code> tiene la cabecera y las pestañas).</li>
-  <li><code>static/</code>: la hoja de estilos, el logo de la UAM, el ícono y la foto de fondo.</li>
-  <li><code>pruebas.py</code>: las pruebas automáticas; corren contra una rama de Neon aparte para no tocar los datos reales.</li>
+  <li><code>static/</code>: la hoja de estilos, el logo de la UAM, el ícono, la foto de fondo y <code>cargando.js</code>, que muestra que un formulario se está enviando y evita enviarlo dos veces.</li>
+  <li><code>pruebas.py</code>: las pruebas automáticas (más de 150 casos); corren contra una rama de Neon aparte para no tocar los datos reales.</li>
   <li><code>requirements.txt</code>, <code>Dockerfile</code> y <code>fly.toml</code>: lo que necesita Fly para construir y publicar la aplicación.</li>
 </ul>
 <div class="nota">Todas las capturas de esta guía se tomaron con <b>datos ficticios</b> en una rama de Neon llamada
-<code>capturas</code>, separada de la base real. Ningún paciente que aparece aquí existe.</div>
+<code>capturas</code>, separada de la base real. Ningún paciente, estudiante ni recibo que aparece aquí existe, y el
+código QR de la figura 19 no sirve en la aplicación publicada.</div>
 
 <h2>2. Las cuentas</h2>
 <p>Hay cinco cuentas iniciales, dos por cada tipo de usuario y una de la Facultad. La contraseña de todas es
@@ -75,17 +80,21 @@ Está hecha en Python con <b>Flask</b> y plantillas HTML, guarda todo en una bas
   <tr><td>00000005</td><td>Gabriel Espinoza</td><td>Estudiante</td></tr>
   <tr><td>00000007</td><td>Gina Saavedra</td><td>Facultad (admin)</td></tr>
 </table>
+<p>Las demás cuentas las crea la Facultad en la pestaña <b>Cuentas</b>: una por una, o con un <b>grupo de estudiantes</b>,
+que da un código QR para que cada estudiante cree su propia cuenta desde el celular (sección 4.14).</p>
 
 <h2>3. Qué puede hacer cada rol</h2>
-<p><b>Estudiante</b>: registra a sus pacientes, anota la razón de la consulta, agenda y cancela sus citas, corrige los
-datos de sus pacientes, recoge la firma del consentimiento y reporta las clínicas que no funcionan. Solo ve a los
-pacientes que tiene a cargo y no ve la bitácora.</p>
-<p><b>Profesor</b>: <b>solo revisa</b>. Ve a todos los pacientes, aprueba o retira la aprobación, ve el historial de qué
-le hizo cada estudiante a cada paciente, descarga el expediente en PDF y revisa la bitácora. No registra pacientes ni
-citas y no firma el consentimiento.</p>
-<p><b>Facultad</b>: administra las clínicas (agrega una clínica en la sala que le toca, la marca disponible o no), recibe los avisos de clínicas que no funcionan y
-las marca como solucionadas, pasa un paciente de un estudiante a otro archivando el trabajo del anterior, y revisa la
-bitácora.</p>
+<p><b>Estudiante</b>: registra a sus pacientes con la razón de la consulta y el número de expediente, agenda y cancela
+sus citas, sube la foto presencial, llena el odontograma y pide la revisión del profesor, anota el plan de tratamiento
+y marca lo realizado, recoge la firma del consentimiento informado, sube la foto de cada recibo de pago a su hoja de
+control y reporta las clínicas que no funcionan. Solo ve a los pacientes que tiene a cargo y no ve la bitácora.</p>
+<p><b>Profesor</b>: <b>solo revisa</b>. Ve a todos los pacientes, aprueba o retira la aprobación, aprueba el odontograma
+o lo devuelve con lo que hay que corregir, firma los recibos de la hoja de control, ve el historial de qué le hizo cada
+estudiante a cada paciente, descarga el expediente en PDF y revisa la bitácora. No registra pacientes, citas ni
+tratamientos y no firma el consentimiento informado.</p>
+<p><b>Facultad</b>: crea las cuentas y los grupos de estudiantes, administra las clínicas, el tarifario y el inventario,
+registra los abonos de los pacientes, recibe los avisos de clínicas que no funcionan y de materiales que se acaban,
+pasa un paciente de un estudiante a otro, da de alta o elimina pacientes, y revisa la hoja de control y la bitácora.</p>
 <p>No es solo esconder botones: cada ruta de <code>prototipo.py</code> vuelve a revisar el rol antes de tocar la base de
 datos. Si alguien armara el formulario a mano, igual no pasaría; las pruebas lo intentan y comprueban que no se guarda nada.</p>
 
@@ -94,13 +103,14 @@ datos. Si alguien armara el formulario a mano, igual no pasaría; las pruebas lo
 <h3>4.1 Iniciar sesión</h3>
 <p>Se escribe el CIF y la contraseña. Si falta alguno, la pantalla dice cuál; si no coinciden, dice "CIF o contraseña
 incorrectos" sin aclarar cuál de los dos falló. Tras <b>5 contraseñas equivocadas seguidas</b> la cuenta queda bloqueada
-15 minutos: mientras tanto no entra ni con la contraseña correcta, y el bloqueo queda en la bitácora. La sesión se cierra sola a los 30 minutos sin uso, porque en la clínica
-las computadoras son compartidas.</p>
+15 minutos: mientras tanto no entra ni con la contraseña correcta, y el bloqueo queda en la bitácora. La sesión se cierra
+sola a los 30 minutos sin uso, porque en la clínica las computadoras son compartidas.</p>
 <figure class="media"><img src="capturas/01-entrar.png"><figcaption>Figura 1. Pantalla de inicio de sesión.</figcaption></figure>
 
 <h3>4.2 Registrar paciente (estudiante)</h3>
-<p>En "Mis pacientes" el estudiante llena nombre, cédula y teléfono. La lista muestra la razón de la consulta, si el
-profesor ya aprobó y si el consentimiento está firmado. Cada estudiante ve <b>solo a sus pacientes</b>.</p>
+<p>En "Mis pacientes" el estudiante llena nombre, cédula, teléfono y, si lo tiene, el <b>número del expediente físico</b>.
+La lista muestra la razón de la consulta, si el profesor ya aprobó, si el consentimiento informado está firmado y si el
+paciente sigue en tratamiento o ya recibió el alta. Cada estudiante ve <b>solo a sus pacientes</b>.</p>
 <figure><img src="capturas/02-pacientes-estudiante.png"><figcaption>Figura 2. Registro y lista de pacientes del estudiante.</figcaption></figure>
 
 <h3>4.3 Paso 2: la razón de la consulta y la primera cita</h3>
@@ -109,51 +119,116 @@ puede agendar la primera cita, con las mismas reglas que la página de Citas.</p
 <figure><img src="capturas/03-razon.png"><figcaption>Figura 3. Paso 2 del registro.</figcaption></figure>
 
 <h3>4.4 Expediente del paciente</h3>
-<p>Datos del paciente, estado de aprobación y de la firma, el trabajo de cada estudiante que lo ha atendido y sus citas.
-Desde aquí el estudiante corrige los datos, cambia la razón o abre el consentimiento.</p>
-<figure><img src="capturas/04-expediente.png"><figcaption>Figura 4. Expediente de un paciente aprobado y con consentimiento firmado.</figcaption></figure>
+<p>Número de paciente (el que le asigna el sistema) y número de expediente, datos del paciente, estado de la aprobación,
+de la firma y del odontograma, el trabajo de cada estudiante que lo ha atendido y sus citas. Desde aquí se entra al
+odontograma, a los tratamientos y cobros y al consentimiento informado, y el estudiante corrige los datos o la razón.</p>
+<figure><img src="capturas/04-expediente.png"><figcaption>Figura 4. Expediente de un paciente aprobado y con el consentimiento informado firmado.</figcaption></figure>
 
 <h3>4.5 Consentimiento informado</h3>
 <p>El paciente firma con el dedo (tableta o celular) o con el mouse. La firma se guarda como imagen y sale en la hoja
-impresa y en el PDF del expediente. El docente no firma.</p>
-<figure><img src="capturas/05-consentimiento.png"><figcaption>Figura 5. Consentimiento con la firma dibujada del paciente.</figcaption></figure>
+impresa y en el PDF del expediente. El docente no firma. Sin esta firma no se puede marcar ningún tratamiento como
+realizado.</p>
+<figure class="media"><img src="capturas/05-consentimiento.png"><figcaption>Figura 5. Consentimiento informado con la firma dibujada del paciente.</figcaption></figure>
 
 <h3>4.6 Citas</h3>
 <p>La fecha se elige en el <b>calendario del navegador</b>, que no deja elegir días anteriores a hoy. La clínica se elige en
-una lista separada por sala; las que no están disponibles salen desactivadas. Las citas que todavía no pasaron se pueden cancelar; las pasadas no, porque son
-historial del paciente.</p>
-<figure><img src="capturas/06-citas.png"><figcaption>Figura 6. Agendar cita y lista de citas del estudiante.</figcaption></figure>
+una lista separada en <b>clínicas pregrado</b> y <b>clínicas posgrado</b>; las que no están disponibles salen desactivadas.
+Las citas que todavía no pasaron se pueden cancelar; las pasadas no, porque son historial del paciente.</p>
+<figure><img src="capturas/06-citas.png"><figcaption>Figura 6. Agendar cita y lista de citas del estudiante: solo la cita que no ha pasado se puede cancelar.</figcaption></figure>
 
-<h3>4.7 Clínicas y reporte de fallas (estudiante)</h3>
-<p>Hay 20 clínicas repartidas en dos salas: de la <b>Clínica 1 a la 10 en la Sala #1</b> y de la <b>11 a la 20 en la
-Sala #2</b>. El plano muestra cada sala con sus clínicas, con ✓ si están disponibles y ✗ si no. Si una clínica no
-funciona, el estudiante la elige, escribe qué falla y la envía: la clínica queda como "No funciona" y la Facultad recibe
-el aviso.</p>
-<figure><img src="capturas/07-salas-estudiante.png"><figcaption>Figura 7. Plano de las dos salas con sus clínicas y formulario para reportar una clínica que no funciona.</figcaption></figure>
+<h3>4.7 Odontograma y foto presencial</h3>
+<p>Tiene tres pasos, que la pantalla va marcando: <b>1)</b> el estudiante sube la foto presencial del paciente (desde el
+celular la toma con la cámara; se guarda achicada); <b>2)</b> toca cada diente y anota su estado y una nota: los que no
+toca quedan sanos; <b>3)</b> pide la revisión del profesor, que la ve en su Inicio y la <b>aprueba</b> o la
+<b>devuelve</b> diciendo qué hay que corregir. Si el estudiante cambia algo después de aprobado, hay que volver a pedir
+la revisión.</p>
+<figure class="media"><img src="capturas/14-odontograma.png"><figcaption>Figura 7. Odontograma de un paciente con la revisión pedida: los 32 dientes, los hallazgos y la foto presencial.</figcaption></figure>
 
-<h3>4.8 El profesor revisa</h3>
+<h3>4.8 Tratamientos y cobros</h3>
+<p>El estudiante anota el plan eligiendo cada procedimiento del <b>tarifario</b> (el precio se copia en ese momento) y, si
+aplica, el diente. Cuando lo hace, lo marca como realizado; lo realizado ya no se puede quitar. La cuenta del paciente se
+calcula sola: <b>saldo = lo realizado − lo abonado</b>. Los abonos los registra solo la Facultad. Abajo salen los recibos
+de pago que el estudiante subió, para compararlos con los abonos.</p>
+<figure class="media"><img src="capturas/15-tratamientos.png"><figcaption>Figura 8. Tratamientos y cobros vistos por el estudiante: cuenta, plan, abonos y recibos de pago.</figcaption></figure>
+
+<h3>4.9 Hoja de control de expediente y recibos de pago</h3>
+<p>Reemplaza la hoja que el estudiante entregaba a mano al final del curso. Por cada tratamiento que <b>él realizó</b>,
+sube la <b>foto del recibo</b> con su número y la fecha de facturación; así el número se lee bien y nadie lo copia a mano.
+La hoja tiene las seis columnas que pidió la Facultad: nº de paciente, nº de expediente, nº de recibo, tratamiento
+facturado, fecha de facturación y firma del docente.</p>
+<figure><img src="capturas/16-hoja-control-estudiante.png"><figcaption>Figura 9. Hoja de control del estudiante: sube un recibo y ve los suyos; el que el profesor ya firmó no se puede quitar.</figcaption></figure>
+<p>El profesor ve los recibos de todos los estudiantes o de uno solo, abre la foto y <b>firma</b> cada recibo (queda su
+nombre y la fecha); en la pestaña ve cuántos esperan su firma. Con Ctrl+P la hoja se imprime con el logo y sin botones;
+los recibos sin firmar quedan en blanco para firmarlos a mano. La Facultad también la puede ver e imprimir.</p>
+<figure><img src="capturas/17-hoja-control-profesor.png"><figcaption>Figura 10. Hoja de control vista por el profesor, con dos recibos esperando su firma.</figcaption></figure>
+
+<h3>4.10 Clínicas y reporte de fallas (estudiante)</h3>
+<p>Hay 50 clínicas en dos salas, acomodadas en la pantalla <b>igual que en el edificio</b>: la sala de <b>pregrado</b>
+tiene 30 unidades en tres filas de diez (Clínicas 1 a 30) y la de <b>posgrado</b> tiene 20 en columnas de 7, 7 y 6
+(Clínicas 31 a 50). Cada cuadro es una unidad con su número: ✓ si está disponible, ✗ si no y ! si está reportada.
+En el celular la sala larga se muestra girada para que quepa. Si una clínica no funciona, el
+estudiante la elige, escribe qué falla y la envía: la clínica queda como "No funciona" y la Facultad recibe el aviso.</p>
+<figure class="media"><img src="capturas/07-salas-estudiante.png"><figcaption>Figura 11. Plano de las clínicas, con posgrado arriba a la izquierda y pregrado abajo a la derecha como en el edificio, y el formulario para reportar una que no funciona.</figcaption></figure>
+
+<h3>4.11 El profesor revisa</h3>
 <p>El profesor ve a todos los pacientes con el estudiante a cargo de cada uno, los aprueba o retira la aprobación y
 descarga el expediente en PDF. No tiene el formulario de registro.</p>
-<figure><img src="capturas/13-pacientes-profesor.png"><figcaption>Figura 8. Lista de pacientes vista por el profesor.</figcaption></figure>
+<figure><img src="capturas/13-pacientes-profesor.png"><figcaption>Figura 12. Lista de pacientes vista por el profesor.</figcaption></figure>
 
-<h3>4.9 La Facultad recibe el aviso</h3>
-<p>Cuando hay clínicas reportadas, la Facultad lo ve en Inicio y en la pestaña, que muestra cuántas son: "Clínicas (1)".</p>
-<figure><img src="capturas/08-inicio-facultad.png"><figcaption>Figura 9. Inicio de la Facultad con el aviso de una clínica que no funciona.</figcaption></figure>
-<p>En Clínicas ve qué falla, en qué sala está, quién lo reportó y cuándo. Al marcarla como solucionada, la clínica vuelve
-a estar disponible y el aviso desaparece. Al agregar una clínica, la Facultad escribe también el número de la sala.</p>
-<figure><img src="capturas/09-salas-facultad.png"><figcaption>Figura 10. Clínicas vistas por la Facultad, con la falla pendiente.</figcaption></figure>
+<h3>4.12 La Facultad recibe los avisos</h3>
+<p>Cuando hay clínicas reportadas o materiales que se están acabando, la Facultad lo ve en Inicio y en las pestañas, que
+muestran cuántos son: "Clínicas (1)", "Inventario (1)".</p>
+<figure><img src="capturas/08-inicio-facultad.png"><figcaption>Figura 13. Inicio de la Facultad con los avisos de una clínica que no funciona y de un material por acabarse.</figcaption></figure>
+<p>En Clínicas ve qué falla, si es de pregrado o posgrado, quién lo reportó y cuándo. Al marcarla como solucionada, la
+clínica vuelve a estar disponible y el aviso desaparece. Para marcar una clínica como disponible o no disponible toca
+su cuadro en el plano. Al agregar una clínica, elige si es de pregrado o de posgrado.</p>
+<figure class="media"><img src="capturas/09-salas-facultad.png"><figcaption>Figura 14. Clínicas vistas por la Facultad, con la falla pendiente.</figcaption></figure>
 
-<h3>4.10 Cambiar un paciente de estudiante</h3>
+<h3>4.13 Tarifario e inventario</h3>
+<p>En el <b>tarifario</b> la Facultad pone los procedimientos y sus precios. Cambiar un precio no altera lo que ya está
+anotado en los planes; un procedimiento desactivado deja de salir para anotarlo, pero no se borra.</p>
+<figure><img src="capturas/18-tarifario.png"><figcaption>Figura 15. Tarifario.</figcaption></figure>
+<p>En el <b>inventario</b> anota las entradas y salidas de cada material. No puede salir más de lo que hay, y cuando la
+cantidad llega al mínimo la Facultad recibe el aviso.</p>
+<figure><img src="capturas/19-inventario.png"><figcaption>Figura 16. Inventario: la resina está por debajo de su mínimo.</figcaption></figure>
+
+<h3>4.14 Cuentas y grupos de estudiantes con código QR</h3>
+<p>La Facultad crea las cuentas, les pone la contraseña (al menos 8 caracteres) y las desactiva; ponerle una contraseña
+nueva a una cuenta también la desbloquea. Una cuenta desactivada no entra, pero su nombre sigue en el historial.</p>
+<figure class="media"><img src="capturas/20-cuentas.png"><figcaption>Figura 17. Cuentas: la lista, los grupos de estudiantes y los formularios para crear un grupo o una sola cuenta.</figcaption></figure>
+<p>Para no crear una por una las cuentas de un curso, la Facultad crea un <b>grupo</b>: escribe el nombre, cuántos
+estudiantes son y cuántos días queda abierto el registro. La aplicación le da un <b>código QR</b> para proyectarlo en
+clase o imprimirlo.</p>
+<figure class="media"><img src="capturas/21-grupo-qr.png"><figcaption>Figura 18. El código QR de un grupo y los estudiantes que ya se registraron con él.</figcaption></figure>
+<p>Cada estudiante lo escanea con su celular, escribe su CIF y su nombre y <b>crea su propia contraseña</b>; al terminar
+queda dentro del sistema. El código deja de servir cuando se llena el cupo, cuando vence o cuando la Facultad cierra el
+registro, y solo crea cuentas de estudiante.</p>
+<figure class="celular"><img src="capturas/23-registro-celular.png"><figcaption>Figura 19. La página a la que lleva el QR, en un celular.</figcaption></figure>
+
+<h3>4.15 Cambiar un paciente de estudiante</h3>
 <p>Solo la Facultad. Es obligatorio escribir qué se le hizo al paciente: ese resumen cierra el trabajo del estudiante
 anterior y queda archivado en el expediente.</p>
-<figure><img src="capturas/11-traspaso.png"><figcaption>Figura 11. Traspaso de un paciente.</figcaption></figure>
-<figure><img src="capturas/10-expediente-traspasado.png"><figcaption>Figura 12. Expediente después del traspaso: el trabajo del primer estudiante quedó archivado con su resumen.</figcaption></figure>
+<figure><img src="capturas/11-traspaso.png"><figcaption>Figura 20. Traspaso de un paciente.</figcaption></figure>
+<figure><img src="capturas/10-expediente-traspasado.png"><figcaption>Figura 21. Expediente después del traspaso: el trabajo del primer estudiante quedó archivado con su resumen.</figcaption></figure>
 
-<h3>4.11 Bitácora</h3>
+<h3>4.16 Dar de alta o eliminar a un paciente</h3>
+<p>Solo la Facultad. Al <b>dar de alta</b> se escribe cómo terminó el tratamiento y el expediente queda como historial:
+se ve y se descarga, pero ni el estudiante ni el profesor pueden cambiarlo; la Facultad todavía puede registrar abonos
+y, si fue un error, anular el alta. <b>Eliminar</b> borra todo el expediente, así que pide el motivo y escribir la cédula
+del paciente, y no se permite si tiene recibos ya firmados por el docente.</p>
+<figure class="media"><img src="capturas/22-alta.png"><figcaption>Figura 22. Dar de alta o eliminar: la pantalla avisa lo que queda pendiente y lo que el paciente debe.</figcaption></figure>
+
+<h3>4.17 Bitácora</h3>
 <p>Quién hizo qué, a qué hora (hora de Nicaragua) y desde dónde. La ubicación es la ciudad aproximada de la conexión a
-internet; la IP solo se usa para averiguarla y no se guarda. Si alguien entra desde la misma red del servidor, se usa
-la ubicación de la conexión a internet de esa red. La ven el profesor y la Facultad.</p>
-<figure><img src="capturas/12-bitacora.png"><figcaption>Figura 13. Bitácora.</figcaption></figure>
+internet; la IP solo se usa para averiguarla y no se guarda. La ven el profesor y la Facultad.</p>
+<figure class="media"><img src="capturas/12-bitacora.png"><figcaption>Figura 23. Bitácora (primeras líneas).</figcaption></figure>
+
+<h3>4.18 En el teléfono y la tableta</h3>
+<p>La misma aplicación se acomoda a la pantalla: en el teléfono las pestañas se reparten en varias filas y cada fila de
+una tabla se ve como una <b>tarjeta</b>, con el nombre de la columna al lado de cada dato, para no tener que deslizar de
+lado. En teléfono y tableta los campos y botones son más grandes, para tocarlos con el dedo. Cuando una lista está
+vacía dice qué falta y cómo seguir, y al enviar un formulario el botón muestra que está cargando.</p>
+<figure class="celular"><img src="capturas/24-pacientes-celular.png"><figcaption>Figura 24. La lista de pacientes de un estudiante en un celular.</figcaption></figure>
 
 <h2 class="salto">5. La base de datos en Neon</h2>
 <p>Neon es PostgreSQL en la nube. El proyecto <code>clinicas-odontologicas</code> tiene tres <b>ramas</b>, que son copias
@@ -164,64 +239,110 @@ independientes de la base:</p>
   <tr><td><code>pruebas</code></td><td>La usa <code>pruebas.py</code>. Se borra entera cada vez que corren las pruebas.</td></tr>
   <tr><td><code>capturas</code></td><td>Datos ficticios para las capturas de esta guía.</td></tr>
 </table>
-<p>Las tablas se crean solas con <code>CREATE TABLE IF NOT EXISTS</code> en cada despliegue: si ya existen no se tocan,
-así que publicar una versión nueva nunca borra datos.</p>
+<p>Las tablas se crean solas con <code>CREATE TABLE IF NOT EXISTS</code> y las columnas nuevas con
+<code>ADD COLUMN IF NOT EXISTS</code> en cada despliegue: lo que ya existe no se toca, así que publicar una versión nueva
+nunca borra datos.</p>
 
 <h3>5.1 Las tablas y cómo se relacionan</h3>
-<svg class="er" viewBox="0 0 720 360" xmlns="http://www.w3.org/2000/svg" font-family="Arial, sans-serif">
+<svg class="er" viewBox="0 0 730 440" xmlns="http://www.w3.org/2000/svg" font-family="Arial, sans-serif">
   <defs><marker id="f" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
     <path d="M0,0 L10,5 L0,10 z" fill="#1b6f8a"/></marker></defs>
   <g stroke="#1b6f8a" stroke-width="1.6" fill="none" marker-end="url(#f)">
-    <path d="M360 175 L360 92"/>
-    <path d="M565 175 L430 85"/>
-    <path d="M510 206 L432 206"/>
-    <path d="M155 175 L155 92"/>
-    <path d="M185 175 L290 85"/>
-    <path d="M360 290 L360 238"/>
+    <path d="M200 54 L152 54"/>
+    <path d="M270 141 L270 84"/>
+    <path d="M150 169 L198 169"/>
+    <path d="M390 169 L342 169"/>
+    <path d="M650 141 L650 84"/>
+    <path d="M585 141 L343 80"/>
+    <path d="M120 256 L212 199"/>
+    <path d="M270 256 L270 199"/>
+    <path d="M425 256 L330 199"/>
+    <path d="M600 256 L342 199"/>
+    <path d="M205 312 L140 369"/>
+    <path d="M270 371 L270 314"/>
   </g>
-  <g font-size="9.5" fill="#1b6f8a">
-    <text x="366" y="138">estudiante</text>
-    <text x="500" y="118">estudiante</text>
-    <text x="442" y="199">paciente_id</text>
-    <text x="100" y="138">sala_id</text>
-    <text x="236" y="118">cif</text>
-    <text x="366" y="270">paciente_id</text>
+  <g font-size="9" fill="#1b6f8a">
+    <text x="175" y="20" text-anchor="middle">invitacion_id</text>
+    <text x="276" y="116">estudiante</text>
+    <text x="656" y="116">sala_id</text>
+    <text x="448" y="99">cif</text>
+    <text x="276" y="231">paciente_id</text>
+    <text x="160" y="347" text-anchor="end">procedimiento_id</text>
+    <text x="276" y="346">tratamiento_id</text>
   </g>
   <g font-size="10" fill="#1b2a3a">
-    <rect x="85" y="30" width="140" height="62" rx="5" fill="#eef4f8" stroke="#1b2a3a"/>
-    <text x="155" y="50" text-anchor="middle" font-weight="bold" font-size="12">salas</text>
-    <text x="155" y="68" text-anchor="middle">id, nombre</text><text x="155" y="83" text-anchor="middle">en_sala, disponible</text>
-    <rect x="290" y="30" width="140" height="62" rx="5" fill="#eef4f8" stroke="#1b2a3a"/>
-    <text x="360" y="50" text-anchor="middle" font-weight="bold" font-size="12">cuentas</text>
-    <text x="360" y="68" text-anchor="middle">cif, nombre, rol</text><text x="360" y="83" text-anchor="middle">clave (cifrada)</text>
-    <rect x="495" y="30" width="160" height="62" rx="5" fill="#f7f7f7" stroke="#8a97a5" stroke-dasharray="4 3"/>
-    <text x="575" y="50" text-anchor="middle" font-weight="bold" font-size="12">bitacora</text>
-    <text x="575" y="68" text-anchor="middle">cuando, cif, nombre, rol</text><text x="575" y="83" text-anchor="middle">accion, lugar</text>
-    <rect x="85" y="175" width="140" height="62" rx="5" fill="#eef4f8" stroke="#1b2a3a"/>
-    <text x="155" y="195" text-anchor="middle" font-weight="bold" font-size="12">reportes</text>
-    <text x="155" y="213" text-anchor="middle">sala_id, cif, motivo</text><text x="155" y="228" text-anchor="middle">resuelto_por / cuando</text>
-    <rect x="290" y="175" width="140" height="62" rx="5" fill="#eef4f8" stroke="#1b2a3a"/>
-    <text x="360" y="195" text-anchor="middle" font-weight="bold" font-size="12">pacientes</text>
-    <text x="360" y="213" text-anchor="middle">nombre, cedula, razon</text><text x="360" y="228" text-anchor="middle">estudiante, aprobado, firma</text>
-    <rect x="510" y="175" width="160" height="62" rx="5" fill="#eef4f8" stroke="#1b2a3a"/>
-    <text x="590" y="195" text-anchor="middle" font-weight="bold" font-size="12">trabajo</text>
-    <text x="590" y="213" text-anchor="middle">paciente_id, estudiante</text><text x="590" y="228" text-anchor="middle">desde, hasta, resumen</text>
-    <rect x="290" y="290" width="140" height="62" rx="5" fill="#eef4f8" stroke="#1b2a3a"/>
-    <text x="360" y="310" text-anchor="middle" font-weight="bold" font-size="12">citas</text>
-    <text x="360" y="328" text-anchor="middle">paciente_id, fecha, hora</text><text x="360" y="343" text-anchor="middle">sala, razon</text>
+    <rect x="10" y="26" width="140" height="56" rx="5" fill="#eef4f8" stroke="#1b2a3a"/>
+    <text x="80" y="45" text-anchor="middle" font-weight="bold" font-size="12">invitaciones</text>
+    <text x="80" y="61" text-anchor="middle">nombre, codigo, cupo</text><text x="80" y="74" text-anchor="middle">vence, cerrado</text>
+    <rect x="200" y="26" width="140" height="56" rx="5" fill="#eef4f8" stroke="#1b2a3a"/>
+    <text x="270" y="45" text-anchor="middle" font-weight="bold" font-size="12">cuentas</text>
+    <text x="270" y="61" text-anchor="middle">cif, nombre, rol, clave</text><text x="270" y="74" text-anchor="middle">activa, bloqueada_hasta</text>
+    <rect x="390" y="26" width="140" height="56" rx="5" fill="#f7f7f7" stroke="#8a97a5" stroke-dasharray="4 3"/>
+    <text x="460" y="45" text-anchor="middle" font-weight="bold" font-size="12">bitacora</text>
+    <text x="460" y="61" text-anchor="middle">cuando, cif, nombre, rol</text><text x="460" y="74" text-anchor="middle">accion, lugar</text>
+    <rect x="580" y="26" width="140" height="56" rx="5" fill="#eef4f8" stroke="#1b2a3a"/>
+    <text x="650" y="45" text-anchor="middle" font-weight="bold" font-size="12">salas</text>
+    <text x="650" y="61" text-anchor="middle">id, nombre</text><text x="650" y="74" text-anchor="middle">en_sala, disponible</text>
+
+    <rect x="10" y="141" width="140" height="56" rx="5" fill="#eef4f8" stroke="#1b2a3a"/>
+    <text x="80" y="160" text-anchor="middle" font-weight="bold" font-size="12">trabajo</text>
+    <text x="80" y="176" text-anchor="middle">paciente_id, estudiante</text><text x="80" y="189" text-anchor="middle">desde, hasta, resumen</text>
+    <rect x="200" y="141" width="140" height="56" rx="5" fill="#dfeaf1" stroke="#1b2a3a" stroke-width="1.6"/>
+    <text x="270" y="160" text-anchor="middle" font-weight="bold" font-size="12">pacientes</text>
+    <text x="270" y="176" text-anchor="middle">nombre, cedula, expediente</text><text x="270" y="189" text-anchor="middle">estudiante, firma, finalizado</text>
+    <rect x="390" y="141" width="140" height="56" rx="5" fill="#eef4f8" stroke="#1b2a3a"/>
+    <text x="460" y="160" text-anchor="middle" font-weight="bold" font-size="12">abonos</text>
+    <text x="460" y="176" text-anchor="middle">paciente_id, monto</text><text x="460" y="189" text-anchor="middle">cif, cuando</text>
+    <rect x="580" y="141" width="140" height="56" rx="5" fill="#eef4f8" stroke="#1b2a3a"/>
+    <text x="650" y="160" text-anchor="middle" font-weight="bold" font-size="12">reportes</text>
+    <text x="650" y="176" text-anchor="middle">sala_id, cif, motivo</text><text x="650" y="189" text-anchor="middle">resuelto_por / cuando</text>
+
+    <rect x="10" y="256" width="140" height="56" rx="5" fill="#eef4f8" stroke="#1b2a3a"/>
+    <text x="80" y="275" text-anchor="middle" font-weight="bold" font-size="12">citas</text>
+    <text x="80" y="291" text-anchor="middle">paciente_id, fecha, hora</text><text x="80" y="304" text-anchor="middle">sala, razon</text>
+    <rect x="200" y="256" width="140" height="56" rx="5" fill="#eef4f8" stroke="#1b2a3a"/>
+    <text x="270" y="275" text-anchor="middle" font-weight="bold" font-size="12">tratamientos</text>
+    <text x="270" y="291" text-anchor="middle">procedimiento_id, diente</text><text x="270" y="304" text-anchor="middle">precio, estudiante, realizado</text>
+    <rect x="390" y="256" width="140" height="56" rx="5" fill="#eef4f8" stroke="#1b2a3a"/>
+    <text x="460" y="275" text-anchor="middle" font-weight="bold" font-size="12">dientes</text>
+    <text x="460" y="291" text-anchor="middle">paciente_id, diente</text><text x="460" y="304" text-anchor="middle">estado, nota</text>
+    <rect x="580" y="256" width="140" height="56" rx="5" fill="#eef4f8" stroke="#1b2a3a"/>
+    <text x="650" y="275" text-anchor="middle" font-weight="bold" font-size="12">fotos</text>
+    <text x="650" y="291" text-anchor="middle">paciente_id, cif</text><text x="650" y="304" text-anchor="middle">cuando, imagen</text>
+
+    <rect x="10" y="371" width="140" height="56" rx="5" fill="#eef4f8" stroke="#1b2a3a"/>
+    <text x="80" y="390" text-anchor="middle" font-weight="bold" font-size="12">tarifario</text>
+    <text x="80" y="406" text-anchor="middle">nombre, precio</text><text x="80" y="419" text-anchor="middle">activo</text>
+    <rect x="200" y="371" width="140" height="56" rx="5" fill="#eef4f8" stroke="#1b2a3a"/>
+    <text x="270" y="390" text-anchor="middle" font-weight="bold" font-size="12">recibos</text>
+    <text x="270" y="406" text-anchor="middle">tratamiento_id, numero, fecha</text><text x="270" y="419" text-anchor="middle">foto, estudiante, firmado_por</text>
+    <rect x="390" y="371" width="140" height="56" rx="5" fill="#f7f7f7" stroke="#8a97a5" stroke-dasharray="4 3"/>
+    <text x="460" y="390" text-anchor="middle" font-weight="bold" font-size="12">materiales</text>
+    <text x="460" y="406" text-anchor="middle">nombre, unidad</text><text x="460" y="419" text-anchor="middle">cantidad, minimo</text>
   </g>
 </svg>
-<p style="font-size:8.5pt;color:#6b7a8c">Figura 14. Cada flecha es una llave foránea (<code>REFERENCES</code>): apunta a la tabla de la que depende.
-La bitácora (línea punteada) no tiene llaves foráneas a propósito: guarda una copia del nombre y el rol, para que el
-registro no cambie aunque después cambie la cuenta.</p>
+<p style="font-size:8.5pt;color:#6b7a8c">Figura 25. Cada flecha es una llave foránea (<code>REFERENCES</code>): apunta a la tabla de la que depende;
+las que no llevan nombre son <code>paciente_id</code>. Para no enredar el dibujo no se trazan las flechas hacia
+<code>cuentas</code> de las tablas que guardan el CIF de quien hizo algo (<code>trabajo</code>, <code>abonos</code>,
+<code>fotos</code>, <code>tratamientos</code>, <code>recibos</code>). Las de línea punteada no tienen llaves foráneas: el
+inventario no depende de nadie y la bitácora, a propósito, guarda una copia del nombre y el rol para que el registro no
+cambie aunque después cambie la cuenta.</p>
 
-<table>
-  <tr><th style="width:15%">Tabla</th><th>Qué guarda</th><th style="width:34%">Detalles que conviene saber</th></tr>
-  <tr><td><code>cuentas</code></td><td>CIF, nombre, rol y contraseña de cada usuario.</td><td>La contraseña se guarda cifrada (hash), nunca en texto.</td></tr>
-  <tr><td><code>pacientes</code></td><td>Nombre, cédula, teléfono, razón, estudiante a cargo, aprobación y firma.</td><td>La cédula es <code>UNIQUE</code>: la base no deja repetirla. La firma es la imagen PNG en base64.</td></tr>
+<table class="salto">
+  <tr><th style="width:15%">Tabla</th><th>Qué guarda</th><th style="width:36%">Detalles que conviene saber</th></tr>
+  <tr><td><code>cuentas</code></td><td>CIF, nombre, rol y contraseña de cada usuario; si está activa o bloqueada y con qué grupo se registró.</td><td>La contraseña se guarda cifrada (hash), nunca en texto. Los intentos fallidos se cuentan aquí.</td></tr>
+  <tr><td><code>invitaciones</code></td><td>Los grupos de estudiantes: nombre, código del QR, cupo, vencimiento y si ya se cerró.</td><td>El código es <code>UNIQUE</code> y lo genera <code>secrets</code>, así que no se puede adivinar.</td></tr>
+  <tr><td><code>pacientes</code></td><td>Nombre, cédula, teléfono, número de expediente, razón, estudiante a cargo, aprobación, firma, revisión del odontograma y alta.</td><td>La cédula es <code>UNIQUE</code>: la base no deja repetirla. La firma es la imagen PNG en base64.</td></tr>
   <tr><td><code>trabajo</code></td><td>Un período por cada estudiante que atendió al paciente.</td><td>El período abierto tiene <code>hasta</code> vacío; al traspasar se cierra con el resumen.</td></tr>
   <tr><td><code>citas</code></td><td>Fecha, hora, clínica y razón de cada cita.</td><td>Fecha en formato aaaa-mm-dd para que se ordene bien.</td></tr>
-  <tr><td><code>salas</code></td><td>Las clínicas, la sala donde está cada una (<code>en_sala</code>) y si están disponibles.</td><td>El nombre es <code>UNIQUE</code>. La tabla conserva el nombre <code>salas</code> de cuando se llamaban así; cada fila es una clínica.</td></tr>
+  <tr><td><code>dientes</code></td><td>El estado y la nota de cada diente anotado en el odontograma.</td><td>Solo se guardan los que tienen hallazgo; la llave es paciente + diente.</td></tr>
+  <tr><td><code>fotos</code></td><td>Las fotos presenciales del paciente.</td><td>La imagen se guarda en la base (<code>bytea</code>), achicada a 1600 px y en JPEG.</td></tr>
+  <tr><td><code>tarifario</code></td><td>Los procedimientos y sus precios.</td><td>No se borran: se desactivan, para no romper los planes que ya los usan.</td></tr>
+  <tr><td><code>tratamientos</code></td><td>El plan de cada paciente: procedimiento, diente, precio, quién lo hizo y cuándo.</td><td>El precio se copia del tarifario al anotar; queda a nombre de quien lo marcó como realizado.</td></tr>
+  <tr><td><code>abonos</code></td><td>Los pagos que registra la Facultad.</td><td>El monto tiene que ser mayor que cero (<code>CHECK</code>).</td></tr>
+  <tr><td><code>recibos</code></td><td>La hoja de control: número, fecha y foto de cada recibo, quién lo subió y qué profesor lo firmó.</td><td>El mismo número no se repite para el mismo tratamiento (<code>UNIQUE</code>).</td></tr>
+  <tr><td><code>materiales</code></td><td>El inventario: cantidad y mínimo de cada material.</td><td>La cantidad no puede ser negativa (<code>CHECK</code>).</td></tr>
+  <tr><td><code>salas</code></td><td>Las 50 clínicas, su sala (<code>en_sala</code>: 1 pregrado, 2 posgrado) y si están disponibles.</td><td>El nombre es <code>UNIQUE</code>. La tabla conserva el nombre <code>salas</code> de cuando se llamaban así; cada fila es una clínica.</td></tr>
   <tr><td><code>reportes</code></td><td>Las fallas que reportan los estudiantes y quién las solucionó.</td><td>Un índice único parcial impide dos fallas abiertas en la misma clínica.</td></tr>
   <tr><td><code>bitacora</code></td><td>Quién hizo qué, cuándo y desde dónde.</td><td>Se muestran las últimas 500 líneas.</td></tr>
 </table>
@@ -229,27 +350,34 @@ registro no cambie aunque después cambie la cuenta.</p>
 <h3>5.2 Cómo se ve en la consola de Neon</h3>
 <p>En la consola de Neon (<code>console.neon.tech</code>), en <b>Tables</b>, se elige la rama arriba a la izquierda y la
 tabla en la lista; a la derecha salen sus filas. Con <b>Schema</b> se ven las columnas, sus tipos y las restricciones.</p>
-<figure><img src="capturas/n1-esquema-pacientes.png"><figcaption>Figura 15. Columnas y restricciones de la tabla <code>pacientes</code>: la cédula única y la llave foránea del estudiante hacia <code>cuentas</code>.</figcaption></figure>
-<figure><img src="capturas/n2-pacientes.png"><figcaption>Figura 16. Filas de la tabla <code>pacientes</code>.</figcaption></figure>
-<figure><img src="capturas/n3-citas.png"><figcaption>Figura 17. Tabla <code>citas</code>: cada cita apunta a su paciente con <code>paciente_id</code>.</figcaption></figure>
-<figure><img src="capturas/n4-salas.png"><figcaption>Figura 18. Tabla <code>salas</code>: cada fila es una clínica y <code>en_sala</code> dice en qué sala está; la Clínica 3 la marcó la Facultad y la Clínica 5 está reportada.</figcaption></figure>
-<figure><img src="capturas/n5-reportes.png"><figcaption>Figura 19. Tabla <code>reportes</code>: la falla de la Clínica 5, reportada por el CIF 00000002.</figcaption></figure>
-<figure><img src="capturas/n6-bitacora.png"><figcaption>Figura 20. Tabla <code>bitacora</code>: la hora se guarda con zona horaria y la aplicación la muestra en hora de Nicaragua.</figcaption></figure>
+<div class="nota">Las capturas de la consola (figuras 26 a 31) son de la primera versión: las tablas que muestran siguen
+igual, pero hoy la lista de tablas es más larga y <code>pacientes</code> tiene más columnas.</div>
+<figure><img src="capturas/n1-esquema-pacientes.png"><figcaption>Figura 26. Columnas y restricciones de la tabla <code>pacientes</code>: la cédula única y la llave foránea del estudiante hacia <code>cuentas</code>.</figcaption></figure>
+<figure><img src="capturas/n2-pacientes.png"><figcaption>Figura 27. Filas de la tabla <code>pacientes</code>.</figcaption></figure>
+<figure><img src="capturas/n3-citas.png"><figcaption>Figura 28. Tabla <code>citas</code>: cada cita apunta a su paciente con <code>paciente_id</code>.</figcaption></figure>
+<figure><img src="capturas/n4-salas.png"><figcaption>Figura 29. Tabla <code>salas</code>: cada fila es una clínica y <code>en_sala</code> dice su sala (1 pregrado, 2 posgrado; la captura es de cuando eran 20 clínicas); la Clínica 3 la marcó la Facultad y la Clínica 5 está reportada.</figcaption></figure>
+<figure><img src="capturas/n5-reportes.png"><figcaption>Figura 30. Tabla <code>reportes</code>: la falla de la Clínica 5, reportada por el CIF 00000002.</figcaption></figure>
+<figure><img src="capturas/n6-bitacora.png"><figcaption>Figura 31. Tabla <code>bitacora</code>: la hora se guarda con zona horaria y la aplicación la muestra en hora de Nicaragua.</figcaption></figure>
 
 <h2 class="salto">6. prototipo.py por dentro</h2>
 <table>
   <tr><th style="width:22%">Dónde</th><th style="width:30%">Qué hace</th><th>Qué decir si el profesor pregunta</th></tr>
-  <tr><td><code>TABLAS</code> y <code>crear_tablas()</code></td><td>Crean las tablas, las cuentas y las 20 clínicas iniciales (10 por sala).</td><td>Se ejecuta en cada despliegue y no borra nada: todo es <code>IF NOT EXISTS</code> y las cuentas usan <code>ON CONFLICT DO NOTHING</code>.</td></tr>
+  <tr><td><code>TABLAS</code> y <code>crear_tablas()</code></td><td>Crean las tablas, las cuentas y las 50 clínicas del plano (30 de pregrado y 20 de posgrado).</td><td>Se ejecuta en cada despliegue y no borra nada: todo es <code>IF NOT EXISTS</code> y las cuentas y las clínicas usan <code>ON CONFLICT DO NOTHING</code>. Así la base que tenía 20 clínicas pasó a 50 sin perder sus citas ni sus reportes.</td></tr>
   <tr><td><code>bd()</code> y <code>sql()</code></td><td>Abren una conexión a Neon por petición y la cierran al terminar.</td><td>Las consultas usan parámetros (<code>%s</code>), nunca texto pegado, así que no hay inyección SQL.</td></tr>
-  <tr><td><code>quien()</code></td><td>CIF, nombre y rol de quien entró.</td><td>Un solo lugar que contesta "¿quién es?"; todas las rutas lo usan.</td></tr>
-  <tr><td><code>exigir_sesion()</code></td><td>Antes de cada petición, sin sesión manda a la entrada.</td><td>Es el portón: una ruta nueva queda protegida sin hacer nada.</td></tr>
-  <tr><td><code>paciente(pid)</code></td><td>Trae un paciente solo si el usuario puede verlo.</td><td>Un estudiante no abre el expediente de otro ni escribiendo el número en la dirección.</td></tr>
-  <tr><td><code>entrar()</code></td><td>Revisa CIF y contraseña, y bloquea la cuenta tras 5 intentos fallidos.</td><td>Compara contra el hash con <code>check_password_hash</code>; la contraseña nunca se guarda tal cual. Los intentos se cuentan en la base de datos (<code>fallos</code>, <code>bloqueada_hasta</code>), así que el bloqueo vale aunque haya varios servidores.</td></tr>
+  <tr><td><code>quien()</code></td><td>CIF, nombre y rol de quien entró.</td><td>Un solo lugar que contesta "¿quién es?"; todas las rutas lo usan. Si la Facultad desactiva la cuenta, la sesión abierta deja de valer.</td></tr>
+  <tr><td><code>exigir_sesion()</code></td><td>Antes de cada petición, sin sesión manda a la entrada.</td><td>Es el portón: una ruta nueva queda protegida sin hacer nada. Solo se exceptúan la entrada y el registro con el código de un grupo.</td></tr>
+  <tr><td><code>paciente(pid)</code></td><td>Trae un paciente solo si el usuario puede verlo.</td><td>Un estudiante no abre el expediente de otro ni escribiendo el número en la dirección; si el paciente ya recibió el alta, solo la Facultad puede cambiar algo.</td></tr>
+  <tr><td><code>entrar()</code></td><td>Revisa CIF y contraseña, y bloquea la cuenta tras 5 intentos fallidos.</td><td>Compara contra el hash con <code>check_password_hash</code>; la contraseña nunca se guarda tal cual. Los intentos se cuentan en la base de datos, así que el bloqueo vale aunque haya varios servidores.</td></tr>
   <tr><td><code>error_de_cita()</code></td><td>Dice por qué no se puede agendar una cita.</td><td>Una sola regla para Citas y para el paso 2: fecha y hora no pasadas (hora de Nicaragua), clínica disponible y no ocupada.</td></tr>
   <tr><td><code>anotar()</code> y <code>lugar_de()</code></td><td>Escriben la bitácora con la ubicación aproximada.</td><td>La ubicación se busca una vez por sesión; si el servicio no responde, la acción se anota igual.</td></tr>
-  <tr><td><code>salas()</code></td><td>Plano de las salas con sus clínicas, reporte de fallas y su solución.</td><td>Reportar y solucionar van en una transacción: o se guarda todo o nada.</td></tr>
+  <tr><td><code>salas()</code></td><td>Plano de las clínicas, reporte de fallas y su solución.</td><td>Reportar y solucionar van en una transacción: o se guarda todo o nada.</td></tr>
+  <tr><td><code>odontograma()</code> y <code>foto_jpeg()</code></td><td>Guardan los dientes y la foto presencial, y llevan la revisión del profesor.</td><td>La foto se abre con Pillow: si no es una imagen se rechaza; se endereza, se achica y se guarda como JPEG.</td></tr>
+  <tr><td><code>tratamientos()</code> y <code>cuenta_de()</code></td><td>Plan de tratamiento, abonos y saldo.</td><td>El saldo no se guarda: se calcula cada vez (lo realizado menos lo abonado), así nunca queda desactualizado.</td></tr>
+  <tr><td><code>control()</code> y <code>recibos_de()</code></td><td>La hoja de control: subir, quitar y firmar recibos.</td><td>El estudiante solo sube recibos de tratamientos que él realizó; lo firmado no se quita y solo el profesor que firmó puede quitar su firma.</td></tr>
+  <tr><td><code>administrar_cuentas()</code>, <code>grupo()</code>, <code>registro()</code> y <code>qr()</code></td><td>Las cuentas y los grupos de estudiantes con su código QR.</td><td>El cupo se revisa dentro de una transacción con <code>FOR UPDATE</code>: si dos se registran a la vez por el último lugar, solo entra uno. El QR lo dibuja reportlab, sin librerías nuevas.</td></tr>
   <tr><td><code>traspaso()</code></td><td>Cambia un paciente de estudiante.</td><td>Cierra el período anterior con el resumen y abre uno nuevo, en una transacción.</td></tr>
-  <tr><td><code>expediente_pdf()</code></td><td>Arma el expediente en PDF con reportlab.</td><td>Se escribe en memoria y se descarga; incluye la firma como imagen.</td></tr>
+  <tr><td><code>cerrar()</code></td><td>Da de alta, anula el alta o elimina a un paciente.</td><td>Para eliminar pide la cédula, para que no se borre a nadie por un clic equivocado.</td></tr>
+  <tr><td><code>expediente_pdf()</code></td><td>Arma el expediente en PDF con reportlab.</td><td>Se escribe en memoria y se descarga; incluye el odontograma, los tratamientos, los recibos y la firma como imagen.</td></tr>
 </table>
 
 <h2>7. Las decisiones técnicas</h2>
@@ -262,8 +390,16 @@ tabla en la lista; a la derecha salen sus filas. Con <b>Schema</b> se ven las co
   <dd>Publica la aplicación con HTTPS a partir del <code>Dockerfile</code>. Las claves (la cadena de conexión de Neon y la clave de sesión) viven como secretos de Fly, no en el código.</dd>
   <dt>¿Cómo se protegen las contraseñas y la sesión?</dt>
   <dd>Contraseñas cifradas con hash; tras 5 intentos fallidos seguidos la cuenta se bloquea 15 minutos, para que nadie pueda probar contraseñas sin parar; la cookie de sesión va firmada, solo por HTTPS, sin acceso desde JavaScript y se vence a los 30 minutos sin uso.</dd>
+  <dt>¿Por qué el estudiante crea su cuenta con un código QR?</dt>
+  <dd>Para un curso de 30 estudiantes, crear cada cuenta y repartir cada contraseña es lento y obliga a que alguien más la conozca. Con el QR cada uno elige la suya y nadie más la ve. El riesgo (que alguien con el código cree una cuenta que no le toca) se limita con el cupo, el vencimiento y el botón de cerrar el registro, y porque una cuenta nueva de estudiante no ve a ningún paciente.</dd>
+  <dt>¿Por qué el QR lleva siempre a la dirección publicada?</dt>
+  <dd>Porque tiene que abrir desde el celular del estudiante. La dirección sale de la variable <code>SITIO</code> y no de la computadora donde la Facultad tenga abierto el sistema.</dd>
+  <dt>¿Por qué las fotos se guardan en la base de datos?</dt>
+  <dd>Porque el disco de Fly se borra en cada despliegue. Se achican antes de guardarlas, así una foto de celular de varios MB queda en unos cientos de KB.</dd>
+  <dt>¿Cómo se adapta al teléfono?</dt>
+  <dd>Con CSS (<code>@media</code>), sin una aplicación aparte: las mismas plantillas sirven para computadora, tableta y teléfono.</dd>
   <dt>¿Por qué el calendario del navegador para las fechas?</dt>
-  <dd>Porque no deja elegir días pasados y evita errores al escribir. El navegador siempre envía la fecha como aaaa-mm-dd, así que lo que se guarda no es ambiguo; en pantalla la muestra con el formato del idioma del navegador (dd/mm/aaaa en español). El servidor vuelve a validar la fecha aunque alguien se salte el calendario.</dd>
+  <dd>Porque no deja elegir días pasados y evita errores al escribir. El navegador siempre envía la fecha como aaaa-mm-dd, así que lo que se guarda no es ambiguo. El servidor vuelve a validar la fecha aunque alguien se salte el calendario.</dd>
 </dl>
 
 <h2>8. Las validaciones</h2>
@@ -274,9 +410,17 @@ tabla en la lista; a la derecha salen sus filas. Con <b>Schema</b> se ven las co
   <li>No se agenda en una clínica no disponible ni en una clínica ya ocupada a esa fecha y hora.</li>
   <li>Solo se cancelan las citas que no han pasado.</li>
   <li>La firma tiene que ser un trazo dibujado, no un nombre escrito.</li>
+  <li>Sin la foto presencial no se pide la revisión del odontograma; el estudiante no aprueba el suyo; para devolverlo el profesor tiene que decir qué corregir.</li>
+  <li>Sin la firma del consentimiento informado no se marca ningún tratamiento como realizado; lo realizado no se quita del plan.</li>
+  <li>Los abonos los registra solo la Facultad y el monto tiene que ser mayor que cero.</li>
+  <li>El recibo necesita número, una fecha que ya llegó y una foto que sea imagen; solo se sube de un tratamiento realizado por el mismo estudiante; un recibo firmado no se quita.</li>
+  <li>Del inventario no sale más de lo que hay.</li>
   <li>Al traspasar, el resumen es obligatorio y hay que elegir otro estudiante.</li>
+  <li>Dado de alta, el expediente ya no se cambia; para eliminar a un paciente hay que escribir su cédula y el motivo, y no puede tener recibos firmados.</li>
   <li>Para reportar una clínica hay que decir qué falla; una clínica no se reporta dos veces.</li>
-  <li>Para agregar una clínica hay que decir en qué sala está.</li>
+  <li>Para agregar una clínica hay que decir si es de pregrado o de posgrado.</li>
+  <li>La contraseña tiene al menos 8 caracteres; al registrarse con el QR se escribe dos veces y el CIF no puede tener ya una cuenta.</li>
+  <li>El código de un grupo no sirve si venció, si se llenó el cupo o si la Facultad lo cerró.</li>
   <li>Tras 5 contraseñas equivocadas seguidas la cuenta se bloquea 15 minutos.</li>
   <li>Cada estudiante solo ve y solo toca a sus pacientes; cada acción revisa el rol en el servidor.</li>
 </ul>
@@ -284,11 +428,11 @@ tabla en la lista; a la derecha salen sus filas. Con <b>Schema</b> se ven las co
 
 <h2>9. Lo que falta</h2>
 <table>
-  <tr><th>Sección</th><th>Para qué sirve</th></tr>
-  <tr><td>Odontograma</td><td>Foto presencial y odontograma digital</td></tr>
-  <tr><td>Tratamientos y cobros</td><td>Procedimientos, tarifario y abonos</td></tr>
-  <tr><td>Inventario</td><td>Materiales de la clínica</td></tr>
-  <tr><td>Cuentas</td><td>Que la Facultad cree cuentas y que cada persona cambie su contraseña; la UAM definirá cómo.</td></tr>
+  <tr><th style="width:30%">Qué</th><th>Cómo está hoy</th></tr>
+  <tr><td>Que cada persona cambie su contraseña</td><td>Hoy solo la Facultad le pone una contraseña nueva a una cuenta; el estudiante que se registra con el QR elige la suya, pero después no la puede cambiar él mismo.</td></tr>
+  <tr><td>Relacionar abonos y recibos</td><td>Los abonos (Facultad) y los recibos (estudiante) se ven juntos en el paciente para compararlos, pero el sistema no obliga a que cada abono tenga su recibo.</td></tr>
+  <tr><td>Protecciones extra del navegador</td><td>La cookie de sesión ya impide que otra página envíe formularios a nombre del usuario; faltan las cabeceras de seguridad adicionales (por ejemplo <code>Content-Security-Policy</code>).</td></tr>
+  <tr><td>Firma con valor legal pleno</td><td>La firma del paciente es su trazo guardado como imagen; una firma digital certificada la tendría que decidir la Facultad.</td></tr>
 </table>
 
 <h2>10. Preguntas probables</h2>
@@ -296,9 +440,19 @@ tabla en la lista; a la derecha salen sus filas. Con <b>Schema</b> se ven las co
   <dt>¿Dónde se guardan los datos?</dt>
   <dd>En PostgreSQL en Neon, en la rama <code>main</code> del proyecto <code>clinicas-odontologicas</code>. No se pierden al reiniciar la aplicación.</dd>
   <dt>¿Cómo se protege la información del paciente?</dt>
-  <dd>Sin sesión no se ve ninguna pantalla; cada ruta revisa el rol antes de tocar los datos; <code>paciente()</code> no entrega un paciente a un estudiante que no lo tiene a cargo; todo viaja por HTTPS y la sesión se vence sola.</dd>
+  <dd>Sin sesión no se ve ninguna pantalla; cada ruta revisa el rol antes de tocar los datos; <code>paciente()</code> no entrega un paciente a un estudiante que no lo tiene a cargo, ni sus fotos ni sus recibos; todo viaja por HTTPS y la sesión se vence sola.</dd>
+  <dt>¿Qué pasa si alguien que no es del curso consigue el código QR?</dt>
+  <dd>Podría crear una cuenta de estudiante mientras el registro esté abierto, pero esa cuenta no ve a ningún paciente. La Facultad ve en la página del grupo quiénes se registraron, desactiva la cuenta que no corresponde y cierra el registro. Cada registro queda en la bitácora.</dd>
+  <dt>¿Y si un estudiante se registra con el CIF de un compañero?</dt>
+  <dd>El compañero no podrá registrarse porque ese CIF ya tiene cuenta, y avisa. La Facultad desactiva esa cuenta o le pone una contraseña nueva y se la entrega al dueño del CIF.</dd>
+  <dt>¿Cómo sabe el plano dónde va cada clínica?</dt>
+  <dd>No guarda coordenadas: las clínicas se ordenan por su número y el CSS las acomoda con la forma de cada sala (filas de diez en pregrado, columnas de siete en posgrado). Si se agrega una clínica, cae en el siguiente lugar libre.</dd>
   <dt>¿Qué pasa si dos estudiantes reportan la misma clínica a la vez?</dt>
   <dd>La base de datos tiene un índice único que solo permite una falla abierta por clínica; el segundo recibe el aviso de que ya estaba reportada.</dd>
+  <dt>¿Por qué el recibo lleva foto si ya se escribe el número?</dt>
+  <dd>Porque el número escrito a mano a veces no se lee. Con la foto, el profesor compara el número con el recibo antes de firmar y la hoja impresa sale sin errores de copia.</dd>
+  <dt>¿Qué pasa con los recibos si el paciente cambia de estudiante o recibe el alta?</dt>
+  <dd>El recibo es de quien realizó el tratamiento, así que se queda en su hoja. Y aunque el paciente ya tenga el alta, el estudiante puede subir un recibo que llegó tarde: la hoja de control no es parte del expediente clínico.</dd>
   <dt>¿La bitácora sabe exactamente desde qué computadora se hizo algo?</dt>
   <dd>No. La ubicación sale de la conexión a internet y es aproximada; todas las computadoras de una misma red comparten la misma conexión.</dd>
   <dt>¿Es legal la firma?</dt>

@@ -2,27 +2,37 @@
 {% block titulo %}Clínicas - Clínicas Odontológicas{% endblock %}
 {% block contenido %}
   <h2>Plano de las clínicas</h2>
-  <p class="tenue">Cada clínica muestra un ✓ si está disponible o una ✗ si no lo está.</p>
-  {% for grupo in salas|groupby('en_sala') %}
-  <div class="plano">
-    <div class="plano-titulo">{{ GRUPOS[grupo.grouper] }}</div>
-    <div class="plano-salas">
-      {% for s in grupo.list %}
-      <div class="sala {{ 'libre' if s.disponible else 'ocupada' }}">
-        <span class="marca-sala">{{ '✓' if s.disponible else '✗' }}</span>
-        <b>{{ s.nombre }}</b>
-        <small>{{ 'No funciona' if s.reporte_id else ('Disponible' if s.disponible else 'No disponible') }}</small>
+  <div class="planos">
+    <div class="plano-leyenda">
+      <p class="tenue">Las clínicas están acomodadas como en las salas: cada cuadro es una unidad, con su número.</p>
+      <ul>
+        <li><b class="verde">✓</b> Disponible</li>
+        <li><b class="rojo">✗</b> No disponible</li>
+        <li><b class="rojo">!</b> No funciona (reportada)</li>
+      </ul>
+      {% if es_rol == "admin" %}<p class="tenue">Toque una clínica para marcarla como disponible o no disponible.</p>{% endif %}
+    </div>
+    {% for grupo in salas|groupby('en_sala') %}
+    <div class="plano plano-{{ grupo.grouper }}">
+      <div class="plano-titulo">{{ GRUPOS[grupo.grouper] }}</div>
+      <div class="plano-salas">
+        {% for s in grupo.list %}
+        {% set estado = 'No funciona' if s.reporte_id else ('Disponible' if s.disponible else 'No disponible') %}
+        {% set dentro %}<span class="marca-sala">{{ '!' if s.reporte_id else ('✓' if s.disponible else '✗') }}</span><b>{{ s.nombre|replace('Clínica ', '') }}</b>{% endset %}
         {% if es_rol == "admin" and not s.reporte_id %}
         <form method="post">
           <input type="hidden" name="sala" value="{{ s.id }}">
-          <button class="btn chico">{{ 'Marcar no disponible' if s.disponible else 'Marcar disponible' }}</button>
+          <button class="sala {{ 'libre' if s.disponible else 'ocupada' }}" title="{{ s.nombre }}: {{ estado }}"
+                  aria-label="{{ s.nombre }}: {{ estado }}. Marcar como {{ 'no disponible' if s.disponible else 'disponible' }}">{{ dentro }}</button>
         </form>
+        {% else %}
+        <div class="sala {{ 'libre' if s.disponible else 'ocupada' }}" role="img" title="{{ s.nombre }}: {{ estado }}" aria-label="{{ s.nombre }}: {{ estado }}">{{ dentro }}</div>
         {% endif %}
+        {% endfor %}
       </div>
-      {% endfor %}
     </div>
+    {% endfor %}
   </div>
-  {% endfor %}
 
   {% set con_falla = salas|selectattr('reporte_id')|list %}
   {% if es_rol != "estudiante" and not con_falla %}
