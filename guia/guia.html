@@ -104,7 +104,7 @@ datos. Si alguien armara el formulario a mano, igual no pasaría; las pruebas lo
 <p>Se escribe el CIF y la contraseña. Si falta alguno, la pantalla dice cuál; si no coinciden, dice "CIF o contraseña
 incorrectos" sin aclarar cuál de los dos falló. Tras <b>5 contraseñas equivocadas seguidas</b> la cuenta queda bloqueada
 15 minutos: mientras tanto no entra ni con la contraseña correcta, y el bloqueo queda en la bitácora. La sesión se cierra
-sola a los 30 minutos sin uso, porque en la clínica las computadoras son compartidas.</p>
+sola a los 15 minutos sin uso, porque en la clínica las computadoras son compartidas.</p>
 <figure class="media"><img src="capturas/01-entrar.png"><figcaption>Figura 1. Pantalla de inicio de sesión.</figcaption></figure>
 
 <h3>4.2 Registrar paciente (estudiante)</h3>
@@ -331,16 +331,16 @@ cambie aunque después cambie la cuenta.</p>
 <table class="salto">
   <tr><th style="width:15%">Tabla</th><th>Qué guarda</th><th style="width:36%">Detalles que conviene saber</th></tr>
   <tr><td><code>cuentas</code></td><td>CIF, nombre, rol y contraseña de cada usuario; si está activa o bloqueada y con qué grupo se registró.</td><td>La contraseña se guarda cifrada (hash), nunca en texto. Los intentos fallidos se cuentan aquí.</td></tr>
-  <tr><td><code>invitaciones</code></td><td>Los grupos de estudiantes: nombre, código del QR, cupo, vencimiento y si ya se cerró.</td><td>El código es <code>UNIQUE</code> y lo genera <code>secrets</code>, así que no se puede adivinar.</td></tr>
+  <tr><td><code>invitaciones</code></td><td>Los grupos de estudiantes: nombre, código del QR, cupo, vencimiento y si ya se cerró.</td><td>El código es <code>UNIQUE</code> y lo genera <code>secrets</code>, así que no se puede adivinar. Quién creó el grupo queda en la bitácora: si también se guardara aquí, <code>cuentas</code> e <code>invitaciones</code> se apuntarían la una a la otra (referencia circular).</td></tr>
   <tr><td><code>pacientes</code></td><td>Nombre, cédula, teléfono, número de expediente, razón, estudiante a cargo, aprobación, firma, revisión del odontograma y alta.</td><td>La cédula es <code>UNIQUE</code>: la base no deja repetirla. La firma es la imagen PNG en base64.</td></tr>
   <tr><td><code>trabajo</code></td><td>Un período por cada estudiante que atendió al paciente.</td><td>El período abierto tiene <code>hasta</code> vacío; al traspasar se cierra con el resumen.</td></tr>
-  <tr><td><code>citas</code></td><td>Fecha, hora, clínica y razón de cada cita.</td><td>Fecha en formato aaaa-mm-dd para que se ordene bien.</td></tr>
+  <tr><td><code>citas</code></td><td>Fecha, hora, clínica, razón y estado de cada cita (Programada, Confirmada, Atendida, Cancelada o No se presentó).</td><td>Fecha en formato aaaa-mm-dd para que se ordene bien. Cancelar no borra la cita: queda con su motivo.</td></tr>
   <tr><td><code>dientes</code></td><td>El estado y la nota de cada diente anotado en el odontograma.</td><td>Solo se guardan los que tienen hallazgo; la llave es paciente + diente.</td></tr>
-  <tr><td><code>fotos</code></td><td>Las fotos presenciales del paciente.</td><td>La imagen se guarda en la base (<code>bytea</code>), achicada a 1600 px y en JPEG.</td></tr>
+  <tr><td><code>fotos</code></td><td>Las fotos presenciales del paciente.</td><td>La imagen no va en la base: se sube achicada (1600 px, JPEG) a un almacenamiento de archivos y aquí se guarda su dirección (<code>url</code>). Es una tabla aparte porque un paciente tiene varias fotos.</td></tr>
   <tr><td><code>tarifario</code></td><td>Los procedimientos y sus precios.</td><td>No se borran: se desactivan, para no romper los planes que ya los usan.</td></tr>
   <tr><td><code>tratamientos</code></td><td>El plan de cada paciente: procedimiento, diente, precio, quién lo hizo y cuándo.</td><td>El precio se copia del tarifario al anotar; queda a nombre de quien lo marcó como realizado.</td></tr>
   <tr><td><code>abonos</code></td><td>Los pagos que registra la Facultad.</td><td>El monto tiene que ser mayor que cero (<code>CHECK</code>).</td></tr>
-  <tr><td><code>recibos</code></td><td>La hoja de control: número, fecha y foto de cada recibo, quién lo subió y qué profesor lo firmó.</td><td>El mismo número no se repite para el mismo tratamiento (<code>UNIQUE</code>).</td></tr>
+  <tr><td><code>recibos</code></td><td>La hoja de control: número, fecha y dirección de la foto de cada recibo, quién lo subió y qué profesor lo firmó.</td><td>El mismo número no se repite para el mismo tratamiento (<code>UNIQUE</code>). La foto, como en <code>fotos</code>, está fuera de la base.</td></tr>
   <tr><td><code>materiales</code></td><td>El inventario: cantidad y mínimo de cada material.</td><td>La cantidad no puede ser negativa (<code>CHECK</code>).</td></tr>
   <tr><td><code>salas</code></td><td>Las 50 clínicas, su sala (<code>en_sala</code>: 1 pregrado, 2 posgrado) y si están disponibles.</td><td>El nombre es <code>UNIQUE</code>. La tabla conserva el nombre <code>salas</code> de cuando se llamaban así; cada fila es una clínica.</td></tr>
   <tr><td><code>reportes</code></td><td>Las fallas que reportan los estudiantes y quién las solucionó.</td><td>Un índice único parcial impide dos fallas abiertas en la misma clínica.</td></tr>
@@ -389,13 +389,13 @@ igual, pero hoy la lista de tablas es más larga y <code>pacientes</code> tiene 
   <dt>¿Por qué Fly.io?</dt>
   <dd>Publica la aplicación con HTTPS a partir del <code>Dockerfile</code>. Las claves (la cadena de conexión de Neon y la clave de sesión) viven como secretos de Fly, no en el código.</dd>
   <dt>¿Cómo se protegen las contraseñas y la sesión?</dt>
-  <dd>Contraseñas cifradas con hash; tras 5 intentos fallidos seguidos la cuenta se bloquea 15 minutos, para que nadie pueda probar contraseñas sin parar; la cookie de sesión va firmada, solo por HTTPS, sin acceso desde JavaScript y se vence a los 30 minutos sin uso.</dd>
+  <dd>Contraseñas cifradas con hash; tras 5 intentos fallidos seguidos la cuenta se bloquea 15 minutos, para que nadie pueda probar contraseñas sin parar; la cookie de sesión va firmada, solo por HTTPS, sin acceso desde JavaScript y se vence a los 15 minutos sin uso.</dd>
   <dt>¿Por qué el estudiante crea su cuenta con un código QR?</dt>
   <dd>Para un curso de 30 estudiantes, crear cada cuenta y repartir cada contraseña es lento y obliga a que alguien más la conozca. Con el QR cada uno elige la suya y nadie más la ve. El riesgo (que alguien con el código cree una cuenta que no le toca) se limita con el cupo, el vencimiento y el botón de cerrar el registro, y porque una cuenta nueva de estudiante no ve a ningún paciente.</dd>
   <dt>¿Por qué el QR lleva siempre a la dirección publicada?</dt>
   <dd>Porque tiene que abrir desde el celular del estudiante. La dirección sale de la variable <code>SITIO</code> y no de la computadora donde la Facultad tenga abierto el sistema.</dd>
-  <dt>¿Por qué las fotos se guardan en la base de datos?</dt>
-  <dd>Porque el disco de Fly se borra en cada despliegue. Se achican antes de guardarlas, así una foto de celular de varios MB queda en unos cientos de KB.</dd>
+  <dt>¿Dónde se guardan las fotos?</dt>
+  <dd>En un almacenamiento de archivos compatible con S3 (por ejemplo, el Object Storage de Neon), no en la base: así la base no crece con cada imagen. La base guarda solo la dirección. El almacenamiento es privado; el sistema revisa quién pide la foto y le da un enlace que vence a los 5 minutos. No se usa el disco de Fly porque se borra en cada despliegue, por eso el despliegue se detiene si falta configurar el almacenamiento. Las fotos se achican antes de subirlas: una foto de celular de varios MB queda en unos cientos de KB.</dd>
   <dt>¿Cómo se adapta al teléfono?</dt>
   <dd>Con CSS (<code>@media</code>), sin una aplicación aparte: las mismas plantillas sirven para computadora, tableta y teléfono.</dd>
   <dt>¿Por qué el calendario del navegador para las fechas?</dt>
