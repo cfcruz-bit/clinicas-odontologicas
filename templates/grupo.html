@@ -34,17 +34,24 @@
     <h2>Estudiantes registrados: {{ grupo.registrados }} de {{ grupo.cupo }}</h2>
     <div class="tabla">
       <table>
-        <thead><tr><th>CIF</th><th>Nombre</th><th>Estado</th></tr></thead>
+        <thead><tr><th>CIF</th><th>Nombre</th><th>Correo</th><th>Año</th><th>Profesor</th><th>Estado</th></tr></thead>
         <tbody>
           {% for c in registrados %}
-          <tr><td>{{ c.cif }}</td><td>{{ c.nombre }}</td>
+          <tr><td><a href="{{ url_for('cuenta', cif=c.cif) }}">{{ c.cif }}</a></td><td>{{ c.nombre }}</td><td>{{ c.correo }}</td><td>{{ c.anio or "" }}</td><td>{{ nombre_de(c.profesor) if c.profesor else "Sin asignar" }}</td>
             <td class="{{ 'verde' if c.activa else 'tenue' }}">{{ "Activa" if c.activa else "Desactivada" }}</td></tr>
           {% else %}
-          <tr><td class="vacio" colspan="3"><b>Todavía no se registra nadie</b>{{ "Aparecen aquí cuando escanean el código; actualice la página para verlos." if grupo.estado == "Abierto" else "Nadie usó el código de este grupo." }}</td></tr>
+          <tr><td class="vacio" colspan="6"><b>Todavía no se registra nadie</b>{{ "Aparecen aquí cuando escanean el código; actualice la página para verlos." if grupo.estado == "Abierto" else "Nadie usó el código de este grupo." }}</td></tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
+    {% if registrados %}
+    <form method="post" class="en-linea"><input type="hidden" name="accion" value="profesor">
+      <label for="profesor">Profesor a cargo de todo el grupo</label>
+      <select id="profesor" name="profesor" required><option value="">Seleccione…</option>
+        {% for p in profesores %}<option value="{{ p.cif }}">{{ p.nombre }}</option>{% endfor %}</select>
+      <button class="btn chico">Asignar</button></form>
+    <p class="tenue">El profesor solo ve a los pacientes de sus estudiantes.</p>{% endif %}
     {% if registrados %}<p class="tenue">Si alguien se registró con un CIF que no es el suyo, desactive esa cuenta en
        <a href="{{ url_for('administrar_cuentas') }}">Cuentas</a>.</p>{% endif %}
   </div>
