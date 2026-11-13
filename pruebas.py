@@ -22,7 +22,7 @@ for variable in ("ALMACEN_BUCKET", "FLY_APP_NAME"):
 import prototipo as m  # noqa: E402
 
 base = psycopg.connect(os.environ["DATABASE_URL"], autocommit=True, row_factory=dict_row, prepare_threshold=None)
-base.execute("DROP TABLE IF EXISTS historias, precios_anteriores, solicitudes, ordenes, recibos, abonos, tratamientos, tarifario, materiales, fotos, dientes, reportes, bitacora,"
+base.execute("DROP TABLE IF EXISTS turnos, historias, precios_anteriores, solicitudes, ordenes, recibos, abonos, tratamientos, tarifario, materiales, fotos, dientes, reportes, bitacora,"
              " citas, trabajo, pacientes, salas, cuentas, invitaciones CASCADE")
 m.crear_tablas()
 
@@ -532,12 +532,13 @@ caso("Ni el estudiante ni el profesor ven el código del grupo",
      grace.get(del_grupo).status_code == 302 and profe.get(del_grupo).status_code == 302)
 anon = m.app.test_client()
 caso("La página de registro abre sin sesión y dice de qué grupo es", "Operatoria 2026" in texto(anon.get(reg)))
-datos = {"cif": "R001", "nombre": "Rosa Registro", "clave": "mi-clave-123", "clave2": "mi-clave-123"}
+datos = {"cif": "R001", "nombre": "Rosa Registro", "clave": "mi-clave-123", "clave2": "mi-clave-123",
+         "correo": "rosa@uam.edu.ni", "anio": "3"}
 anon.post("/registro/codigo-inventado", data=datos)
 caso("Con un código inventado no se crea ninguna cuenta",
      cuantos("cuentas") == 6 and "ya no está disponible" in texto(anon.get("/registro/codigo-inventado")))
 for mal in ({"cif": "R 001"}, {"cif": "00000002"}, {"nombre": ""}, {"clave": "corta", "clave2": "corta"},
-            {"clave2": "otra-clave-123"}):
+            {"clave2": "otra-clave-123"}, {"correo": "rosa"}, {"anio": "9"}):
     anon.post(reg, data={**datos, **mal})
 caso("Para registrarse hace falta un CIF nuevo, el nombre y una contraseña de 8 caracteres escrita dos veces",
      cuantos("cuentas") == 6)
@@ -546,6 +547,8 @@ rosa = uno("SELECT * FROM cuentas WHERE cif = 'R001'") or {}
 caso("El estudiante crea su cuenta con su CIF, su nombre y su contraseña, guardada cifrada",
      rosa.get("nombre") == "Rosa Registro" and rosa["rol"] == "estudiante" and rosa["invitacion_id"] == inv["id"]
      and "mi-clave-123" not in rosa["clave"])
+caso("Al registrarse guarda su correo y su año de la carrera (RF02)",
+     rosa.get("correo") == "rosa@uam.edu.ni" and rosa.get("anio") == 3)
 caso("Al registrarse queda dentro del sistema como estudiante, sin pacientes de nadie",
      entra.status_code == 302 and "Rosa Registro (Estudiante)" in texto(anon.get("/menu"))
      and "Luis Pérez" not in texto(anon.get("/pacientes")))
@@ -573,6 +576,49 @@ base.execute("UPDATE invitaciones SET vence = now() - interval '1 second' WHERE 
 inv_c = uno("SELECT codigo FROM invitaciones WHERE nombre = 'Grupo C'")
 m.app.test_client().post(f"/registro/{inv_c['codigo']}", data={**datos, "cif": "R005"})
 caso("Pasada la fecha el código vence", cuantos("cuentas") == 8)
+
+# ---- RF06/RNF06: el profesor ve solo a los pacientes de sus estudiantes; RF10: turnos clínicos
+gustavo = cliente("00000004")
+vistos = lambda c: texto(c.get("/pacientes"))  # noqa: E731
+con_paciente = uno("SELECT p.id, p.nombre, p.estudiante FROM pacientes p WHERE eliminado IS NULL AND estudiante IS NOT NULL"
+                   " ORDER BY id LIMIT 1")
+caso("Sin profesor asignado, todos los profesores ven a los pacientes del estudiante",
+     con_paciente["nombre"] in vistos(profe) and con_paciente["nombre"] in vistos(gustavo))
+grace.post(f"/cuentas/{con_paciente['estudiante']}", data={"accion": "datos", "nombre": "X", "rol": "estudiante",
+                                                           "profesor": "00000001"})
+caso("Solo la Facultad asigna el profesor", not uno("SELECT profesor FROM cuentas WHERE cif = %s",
+                                                    con_paciente["estudiante"])["profesor"])
+nombre_est = uno("SELECT nombre FROM cuentas WHERE cif = %s", con_paciente["estudiante"])["nombre"]
+admin.post(f"/cuentas/{con_paciente['estudiante']}", data={"accion": "datos", "nombre": nombre_est, "rol": "estudiante",
+                                                           "correo": "est@uam.edu.ni", "anio": "4", "profesor": "00000001"})
+fila = uno("SELECT profesor, correo, anio FROM cuentas WHERE cif = %s", con_paciente["estudiante"])
+caso("La Facultad pone profesor, correo y año en la ficha de la cuenta",
+     fila == {"profesor": "00000001", "correo": "est@uam.edu.ni", "anio": 4})
+caso("El profesor a cargo ve a los pacientes de su estudiante y otro profesor ya no (RNF06)",
+     con_paciente["nombre"] in vistos(profe) and con_paciente["nombre"] not in vistos(gustavo)
+     and gustavo.get(f"/pacientes/{con_paciente['id']}").status_code == 302
+     and profe.get(f"/pacientes/{con_paciente['id']}").status_code == 200)
+admin.post(del_grupo, data={"accion": "profesor", "profesor": "00000004"})
+caso("La Facultad pone un profesor a cargo de todo un grupo",
+     {f["profesor"] for f in base.execute("SELECT profesor FROM cuentas WHERE invitacion_id = %s", (inv["id"],))} == {"00000004"})
+est = con_paciente["estudiante"]
+admin.post(f"/cuentas/{est}", data={"accion": "turno", "dia": "0", "desde": "10:00", "hasta": "08:00"})
+caso("Un turno al revés no se guarda", cuantos("turnos") == 0)
+admin.post(f"/cuentas/{est}", data={"accion": "turno", "dia": "0", "desde": "08:00", "hasta": "12:00"})
+admin.post(f"/cuentas/{est}", data={"accion": "turno", "dia": "0", "desde": "11:00", "hasta": "13:00"})
+caso("La Facultad asigna turnos clínicos y no deja que se crucen (RF10)", cuantos("turnos") == 1)
+lunes = datetime.now() + timedelta(days=7 - datetime.now().weekday())
+martes = lunes + timedelta(days=1)
+contexto = m.app.test_request_context()
+contexto.push()
+caso("Con turnos, una cita fuera de ellos no se puede agendar",
+     "fuera de sus turnos" in m.error_de_cita(martes.date().isoformat(), "09:00", "", con_paciente["id"], est))
+caso("Dentro del turno sí se puede",
+     m.error_de_cita(lunes.date().isoformat(), "09:00", "", con_paciente["id"], est) is None)
+t_id = uno("SELECT id FROM turnos")["id"]
+admin.post(f"/cuentas/{est}", data={"accion": "quitar_turno", "id": t_id})
+contexto.pop()
+caso("La Facultad quita un turno", cuantos("turnos") == 0)
 
 # Dar de alta y eliminar pacientes: solo la Facultad
 cerrar = f"/pacientes/{pid}/cerrar"
