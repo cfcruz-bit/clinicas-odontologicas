@@ -1,6 +1,33 @@
 {% extends "base.html" %}
 {% block titulo %}Inventario - Clínicas Odontológicas{% endblock %}
 {% block contenido %}
+  <h2>Solicitudes de los estudiantes</h2>
+  {% set pendientes = solicitudes|selectattr('estado', 'equalto', 'Pendiente')|list %}
+  {% if pendientes %}
+  <div class="tabla">
+    <table>
+      <thead><tr><th>Pedida</th><th>Estudiante</th><th>Material</th><th class="num">Pide</th><th class="num">Hay</th><th>Para la cita del</th><th></th></tr></thead>
+      <tbody>
+        {% for s in pendientes %}
+        <tr><td class="fecha">{{ s.pedida }}</td><td>{{ nombre_de(s.estudiante) }}</td><td>{{ s.material }}</td>
+          <td class="num">{{ s.cantidad }} {{ s.unidad }}</td><td class="num {{ 'rojo' if s.hay < s.cantidad }}">{{ s.hay }}</td>
+          <td class="fecha">{{ s.para|dmy }}</td>
+          <td class="acciones">
+            <form method="post" class="en-linea"><input type="hidden" name="id" value="{{ s.id }}">
+              <button class="btn chico" name="accion" value="entregar">Entregar</button></form>
+            <details class="decidir"><summary>Rechazar</summary>
+              <form method="post"><input type="hidden" name="id" value="{{ s.id }}"><input type="hidden" name="accion" value="rechazar">
+                <label for="n-{{ s.id }}">Motivo: *</label><input id="n-{{ s.id }}" name="nota" required maxlength="500">
+                <button class="btn chico peligro">Rechazar</button></form></details>
+          </td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="tenue">No hay solicitudes esperando.</p>
+  {% endif %}
+
   <h2>Inventario de materiales</h2>
   <p class="tenue">Cuando un material llega a su mínimo, sale primero en la lista y la Facultad recibe el aviso en Inicio.
      Cada entrada y salida queda en la bitácora.</p>

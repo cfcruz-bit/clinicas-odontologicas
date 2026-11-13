@@ -5,6 +5,15 @@
   <p>Quién hizo qué, a qué hora y desde dónde. La ubicación es la ciudad aproximada de la conexión a internet,
      no la dirección exacta.</p>
 
+  <form method="get" class="en-linea">
+    <label>Desde <input type="date" name="desde" value="{{ f.desde }}"></label>
+    <label>Hasta <input type="date" name="hasta" value="{{ f.hasta }}"></label>
+    <input name="usuario" value="{{ f.usuario }}" placeholder="Usuario o CIF" aria-label="Usuario o CIF">
+    <input name="accion" value="{{ f.accion }}" placeholder="Acción (ej.: Rechazó, cita, Eliminó)" aria-label="Acción">
+    <button class="btn">Filtrar</button>
+    {% if filtrado %}<a class="btn" href="{{ url_for('bitacora') }}">Quitar filtros</a>{% endif %}
+  </form>
+  <p class="tenue">{{ lineas|length }} {{ "movimiento" if lineas|length == 1 else "movimientos" }}{{ " con esos filtros" if filtrado }} (se muestran hasta 500).</p>
   {% if lineas %}
   <div class="tabla">
     <table>
@@ -18,6 +27,6 @@
     </table>
   </div>
   {% else %}
-  <p class="vacio"><b>Todavía no hay movimientos</b>Aquí se anota cada cosa que hacen los usuarios.</p>
+  <p class="vacio"><b>{{ "Ningún movimiento con esos filtros" if filtrado else "Todavía no hay movimientos" }}</b>Aquí se anota cada cosa que hacen los usuarios.</p>
   {% endif %}
 {% endblock %}

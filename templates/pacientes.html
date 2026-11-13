@@ -8,9 +8,15 @@
     <fieldset>
       <legend>Datos del paciente</legend>
       <div class="campo"><span>Nombre: *</span><input name="nombre" value="{{ form.nombre or '' }}"></div>
-      <div class="campo"><span>Cédula: *</span><input name="cedula" value="{{ form.cedula or '' }}"></div>
-      <div class="campo"><span>Teléfono</span><input name="telefono" value="{{ form.telefono or '' }}"></div>
-      <div class="campo"><span>Nº de expediente</span><input name="expediente" value="{{ form.expediente or '' }}"></div>
+      <div class="campo"><span>Cédula: *</span><input name="cedula" value="{{ form.cedula or '' }}" placeholder="000-000000-0000A" autocomplete="off"></div>
+      <div class="campo"><span>Teléfono</span><input name="telefono" value="{{ form.telefono or '' }}" placeholder="8 dígitos" inputmode="tel"></div>
+      <div class="campo"><span>Nº de expediente</span><input name="expediente" value="{{ form.expediente or '' }}" placeholder="Si se deja vacío se le da uno correlativo"></div>
+      <div class="campo"><span>Fecha de nacimiento</span><input type="date" name="nacimiento" value="{{ form.nacimiento or '' }}"></div>
+      <div class="campo"><span>Sexo</span><select name="sexo"><option value="">—</option>
+        {% for x in sexos %}<option{{ ' selected' if form.sexo == x }}>{{ x }}</option>{% endfor %}</select></div>
+      <div class="campo"><span>Dirección</span><input name="direccion" value="{{ form.direccion or '' }}"></div>
+      <div class="campo"><span>Contacto de emergencia</span><input name="emergencia_nombre" value="{{ form.emergencia_nombre or '' }}" placeholder="Nombre"></div>
+      <div class="campo"><span>Teléfono de emergencia</span><input name="emergencia_telefono" value="{{ form.emergencia_telefono or '' }}" placeholder="8 dígitos" inputmode="tel"></div>
       <p class="tenue">Al guardar se pide la razón por la que viene el paciente.</p>
       <div class="acciones"><button class="btn">Registrar y continuar</button></div>
     </fieldset>
@@ -20,6 +26,13 @@
   {% endif %}
 
   <h2>{{ "Mis pacientes" if es_rol == "estudiante" else "Pacientes" }}</h2>
+  <form method="get" class="en-linea buscar" role="search">
+    <label for="buscar" class="tenue">Buscar</label>
+    <input id="buscar" name="buscar" type="search" value="{{ buscar }}" placeholder="Nombre, cédula o Nº de expediente">
+    <button class="btn">Buscar</button>
+    {% if buscar %}<a class="btn" href="{{ url_for('pacientes') }}">Ver todos</a>{% endif %}
+  </form>
+  {% if buscar %}<p class="tenue">{{ pacientes|length }} {{ "paciente coincide" if pacientes|length == 1 else "pacientes coinciden" }} con «{{ buscar }}».</p>{% endif %}
   <div class="tabla">
     <table>
       <thead>
@@ -32,12 +45,15 @@
       <tbody>
         {% for p in pacientes %}
         <tr>
-          <td><a href="{{ url_for('expediente', pid=p.id) }}">{{ p.nombre }}</a></td>
+          <td><a href="{{ url_for('expediente', pid=p.id) }}">{{ p.nombre }}</a>
+            {% if p.expediente %}<div class="tenue">Exp. {{ p.expediente }}</div>{% endif %}</td>
           <td>{{ p.razon or '—' }}</td>
           <td>{{ p.cedula }}</td>
           <td>{{ p.telefono }}</td>
           {% if es_rol != "estudiante" %}<td>{{ nombre_de(p.estudiante) }}</td>{% endif %}
-          <td class="{{ 'verde' if p.aprobado else 'amarillo' }}">{{ "Aprobado" if p.aprobado else "Pendiente" }}</td>
+          {% if p.aprobado %}<td class="verde">Aprobado</td>
+          {% elif p.rechazo %}<td class="rojo">Rechazado<div class="tenue">{{ p.rechazo }}</div></td>
+          {% else %}<td class="amarillo">Pendiente</td>{% endif %}
           <td class="{{ 'verde' if p.firma else 'amarillo' }}">{{ "Firmado" if p.firma else "Falta firma" }}</td>
           <td class="{{ 'tenue' if p.finalizado else 'verde' }}">{{ "De alta" if p.finalizado else "En tratamiento" }}</td>
           <td class="acciones">
@@ -48,6 +64,18 @@
               <input type="hidden" name="aprobado" value="{{ 0 if p.aprobado else 1 }}">
               <button class="btn chico">{{ "Quitar aprobación" if p.aprobado else "Aprobar" }}</button>
             </form>
+            {% if not p.finalizado %}
+            <details class="decidir">
+              <summary>{{ "Cambiar la observación" if p.rechazo else "Rechazar" }}</summary>
+              <form method="post">
+                <input type="hidden" name="accion" value="rechazar">
+                <input type="hidden" name="id" value="{{ p.id }}">
+                <label for="obs-{{ p.id }}">Observación para el estudiante: *</label>
+                <textarea id="obs-{{ p.id }}" name="observacion" rows="2" maxlength="500" required>{{ p.rechazo }}</textarea>
+                <button class="btn chico peligro">Rechazar paciente</button>
+              </form>
+            </details>
+            {% endif %}
             <a class="btn chico" href="{{ url_for('expediente_pdf', pid=p.id) }}">Descargar expediente (PDF)</a>
             {% elif es_rol == "admin" %}
             {% if not p.finalizado %}<a class="btn chico" href="{{ url_for('traspaso', pid=p.id) }}">Cambiar de estudiante</a>{% endif %}
@@ -56,9 +84,26 @@
           </td>
         </tr>
         {% else %}
-        <tr><td class="vacio" colspan="9">{% if es_rol == "estudiante" %}<b>Todavía no tiene pacientes</b>Registre el primero con el formulario de arriba.{% else %}<b>Todavía no hay pacientes</b>Aparecen aquí cuando un estudiante registra uno.{% endif %}</td></tr>
+        <tr><td class="vacio" colspan="9">{% if buscar %}<b>Ningún paciente coincide con «{{ buscar }}»</b>Revise lo que escribió o <a href="{{ url_for('pacientes') }}">vea todos</a>.{% elif es_rol == "estudiante" %}<b>Todavía no tiene pacientes</b>Registre el primero con el formulario de arriba.{% else %}<b>Todavía no hay pacientes</b>Aparecen aquí cuando un estudiante registra uno.{% endif %}</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
+  {% if eliminados %}
+  <h2>Pacientes eliminados</h2>
+  <p class="tenue">Al eliminar un paciente no se borra nada: su expediente se conserva y se puede restaurar.</p>
+  <div class="tabla">
+    <table>
+      <thead><tr><th>Nombre</th><th>Cédula</th><th>Eliminado</th><th>Motivo</th><th></th></tr></thead>
+      <tbody>
+        {% for e in eliminados %}
+        <tr><td>{{ e.nombre }}</td><td>{{ e.cedula }}</td><td class="fecha">{{ e.cuando }} ({{ nombre_de(e.eliminado_por) }})</td>
+          <td>{{ e.eliminado_motivo }}</td>
+          <td class="acciones"><form method="post"><input type="hidden" name="accion" value="restaurar">
+            <input type="hidden" name="id" value="{{ e.id }}"><button class="btn chico">Restaurar</button></form></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
 {% endblock %}

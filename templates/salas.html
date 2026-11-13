@@ -41,12 +41,12 @@
   <h2>Clínicas que no funcionan</h2>
   <div class="tabla">
     <table>
-      <thead><tr><th>Clínica</th><th>Qué no funciona</th><th>Reportó</th><th>Fecha y hora</th>
+      <thead><tr><th>Clínica</th><th>Estado</th><th>Qué no funciona</th><th>Reportó</th><th>Fecha y hora</th>
         {% if es_rol == "admin" %}<th></th>{% endif %}</tr></thead>
       <tbody>
         {% for s in con_falla %}
         <tr>
-          <td>{{ s.nombre }} ({{ GRUPOS[s.en_sala] }})</td><td>{{ s.motivo }}</td><td>{{ nombre_de(s.reporto) }}</td>
+          <td>{{ s.nombre }} ({{ GRUPOS[s.en_sala] }})</td><td class="rojo">{{ s.tipo }}</td><td>{{ s.motivo }}</td><td>{{ nombre_de(s.reporto) }}</td>
           <td class="fecha">{{ s.reportada }}</td>
           {% if es_rol == "admin" %}
           <td class="acciones">
@@ -58,6 +58,21 @@
           </td>
           {% endif %}
         </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  {% if historial %}
+  <h2>Historial de fallas solucionadas</h2>
+  <div class="tabla">
+    <table>
+      <thead><tr><th>Clínica</th><th>Estado</th><th>Qué no funcionaba</th><th>Reportó</th><th>Reportada</th><th>Solucionó</th><th>Solucionada</th></tr></thead>
+      <tbody>
+        {% for r in historial %}
+        <tr><td>{{ r.nombre }}</td><td>{{ r.tipo }}</td><td>{{ r.motivo }}</td><td>{{ nombre_de(r.cif) }}</td>
+          <td class="fecha">{{ r.cuando }}</td><td>{{ nombre_de(r.resuelto_por) }}</td><td class="fecha">{{ r.resuelto }}</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -87,6 +102,9 @@
           {% for grupo in sin_falla|groupby('en_sala') %}<optgroup label="{{ GRUPOS[grupo.grouper] }}">
             {% for s in grupo.list %}<option value="{{ s.id }}">{{ s.nombre }}</option>{% endfor %}</optgroup>{% endfor %}
         </select>
+      </div>
+      <div class="campo"><span>Estado: *</span>
+        <select name="tipo" required>{% for t in tipos_falla %}<option{{ ' selected' if t == 'Necesita reparación' }}>{{ t }}</option>{% endfor %}</select>
       </div>
       <div class="campo arriba"><span>¿Qué no funciona? *</span>
         <textarea name="motivo" rows="3" required maxlength="{{ motivo_maximo }}"

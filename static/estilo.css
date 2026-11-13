@@ -285,3 +285,8 @@ p.vacio { border: 1px dashed var(--borde); border-radius: 3px; background: #fafb
 .qr-registro img { display: block; width: min(100%, 300px); height: auto; aspect-ratio: 1; margin: 0 auto 8px; }
 .qr-registro ol { display: inline-block; text-align: left; margin: 8px 0 12px; padding-left: 22px; }
 .clave { font: 600 15px/1.3 Consolas, "Courier New", monospace; overflow-wrap: anywhere; }  /* la dirección escrita */
+/* buscador de pacientes y formularios plegados (rechazar, reprogramar, cancelar) en una fila de tabla */
+.buscar { margin-bottom: 8px; max-width: 560px; }
+details.decidir { display: inline-block; text-align: left; }
+details.decidir summary { cursor: pointer; color: var(--azul); text-decoration: underline; font-size: 13px; padding: 3px 0; }
+details.decidir form { display: grid; gap: 4px; margin-top: 6px; width: 190px; }

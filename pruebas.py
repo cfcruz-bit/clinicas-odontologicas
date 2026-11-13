@@ -5,6 +5,7 @@ Ejecutar:  PRUEBAS_DATABASE_URL=<cadena de la rama de pruebas> python pruebas.py
 import io
 import os
 import sys
+import tempfile
 from datetime import datetime, timedelta
 from decimal import Decimal
 
@@ -14,10 +15,14 @@ from psycopg.rows import dict_row
 
 # Nunca se toma DATABASE_URL: las pruebas no deben tocar la base de verdad
 os.environ["DATABASE_URL"] = os.environ["PRUEBAS_DATABASE_URL"]
+# Ni el almacenamiento de fotos de verdad: las pruebas las guardan en una carpeta temporal
+os.environ["ALMACEN_CARPETA"] = tempfile.mkdtemp(prefix="clinicas-fotos-")
+for variable in ("ALMACEN_BUCKET", "FLY_APP_NAME"):
+    os.environ.pop(variable, None)
 import prototipo as m  # noqa: E402
 
 base = psycopg.connect(os.environ["DATABASE_URL"], autocommit=True, row_factory=dict_row, prepare_threshold=None)
-base.execute("DROP TABLE IF EXISTS recibos, abonos, tratamientos, tarifario, materiales, fotos, dientes, reportes, bitacora,"
+base.execute("DROP TABLE IF EXISTS historias, precios_anteriores, solicitudes, ordenes, recibos, abonos, tratamientos, tarifario, materiales, fotos, dientes, reportes, bitacora,"
              " citas, trabajo, pacientes, salas, cuentas, invitaciones CASCADE")
 m.crear_tablas()
 
@@ -62,12 +67,23 @@ caso("Pasado el bloqueo se entra con la clave correcta",
 caso("El nombre del usuario sale en la cabecera, no solo el rol", "Grace Alvarado" in texto(grace.get("/menu")))
 
 entrada = m.app.test_client().post("/", data={"accion": "entrar", "cif": "00000002", "clave": "uam2026"})
-caso("La sesion se cierra sola a los 30 minutos sin uso",
-     m.app.permanent_session_lifetime.total_seconds() == 1800 and "Expires=" in entrada.headers["Set-Cookie"])
+caso("La sesion se cierra sola a los 15 minutos sin uso (RNF05)",
+     m.app.permanent_session_lifetime.total_seconds() == 900 and "Expires=" in entrada.headers["Set-Cookie"])
 
-grace.post("/pacientes", data={"accion": "registrar", "nombre": "Luis Pérez", "cedula": "T-100", "telefono": "88880000"})
+registrar = lambda cedula, telefono="": grace.post("/pacientes", data={  # noqa: E731
+    "accion": "registrar", "nombre": "Luis Pérez", "cedula": cedula, "telefono": telefono})
+caso("Una cedula sin el formato 000-000000-0000A no se acepta (RNF08)",
+     "000-000000-0000A" in texto(registrar("T-100")) and cuantos("pacientes") == 0)
+registrar("001-310290-0001A")
+caso("Los 6 numeros del medio de la cedula tienen que ser una fecha valida", cuantos("pacientes") == 0)
+caso("El telefono tiene que tener 8 digitos", "8 dígitos" in texto(registrar("001-010190-0001A", "8888")) and cuantos("pacientes") == 0)
+registrar("0010101900001a", "8888 0000")
 pid = uno("SELECT id FROM pacientes")["id"]
 paciente = lambda: uno("SELECT * FROM pacientes WHERE id = %s", pid)  # noqa: E731
+caso("La cedula y el telefono se guardan con su formato aunque se escriban sin guiones ni espacios",
+     paciente()["cedula"] == "001-010190-0001A" and paciente()["telefono"] == "88880000")
+registrar("001 010190 0001A")
+caso("La misma cedula escrita de otra forma cuenta como repetida", cuantos("pacientes") == 1)
 caso("Al registrar, el paso siguiente pide la razon del paciente",
      "por qué está el paciente" in texto(grace.get(f"/pacientes/{pid}/razon")))
 grace.post(f"/pacientes/{pid}/razon", data={"razon": ""})
@@ -103,36 +119,93 @@ grace.post("/citas", data={"paciente_id": pid, "fecha": MANANA, "hora": "09:00",
                            "razon": "Otra"})
 caso("No se agenda una clínica ocupada a la misma hora", cuantos("citas") == 1)
 
-grace.post("/citas", data={"paciente_id": pid, "fecha": MANANA, "hora": "11:00", "razon": "Para cancelar"})
+grace.post("/citas", data={"paciente_id": pid, "fecha": MANANA, "hora": "09:00", "sala": "Clínica 5", "razon": "Otra"})
+caso("El paciente no tiene dos citas a la misma hora, aunque sea en otra clínica (RF10)", cuantos("citas") == 1)
+grace.post("/pacientes", data={"accion": "registrar", "nombre": "Marta Gómez", "cedula": "001-050590-0005E"})
+marta = uno("SELECT id FROM pacientes WHERE nombre = 'Marta Gómez'")["id"]
+caso("El estudiante no tiene dos citas a la misma hora con pacientes distintos (RF10)",
+     "Usted ya tiene otra cita a esa hora" in texto(grace.post("/citas", data={
+         "paciente_id": marta, "fecha": MANANA, "hora": "09:00", "razon": "Valoración"}, follow_redirects=True))
+     and cuantos("citas") == 1)
+base.execute("DELETE FROM pacientes WHERE id = %s", (marta,))  # su trabajo se borra con el
+caso("Una cita nueva queda Programada", uno("SELECT estado FROM citas")["estado"] == "Programada")
+
+estado = lambda cid: uno("SELECT estado, motivo_cancelacion, fecha, hora FROM citas WHERE id = %s", cid)  # noqa: E731
+grace.post("/citas", data={"paciente_id": pid, "fecha": MANANA, "hora": "11:00", "sala": "Clínica 4", "razon": "Para cancelar"})
 cancelar = uno("SELECT id FROM citas WHERE razon = 'Para cancelar'")["id"]
-gabriel.post("/citas", data={"accion": "cancelar", "id": cancelar})
-caso("Un estudiante no cancela citas de pacientes ajenos", cuantos("citas") == 2)
+gabriel.post("/citas", data={"accion": "cancelar", "id": cancelar, "motivo": "No es mío"})
+caso("Un estudiante no cancela citas de pacientes ajenos", estado(cancelar)["estado"] == "Programada")
 grace.post("/citas", data={"accion": "cancelar", "id": cancelar})
-caso("El estudiante a cargo cancela una cita", cuantos("citas") == 1)
+caso("Para cancelar hay que escribir el motivo (RF11)", estado(cancelar)["estado"] == "Programada")
+grace.post("/citas", data={"accion": "cancelar", "id": cancelar, "motivo": "El paciente viaja"})
+caso("Cancelada, la cita no se borra: queda en el historial con su motivo (RF11)",
+     cuantos("citas") == 2 and estado(cancelar)["estado"] == "Cancelada"
+     and estado(cancelar)["motivo_cancelacion"] == "El paciente viaja")
+grace.post("/citas", data={"accion": "estado", "id": cancelar, "estado": "Confirmada"})
+caso("Una cita cancelada ya no cambia de estado", estado(cancelar)["estado"] == "Cancelada")
+grace.post("/citas", data={"paciente_id": pid, "fecha": MANANA, "hora": "11:00", "sala": "Clínica 4", "razon": "Control"})
+control = uno("SELECT id FROM citas WHERE razon = 'Control'")
+caso("Al cancelar, la clínica y la hora quedan libres para otra cita", control is not None)
+grace.post("/citas", data={"accion": "estado", "id": control["id"], "estado": "No se presentó"})
+caso("Una cita que todavía no llega no se marca como que no se presentó", estado(control["id"])["estado"] == "Programada")
+grace.post("/citas", data={"accion": "estado", "id": control["id"], "estado": "Confirmada"})
+caso("El estudiante confirma la cita", estado(control["id"])["estado"] == "Confirmada")
+grace.post("/citas", data={"accion": "reprogramar", "id": control["id"], "fecha": MANANA, "hora": "09:00", "sala": ""})
+caso("No se reprograma a una hora en que el paciente ya tiene cita", estado(control["id"])["hora"] == "11:00")
+grace.post("/citas", data={"accion": "reprogramar", "id": control["id"], "fecha": MANANA, "hora": "12:30", "sala": "Clínica 4"})
+caso("Al reprogramar cambia la hora y la cita vuelve a quedar Programada (RF11)",
+     estado(control["id"])["hora"] == "12:30" and estado(control["id"])["estado"] == "Programada")
 base.execute("INSERT INTO citas (paciente_id, fecha, hora, razon) VALUES (%s, '2020-01-01', '08:00', 'Pasada')", (pid,))
 pasada = uno("SELECT id FROM citas WHERE razon = 'Pasada'")["id"]
-grace.post("/citas", data={"accion": "cancelar", "id": pasada})
-caso("Las citas pasadas no se cancelan: son historial", cuantos("citas") == 2)
+grace.post("/citas", data={"accion": "cancelar", "id": pasada, "motivo": "Tarde"})
+caso("Las citas pasadas no se cancelan: son historial", estado(pasada)["estado"] == "Programada")
+grace.post("/citas", data={"accion": "estado", "id": pasada, "estado": "No se presentó"})
+caso("Una cita pasada se marca como que el paciente no se presentó",
+     estado(pasada)["estado"] == "No se presentó" and "No se presentó a 1 cita" in texto(grace.get(f"/pacientes/{pid}")))
+caso("Los cambios de estado de las citas quedan en la bitacora",
+     uno("SELECT 1 FROM bitacora WHERE accion LIKE 'Cita de Luis Pérez del %%: cancelada (El paciente viaja)'")
+     and uno("SELECT 1 FROM bitacora WHERE accion LIKE 'Reprogramó la cita de Luis Pérez%%'"))
 
-gabriel.post("/pacientes", data={"accion": "registrar", "nombre": "Ana Ruiz", "cedula": "T-200"})
-grace.post(f"/pacientes/{pid}/editar", data={"nombre": "Luis Pérez", "cedula": "T-200", "telefono": ""})
-caso("Al corregir no se puede usar la cedula de otro paciente", paciente()["cedula"] == "T-100")
-gabriel.post(f"/pacientes/{pid}/editar", data={"nombre": "Otro", "cedula": "T-100", "telefono": ""})
+gabriel.post("/pacientes", data={"accion": "registrar", "nombre": "Ana Ruiz", "cedula": "001-020290-0002B"})
+grace.post(f"/pacientes/{pid}/editar", data={"nombre": "Luis Pérez", "cedula": "0010202900002b", "telefono": ""})
+caso("Al corregir no se puede usar la cedula de otro paciente", paciente()["cedula"] == "001-010190-0001A")
+gabriel.post(f"/pacientes/{pid}/editar", data={"nombre": "Otro", "cedula": "001-010190-0001A", "telefono": ""})
 caso("Un estudiante no corrige pacientes ajenos", paciente()["nombre"] == "Luis Pérez")
-grace.post(f"/pacientes/{pid}/editar", data={"nombre": "Luis Pérez", "cedula": "T-100", "telefono": "22220000"})
+grace.post(f"/pacientes/{pid}/editar", data={"nombre": "Luis Pérez", "cedula": "001-010190-0001A", "telefono": "22220000"})
 caso("El estudiante a cargo corrige los datos del paciente", paciente()["telefono"] == "22220000")
 
 caso("Cada estudiante ve solo sus pacientes", "Luis Pérez" not in texto(gabriel.get("/pacientes")))
 caso("Cada estudiante ve solo sus citas", "Luis Pérez" not in texto(gabriel.get("/citas")))
 caso("Un estudiante no abre el expediente de otro", gabriel.get(f"/pacientes/{pid}").status_code == 302)
 caso("El profesor ve a todos los pacientes", "Luis Pérez" in texto(profe.get("/pacientes")))
+busca = lambda c, q: texto(c.get("/pacientes", query_string={"buscar": q}))  # noqa: E731
+caso("Se busca un paciente por parte de su nombre (RF06)",
+     "Luis Pérez" in busca(profe, "luis") and "Ana Ruiz" not in busca(profe, "luis"))
+caso("Se busca por la cédula, con o sin guiones", "Luis Pérez" in busca(profe, "0010101") and "Luis Pérez" in busca(profe, "001-0101"))
+caso("La búsqueda del estudiante solo mira sus pacientes", "Luis Pérez" not in busca(gabriel, "Luis"))
+caso("Un % no trae a todos los pacientes", "Ningún paciente coincide" in busca(profe, "%"))
 
 caso("El profesor no registra pacientes", "accion\" value=\"registrar" not in texto(profe.get("/pacientes")))
-profe.post("/pacientes", data={"accion": "registrar", "nombre": "X", "cedula": "T-999"})
+profe.post("/pacientes", data={"accion": "registrar", "nombre": "X", "cedula": "001-040490-0004D"})
 caso("El profesor no puede registrar ni por la fuerza", cuantos("pacientes") == 2)
 caso("El profesor no agenda citas", "Agendar cita" not in texto(profe.get("/citas")))
 profe.post("/pacientes", data={"accion": "aprobar", "id": pid, "aprobado": "1"})
 caso("El profesor solo revisa: aprueba al paciente", paciente()["aprobado"] is True)
+caso("Queda quién aprobó y cuándo (RF04)", paciente()["decision_por"] == "00000001" and paciente()["decision_cuando"])
+profe.post("/pacientes", data={"accion": "rechazar", "id": pid, "observacion": ""})
+caso("Para rechazar hace falta la observación (RF04)", paciente()["aprobado"] is True and paciente()["rechazo"] == "")
+grace.post("/pacientes", data={"accion": "rechazar", "id": pid, "observacion": "Yo no"})
+caso("El estudiante no rechaza pacientes", paciente()["rechazo"] == "")
+profe.post("/pacientes", data={"accion": "rechazar", "id": pid, "observacion": "Falta la valoración periodontal"})
+caso("El profesor rechaza al paciente con su observación",
+     paciente()["aprobado"] is False and paciente()["rechazo"] == "Falta la valoración periodontal")
+inicio = texto(grace.get("/menu"))
+caso("El estudiante ve en Inicio el rechazo con la observación",
+     "Falta la valoración periodontal" in inicio and "Mis pacientes (1)" in inicio)
+caso("El rechazo queda en la bitacora", uno("SELECT 1 FROM bitacora WHERE accion = 'Rechazó a Luis Pérez: Falta la valoración periodontal'"))
+profe.post("/pacientes", data={"accion": "aprobar", "id": pid, "aprobado": "1"})
+caso("Al aprobarlo después, se borra el rechazo", paciente()["aprobado"] is True and paciente()["rechazo"] == ""
+     and "Falta la valoración" not in texto(grace.get("/menu")))
 
 FIRMA = ("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAECAYAAACzzX7wAAAA"
          "FUlEQVR4nGNkYGD4z4AHMOGTpI4CAIIUAQeqcFo1AAAAAElFTkSuQmCC")
@@ -218,7 +291,7 @@ caso("Al solucionarla la clínica vuelve a estar disponible y el aviso desaparec
      and uno("SELECT disponible FROM salas WHERE id = %s", sala2)["disponible"] is True
      and "Clínicas (" not in texto(admin.get("/menu")))
 caso("La bitacora guarda el reporte y la solucion",
-     all(t in texto(admin.get("/bitacora")) for t in ("Reportó que Clínica 2 no funciona", "Solucionó la falla de Clínica 2")))
+     all(t in texto(admin.get("/bitacora")) for t in ("Reportó Clínica 2 (necesita reparación)", "Solucionó la falla de Clínica 2")))
 caso("La bitacora guarda lo que hizo cada quien", "Pasó a Luis Pérez" in texto(admin.get("/bitacora")))
 bitacora = texto(admin.get("/bitacora"))
 lugar = uno("SELECT lugar FROM bitacora ORDER BY id DESC LIMIT 1")["lugar"]
@@ -256,6 +329,12 @@ guardada = Image.open(io.BytesIO(gabriel.get(foto).data))
 caso("La foto presencial se guarda achicada y en JPEG",
      guardada.format == "JPEG" and max(guardada.size) == m.FOTO_LADO)
 caso("Otro estudiante no ve las fotos del paciente", grace.get(foto).status_code == 302)
+url_foto = uno("SELECT url FROM fotos")["url"]
+caso("La foto no va dentro de la base: se guarda solo la dirección del archivo",
+     url_foto.startswith("local:fotos/") and m.ruta_local(url_foto).is_file()
+     and uno("SELECT count(*) AS n FROM information_schema.columns WHERE table_name = 'fotos'"
+             " AND data_type = 'bytea'")["n"] == 0)
+caso("La dirección de un archivo no puede salirse de la carpeta de fotos", m.ruta_local("local:../../etc/passwd") is None)
 gabriel.post(odonto, data={"accion": "pedir"})
 caso("El profesor ve en Inicio el odontograma que espera su revision",
      paciente()["odonto_revision"] == "pedida" and "Luis Pérez" in texto(profe.get("/menu")))
@@ -303,7 +382,7 @@ gabriel.post(trat, data={"accion": "realizado", "id": hecho})
 caso("Lo realizado queda con su fecha", uno("SELECT realizado FROM tratamientos WHERE id = %s", hecho)["realizado"] == m.hoy())
 gabriel.post(trat, data={"accion": "quitar", "id": hecho})
 caso("Lo realizado ya no se quita del plan", cuantos("tratamientos") == 2)
-ana = uno("SELECT id FROM pacientes WHERE cedula = 'T-200'")["id"]
+ana = uno("SELECT id FROM pacientes WHERE cedula = '001-020290-0002B'")["id"]
 gabriel.post(f"/pacientes/{ana}/tratamientos", data={"accion": "anotar", "procedimiento": profilaxis})
 de_ana = uno("SELECT id FROM tratamientos WHERE paciente_id = %s", ana)["id"]
 gabriel.post(f"/pacientes/{ana}/tratamientos", data={"accion": "realizado", "id": de_ana})
@@ -331,9 +410,10 @@ def recibo_jpg():
     b.seek(0)
     return b, "recibo.jpg"
 
-gabriel.post(f"/pacientes/{pid}/editar", data={"nombre": "Luis Pérez", "cedula": "T-100", "telefono": "",
+gabriel.post(f"/pacientes/{pid}/editar", data={"nombre": "Luis Pérez", "cedula": "001-010190-0001A", "telefono": "",
                                                 "expediente": "EXP-0457"})
 caso("El estudiante anota el número de expediente del paciente", paciente()["expediente"] == "EXP-0457")
+caso("Se busca un paciente por su número de expediente (RF06)", "Luis Pérez" in busca(profe, "exp-0457"))
 subir = lambda c, **d: c.post("/control", data={"accion": "subir", "tratamiento": hecho, "numero": "A-0083",  # noqa: E731
                                                  "fecha": m.hoy(), "foto": recibo_jpg(), **d})
 subir(gabriel, numero="")
@@ -369,7 +449,7 @@ cliente("00000004").post("/control", data={"accion": "quitar_firma", "id": recib
 caso("Solo el profesor que firmó puede quitar su firma",
      uno("SELECT firmado_por FROM recibos")["firmado_por"] == "00000001")
 caso("Los recibos del paciente se ven junto a sus abonos", "A-0083" in texto(admin.get(trat)))
-admin.post(f"/pacientes/{pid}/cerrar", data={"accion": "eliminar", "cedula": "T-100", "texto": "Prueba"})
+admin.post(f"/pacientes/{pid}/cerrar", data={"accion": "eliminar", "cedula": "001-010190-0001A", "texto": "Prueba"})
 caso("Un paciente con recibos firmados por el docente no se elimina",
      paciente() is not None and cuantos("recibos") == 1)
 caso("La Facultad filtra la hoja por estudiante",
@@ -510,7 +590,7 @@ caso("La Facultad da de alta al paciente",
 dientes_antes, citas_antes = cuantos("dientes"), cuantos("citas")
 gabriel.post(odonto, data={"accion": "diente", "diente": "21", "estado": "Caries"})
 gabriel.post("/citas", data={"paciente_id": pid, "fecha": MANANA, "hora": "16:00", "razon": "Control"})
-gabriel.post(f"/pacientes/{pid}/editar", data={"nombre": "Cambiado", "cedula": "T-100", "telefono": ""})
+gabriel.post(f"/pacientes/{pid}/editar", data={"nombre": "Cambiado", "cedula": "001-010190-0001A", "telefono": ""})
 caso("De alta, el estudiante ya no cambia el odontograma, las citas ni los datos",
      cuantos("dientes") == dientes_antes and cuantos("citas") == citas_antes and paciente()["nombre"] == "Luis Pérez")
 caso("De alta, ya no sale para agendarle citas",
@@ -520,28 +600,195 @@ caso("De alta, la Facultad todavia registra abonos para saldar la cuenta", cuant
 gabriel.post("/control", data={"accion": "subir", "tratamiento": hecho, "numero": "A-0120", "fecha": m.hoy(),
                                "foto": recibo_jpg()})
 caso("De alta, todavía se sube un recibo que llegó tarde", cuantos("recibos") == 2)
+tarde = uno("SELECT id, url FROM recibos WHERE numero = 'A-0120'")
+gabriel.post("/control", data={"accion": "quitar", "id": tarde["id"]})
+caso("Al quitar un recibo también se borra su foto", cuantos("recibos") == 1 and not m.ruta_local(tarde["url"]).exists())
 caso("De alta, ya no se cambia de estudiante", admin.get(f"/pacientes/{pid}/traspaso").status_code == 302)
 admin.post(cerrar, data={"accion": "reabrir"})
 gabriel.post(odonto, data={"accion": "diente", "diente": "21", "estado": "Caries"})
 caso("Si se anula el alta, el estudiante vuelve a poder cambiarlo",
      paciente()["finalizado"] is None and cuantos("dientes") == dientes_antes + 1)
 
-gabriel.post("/pacientes", data={"accion": "registrar", "nombre": "Repetido Por Error", "cedula": "T-300"})
-borrar = uno("SELECT id FROM pacientes WHERE cedula = 'T-300'")["id"]
+gabriel.post("/pacientes", data={"accion": "registrar", "nombre": "Repetido Por Error", "cedula": "001-030390-0003C"})
+borrar = uno("SELECT id FROM pacientes WHERE cedula = '001-030390-0003C'")["id"]
+gabriel.post(f"/pacientes/{borrar}/odontograma", data={"accion": "foto", "foto": recibo_jpg()})
+foto_borrar = uno("SELECT url FROM fotos WHERE paciente_id = %s", borrar)["url"]
 gabriel.post(f"/citas", data={"paciente_id": borrar, "fecha": MANANA, "hora": "17:00", "razon": "Valoración"})
-admin.post(f"/pacientes/{borrar}/cerrar", data={"accion": "eliminar", "cedula": "T-999", "texto": "Duplicado"})
-admin.post(f"/pacientes/{borrar}/cerrar", data={"accion": "eliminar", "cedula": "T-300", "texto": ""})
+admin.post(f"/pacientes/{borrar}/cerrar", data={"accion": "eliminar", "cedula": "001-040490-0004D", "texto": "Duplicado"})
+admin.post(f"/pacientes/{borrar}/cerrar", data={"accion": "eliminar", "cedula": "001-030390-0003C", "texto": ""})
 caso("Para eliminarlo hay que escribir su cedula y el motivo", cuantos("pacientes") == 3)
-gabriel.post(f"/pacientes/{borrar}/cerrar", data={"accion": "eliminar", "cedula": "T-300", "texto": "Duplicado"})
+gabriel.post(f"/pacientes/{borrar}/cerrar", data={"accion": "eliminar", "cedula": "001-030390-0003C", "texto": "Duplicado"})
 caso("El estudiante no elimina pacientes", cuantos("pacientes") == 3)
-admin.post(f"/pacientes/{borrar}/cerrar", data={"accion": "eliminar", "cedula": "T-300", "texto": "Duplicado"})
-caso("La Facultad elimina al paciente con todo su expediente",
-     cuantos("pacientes") == 2 and uno("SELECT 1 FROM citas WHERE paciente_id = %s", borrar) is None)
+admin.post(f"/pacientes/{borrar}/cerrar", data={"accion": "eliminar", "cedula": "001-030390-0003C", "texto": "Duplicado"})
+caso("Eliminar no borra: el paciente deja de verse pero su expediente se conserva (RNF07)",
+     cuantos("pacientes") == 3 and uno("SELECT eliminado FROM pacientes WHERE id = %s", borrar)["eliminado"]
+     and uno("SELECT 1 FROM citas WHERE paciente_id = %s", borrar) is not None
+     and "Repetido Por Error" not in texto(gabriel.get("/pacientes")) and gabriel.get(f"/pacientes/{borrar}").status_code == 302)
+caso("Sus fotos también se conservan", m.ruta_local(foto_borrar).exists())
+caso("La cédula de un paciente eliminado no se registra otra vez: hay que restaurarlo",
+     "paciente eliminado" in texto(gabriel.post("/pacientes", data={"accion": "registrar", "nombre": "Otra vez",
+                                                                    "cedula": "001030390-0003C"})) and cuantos("pacientes") == 3)
 caso("La eliminacion queda en la bitacora con el motivo",
-     "Eliminó al paciente Repetido Por Error (T-300): Duplicado" in texto(admin.get("/bitacora")))
+     "Eliminó al paciente Repetido Por Error (001-030390-0003C): Duplicado" in texto(admin.get("/bitacora")))
+
+admin.post("/pacientes", data={"accion": "restaurar", "id": borrar})
+caso("La Facultad restaura al paciente eliminado con todo su expediente",
+     uno("SELECT eliminado FROM pacientes WHERE id = %s", borrar)["eliminado"] is None
+     and "Repetido Por Error" in texto(gabriel.get("/pacientes")))
+
+# ---- Historia clínica, registro con datos generales y expediente correlativo (RF03, RF05)
+gabriel.post("/pacientes", data={"accion": "registrar", "nombre": "Rosa Méndez", "cedula": "001-150885-0009F",
+                                 "telefono": "88112233", "nacimiento": "1985-08-15", "sexo": "Femenino",
+                                 "direccion": "Managua", "emergencia_nombre": "Juan Méndez",
+                                 "emergencia_telefono": "8877 6655"})
+rosa = uno("SELECT * FROM pacientes WHERE nombre = 'Rosa Méndez'")
+caso("Sin número de expediente físico se le da uno correlativo (RF03)", rosa["expediente"] == f"EXP-{rosa['id']:05d}")
+caso("Los datos generales del registro quedan en la historia clínica",
+     uno("SELECT sexo, emergencia_telefono FROM historias WHERE paciente_id = %s", rosa["id"])
+     == {"sexo": "Femenino", "emergencia_telefono": "88776655"})
+gabriel.post("/pacientes", data={"accion": "registrar", "nombre": "Futuro", "cedula": "001-150885-0019F",
+                                 "nacimiento": "2999-01-01"})
+caso("La fecha de nacimiento no puede ser después de hoy", uno("SELECT 1 FROM pacientes WHERE nombre = 'Futuro'") is None)
+hist = f"/pacientes/{rosa['id']}/historia"
+de_rosa = lambda c: uno(f"SELECT {c} FROM historias WHERE paciente_id = %s", rosa["id"])[c]  # noqa: E731
+vacia = {c: "" for c in m.HISTORIA}
+gabriel.post(hist, data={**vacia, "presion": "alta"})
+caso("La presión se escribe como sistólica/diastólica", de_rosa("presion") == "")
+gabriel.post(hist, data={**vacia, "sexo": "Femenino", "alergias": "Penicilina", "presion": "150/95",
+                         "diagnostico": "Caries en 36"})
+caso("El estudiante a cargo guarda la historia clínica, aunque esté a medias (RF05)",
+     de_rosa("diagnostico") == "Caries en 36" and de_rosa("actualizado_por") == "00000005")
+exp_rosa = texto(gabriel.get(f"/pacientes/{rosa['id']}"))
+caso("El expediente avisa de las alergias y de la presión alta",
+     "Alergias: Penicilina" in exp_rosa and "Presión arterial alta: 150/95" in exp_rosa)
+caso("Los cambios de la historia quedan en la bitácora (historial de cambios)",
+     uno("SELECT 1 FROM bitacora WHERE accion LIKE 'Actualizó la historia clínica de Rosa Méndez:%%alergias%%'"))
+grace.post(hist, data={**vacia, "alergias": "Ninguna"})
+caso("Otro estudiante no cambia la historia", de_rosa("alergias") == "Penicilina")
+caso("El profesor la lee pero no la cambia",
+     "Penicilina" in texto(profe.get(hist)) and 'name="alergias"' not in texto(profe.get(hist)))
+caso("La historia sale en el expediente en PDF", gabriel.get(f"/pacientes/{rosa['id']}/expediente.pdf").data[:4] == b"%PDF")
+
+# ---- Radiografías y límite de las imágenes (RF05, RNF09)
+odonto_rosa = f"/pacientes/{rosa['id']}/odontograma"
+gabriel.post(odonto_rosa, data={"accion": "foto", "tipo": "Radiografía", "foto": recibo_jpg()})
+caso("Se suben radiografías junto a las fotos", uno("SELECT tipo FROM fotos WHERE paciente_id = %s", rosa["id"])["tipo"]
+     == "Radiografía")
+gabriel.post(odonto_rosa, data={"accion": "pedir"})
+caso("Con solo una radiografía no se pide la revisión: falta la foto presencial",
+     uno("SELECT odonto_revision FROM pacientes WHERE id = %s", rosa["id"])["odonto_revision"] == "")
+pesada = io.BytesIO(b"\xff\xd8" + os.urandom(m.IMAGEN_MAXIMA))
+gabriel.post(odonto_rosa, data={"accion": "foto", "foto": (pesada, "pesada.jpg")})
+gif = io.BytesIO()
+Image.new("RGB", (50, 50), "blue").save(gif, "GIF")
+gif.seek(0)
+gabriel.post(odonto_rosa, data={"accion": "foto", "foto": (gif, "boca.gif")})
+caso("Las imágenes de más de 5 MB o que no son JPG ni PNG no se aceptan (RNF09)",
+     uno("SELECT count(*) AS n FROM fotos WHERE paciente_id = %s", rosa["id"])["n"] == 1)
+
+# ---- Tarifario con código, área e historial de precios (RF15)
+admin.post("/tarifario", data={"accion": "agregar", "nombre": "Gratis", "precio": "0"})
+caso("El precio tiene que ser mayor que cero", uno("SELECT 1 FROM tarifario WHERE nombre = 'Gratis'") is None)
+admin.post("/tarifario", data={"accion": "agregar", "nombre": "Extracción simple", "precio": "500", "codigo": "cir-01",
+                               "area": "Cirugía"})
+caso("El procedimiento lleva código y área clínica",
+     uno("SELECT codigo, area FROM tarifario WHERE nombre = 'Extracción simple'") == {"codigo": "CIR-01", "area": "Cirugía"})
+admin.post("/tarifario", data={"accion": "agregar", "nombre": "Otra extracción", "precio": "5", "codigo": "CIR-01"})
+caso("El código no se repite", uno("SELECT 1 FROM tarifario WHERE nombre = 'Otra extracción'") is None)
+caso("El precio anterior queda en el historial al cambiarlo",
+     uno("SELECT precio, cambiado_por FROM precios_anteriores WHERE procedimiento_id = %s", resina)
+     == {"precio": Decimal("800.50"), "cambiado_por": "00000007"} and "Precios anteriores" in texto(admin.get("/tarifario")))
+
+# ---- Plan por fases, avance y orden de cobro (RF09, RF16)
+trat_rosa = f"/pacientes/{rosa['id']}/tratamientos"
+gabriel.post(trat_rosa, data={"accion": "anotar", "procedimiento": resina, "fase": "Inventada"})
+gabriel.post(trat_rosa, data={"accion": "anotar", "procedimiento": resina, "fase": "Higiénica"})
+caso("Cada tratamiento va en una fase del plan (RF09)",
+     [t["fase"] for t in base.execute("SELECT fase FROM tratamientos WHERE paciente_id = %s", (rosa["id"],))] == ["Higiénica"])
+caso("Se ve el avance del plan", "0 de 1" in texto(gabriel.get(trat_rosa)))
+gabriel.post(trat_rosa, data={"accion": "orden"})
+orden = uno("SELECT * FROM ordenes WHERE paciente_id = %s", rosa["id"])
+caso("Se genera la orden de cobro con el total, a partir del tarifario (RF16)",
+     orden["total"] == Decimal("900") and uno("SELECT orden_id FROM tratamientos WHERE paciente_id = %s", rosa["id"])
+     ["orden_id"] == orden["id"])
+gabriel.post(trat_rosa, data={"accion": "orden"})
+caso("Lo que ya está en una orden no entra en otra", uno("SELECT count(*) AS n FROM ordenes")["n"] == 1)
+gabriel.post(trat_rosa, data={"accion": "quitar", "id": uno("SELECT id FROM tratamientos WHERE paciente_id = %s",
+                                                              rosa["id"])["id"]})
+caso("Lo que ya está en una orden no se quita del plan",
+     uno("SELECT count(*) AS n FROM tratamientos WHERE paciente_id = %s", rosa["id"])["n"] == 1)
+hoja_orden = texto(gabriel.get(f"/ordenes/{orden['id']}"))
+caso("La orden se ve para imprimirla, con número y total", f"Orden de cobro Nº {orden['id']}" in hoja_orden
+     and "C$ 900.00" in hoja_orden and grace.get(f"/ordenes/{orden['id']}").status_code == 302)
+gabriel.post(f"/ordenes/{orden['id']}")
+caso("El estudiante no marca la orden como pagada", uno("SELECT pagada FROM ordenes")["pagada"] is None)
+admin.post(f"/ordenes/{orden['id']}")
+caso("La Facultad la cobra y queda el abono del paciente",
+     uno("SELECT pagada FROM ordenes")["pagada"] is not None
+     and uno("SELECT monto FROM abonos WHERE paciente_id = %s", rosa["id"])["monto"] == Decimal("900"))
+
+# ---- Solicitudes de materiales (RF17)
+admin.post("/inventario", data={"accion": "agregar", "nombre": "Algodón", "unidad": "rollos", "cantidad": "3", "minimo": "1"})
+algodon = uno("SELECT id FROM materiales WHERE nombre = 'Algodón'")["id"]
+gabriel.post("/materiales", data={"material": algodon, "cantidad": "2", "para": AYER})
+caso("La solicitud es para una cita de hoy en adelante", uno("SELECT count(*) AS n FROM solicitudes")["n"] == 0)
+gabriel.post("/materiales", data={"material": algodon, "cantidad": "5", "para": MANANA})
+gabriel.post("/materiales", data={"material": algodon, "cantidad": "2", "para": MANANA})
+mucho = uno("SELECT id FROM solicitudes WHERE cantidad = 5")["id"]
+poco = uno("SELECT id FROM solicitudes WHERE cantidad = 2")["id"]
+estado_sol = lambda i: uno("SELECT estado FROM solicitudes WHERE id = %s", i)["estado"]  # noqa: E731
+caso("La Facultad ve en Inicio las solicitudes que esperan", "Hay 2 solicitudes de material" in texto(admin.get("/menu")))
+admin.post("/inventario", data={"accion": "entregar", "id": mucho})
+caso("No se entrega más de lo que hay", estado_sol(mucho) == "Pendiente")
+admin.post("/inventario", data={"accion": "entregar", "id": poco})
+caso("Al entregar se descuenta del inventario",
+     estado_sol(poco) == "Entregada" and uno("SELECT cantidad FROM materiales WHERE id = %s", algodon)["cantidad"] == 1)
+admin.post("/inventario", data={"accion": "rechazar", "id": mucho})
+admin.post("/inventario", data={"accion": "rechazar", "id": mucho, "nota": "No alcanza; pida 1"})
+caso("Para rechazar hace falta el motivo, y el estudiante lo ve",
+     estado_sol(mucho) == "Rechazada" and "No alcanza; pida 1" in texto(gabriel.get("/materiales")))
+caso("Solo el estudiante pide materiales", profe.get("/materiales").status_code == 302)
+
+# ---- Corregir cuentas y filtrarlas (RF02)
+admin.post("/cuentas", data={"accion": "editar", "cif": "00000004", "nombre": "Dr. Gustavo Rivas Pérez", "rol": "profesor"})
+caso("La Facultad corrige el nombre de una cuenta (RF02)", m.app.test_client() and
+     uno("SELECT nombre FROM cuentas WHERE cif = '00000004'")["nombre"] == "Dr. Gustavo Rivas Pérez")
+admin.post("/cuentas", data={"accion": "editar", "cif": "00000007", "nombre": "Gina Saavedra", "rol": "estudiante"})
+caso("Nadie se cambia el rol a sí mismo", uno("SELECT rol FROM cuentas WHERE cif = '00000007'")["rol"] == "admin")
+solo_profes = texto(admin.get("/cuentas", query_string={"rol": "profesor"}))
+caso("Las cuentas se filtran por rol", "Gustavo Rivas Pérez" in solo_profes and "Gabriel Espinoza" not in solo_profes)
+
+# ---- Fallas con su estado e historial (RF14)
+sala9 = uno("SELECT id FROM salas WHERE nombre = 'Clínica 9'")["id"]
+grace.post("/salas", data={"accion": "reportar", "sala": sala9, "motivo": "Hay restos en la escupidera",
+                           "tipo": "Necesita limpieza"})
+caso("Al reportar se dice qué necesita la clínica (RF14)",
+     uno("SELECT tipo FROM reportes WHERE sala_id = %s", sala9)["tipo"] == "Necesita limpieza")
+admin.post("/salas", data={"accion": "resolver", "reporte": uno("SELECT id FROM reportes WHERE sala_id = %s", sala9)["id"]})
+caso("La Facultad ve el historial de fallas solucionadas",
+     all(t in texto(admin.get("/salas")) for t in ("Historial de fallas solucionadas", "Hay restos en la escupidera")))
+
+# ---- Inicio con la jornada y recordatorios (RF13, RF12)
+base.execute("INSERT INTO citas (paciente_id, fecha, hora, razon) VALUES (%s, %s, '23:59', 'Control de hoy')",
+             (rosa["id"], m.hoy()))
+base.execute("INSERT INTO citas (paciente_id, fecha, hora, razon) VALUES (%s, %s, '10:15', 'Control de mañana')",
+             (rosa["id"], MANANA))
+caso("El Inicio del estudiante muestra sus citas de hoy (RF13)", "Control de hoy" in texto(gabriel.get("/menu")))
+inicio_profe = texto(profe.get("/menu"))
+caso("Al profesor le salen las citas de hoy de todos y los pacientes por aprobar",
+     "Control de hoy" in inicio_profe and "Pacientes por aprobar" in inicio_profe and "Rosa Méndez" in inicio_profe)
+caso("El estudiante ve las citas de mañana sin confirmar con el recordatorio por WhatsApp (RF12)",
+     "wa.me/50588112233" in texto(gabriel.get("/menu")))
+
+# ---- Bitácora con filtros (RF18)
+por_accion = texto(admin.get("/bitacora", query_string={"accion": "solicitud"}))
+caso("La bitácora se filtra por acción (RF18)", "Rechazó la solicitud" in por_accion and "Entró al sistema" not in por_accion)
+por_usuario = texto(admin.get("/bitacora", query_string={"usuario": "00000005"}))
+caso("y por usuario", "Pidió 5 rollos de Algodón" in por_usuario and "Rechazó la solicitud" not in por_usuario)
+caso("y por fechas", "Ningún movimiento con esos filtros" in texto(admin.get("/bitacora", query_string={"hasta": "2020-01-01"})))
 
 m.crear_tablas()
-caso("Crear las tablas otra vez no borra ni duplica nada", cuantos("pacientes") == 2 and cuantos("cuentas") == 8)
+caso("Crear las tablas otra vez no borra ni duplica nada", cuantos("pacientes") == 4 and cuantos("cuentas") == 8)
 
 # Una base que nació con 20 clínicas (10 y 10) se completa a las 50 del plano sin perder lo que tenía
 base.execute("DELETE FROM salas WHERE substring(nombre FROM '[0-9]+')::int > 20")
@@ -555,6 +802,32 @@ caso("Una base con las 20 clínicas de antes pasa a las 50 del plano y conserva 
      == [(1, 30), (2, 20)]
      and uno("SELECT en_sala, disponible FROM salas WHERE nombre = 'Clínica 15'") == {"en_sala": 1, "disponible": False}
      and uno("SELECT en_sala FROM salas WHERE nombre = 'Clínica 31'")["en_sala"] == 2 and cuantos("citas") == citas_antes)
+
+# Una base de antes, con las fotos dentro (bytea) y creado_por en invitaciones, se pone al día sola
+columnas = lambda tabla: {c["column_name"] for c in base.execute(  # noqa: E731
+    "SELECT column_name FROM information_schema.columns WHERE table_name = %s", (tabla,))}
+jpg = recibo_jpg()[0].getvalue()
+base.execute("ALTER TABLE fotos ALTER COLUMN url DROP NOT NULL")
+base.execute("ALTER TABLE fotos ADD COLUMN imagen bytea")
+vieja = base.execute("INSERT INTO fotos (paciente_id, imagen) VALUES (%s, %s) RETURNING id", (pid, jpg)).fetchone()["id"]
+base.execute("ALTER TABLE invitaciones ADD COLUMN creado_por text REFERENCES cuentas")
+m.crear_tablas()
+movida = uno("SELECT url FROM fotos WHERE id = %s", vieja)["url"]
+caso("Las fotos que estaban dentro de la base pasan al almacenamiento y se quita la columna vieja",
+     movida.startswith("local:fotos/") and m.ruta_local(movida).read_bytes() == jpg and "imagen" not in columnas("fotos")
+     and uno("SELECT is_nullable FROM information_schema.columns WHERE table_name = 'fotos'"
+             " AND column_name = 'url'")["is_nullable"] == "NO")
+caso("invitaciones ya no tiene creado_por: cuentas e invitaciones no se apuntan entre sí",
+     "creado_por" not in columnas("invitaciones"))
+os.environ["FLY_APP_NAME"] = "prueba"
+try:
+    m.crear_tablas()
+    detenido = False
+except SystemExit:
+    detenido = True
+finally:
+    del os.environ["FLY_APP_NAME"]
+caso("Publicado en Fly sin almacenamiento configurado, el despliegue se detiene antes de cambiar la base", detenido)
 
 print(f"\n{'Todo correcto.' if not fallos else str(len(fallos)) + ' fallos.'}")
 sys.exit(1 if fallos else 0)

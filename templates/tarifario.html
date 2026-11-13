@@ -6,24 +6,27 @@
      ya se anotó: cambiarlo aquí solo afecta lo que se anote después.</p>
   <div class="tabla">
     <table>
-      <thead><tr><th>Procedimiento</th><th class="num">Precio</th><th>Estado</th><th></th></tr></thead>
+      <thead><tr><th>Código</th><th>Procedimiento</th><th>Área</th><th class="num">Precio</th><th>Estado</th><th></th></tr></thead>
       <tbody>
         {% for t in procedimientos %}
         <tr>
-          <td>{{ t.nombre }}</td>
+          <td>{{ t.codigo or '—' }}</td><td>{{ t.nombre }}
+            {% if anteriores[t.id] %}<details class="decidir"><summary>Precios anteriores</summary>
+              <ul>{% for a in anteriores[t.id] %}<li>{{ a.precio|cordobas }} hasta el {{ a.hasta }} ({{ nombre_de(a.cambiado_por) }})</li>{% endfor %}</ul></details>{% endif %}</td>
+          <td>{{ t.area or '—' }}</td>
           <td class="num">{{ t.precio|cordobas }}</td>
           <td class="{{ 'verde' if t.activo else 'tenue' }}">{{ "Se puede anotar" if t.activo else "Desactivado" }}</td>
           <td class="acciones">
             <form method="post" class="en-linea">
               <input type="hidden" name="id" value="{{ t.id }}">
-              <input type="number" name="precio" min="0" step="0.01" value="{{ t.precio }}" aria-label="Precio nuevo de {{ t.nombre }}" style="width: 8em">
+              <input type="number" name="precio" min="0.01" step="0.01" value="{{ t.precio }}" aria-label="Precio nuevo de {{ t.nombre }}" style="width: 8em">
               <button class="btn chico" name="accion" value="precio">Cambiar precio</button>
               <button class="btn chico" name="accion" value="activo">{{ "Desactivar" if t.activo else "Activar" }}</button>
             </form>
           </td>
         </tr>
         {% else %}
-        <tr><td class="vacio" colspan="4"><b>El tarifario está vacío</b>Agregue el primer procedimiento con el formulario de abajo.</td></tr>
+        <tr><td class="vacio" colspan="6"><b>El tarifario está vacío</b>Agregue el primer procedimiento con el formulario de abajo.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -34,8 +37,10 @@
     <fieldset>
       <legend>Agregar procedimiento</legend>
       <div class="en-linea">
+        <input name="codigo" placeholder="Código" aria-label="Código" maxlength="20" style="width: 7em">
         <input name="nombre" placeholder="Ej.: Profilaxis, Obturación con resina, Endodoncia unirradicular" aria-label="Procedimiento" required>
-        <label>Precio (C$) <input type="number" name="precio" min="0" step="0.01" required style="width: 8em"></label>
+        <select name="area" aria-label="Área clínica"><option value="">Área…</option>{% for a in areas %}<option>{{ a }}</option>{% endfor %}</select>
+        <label>Precio (C$) <input type="number" name="precio" min="0.01" step="0.01" required style="width: 8em"></label>
         <button class="btn">Agregar</button>
       </div>
     </fieldset>

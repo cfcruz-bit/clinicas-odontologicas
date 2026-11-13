@@ -8,8 +8,8 @@
     <fieldset>
       <legend>Datos del paciente</legend>
       <div class="campo"><span>Nombre: *</span><input name="nombre" value="{{ p.nombre }}"></div>
-      <div class="campo"><span>Cédula: *</span><input name="cedula" value="{{ p.cedula }}"></div>
-      <div class="campo"><span>Teléfono</span><input name="telefono" value="{{ p.telefono }}"></div>
+      <div class="campo"><span>Cédula: *</span><input name="cedula" value="{{ p.cedula }}" placeholder="000-000000-0000A" autocomplete="off"></div>
+      <div class="campo"><span>Teléfono</span><input name="telefono" value="{{ p.telefono }}" placeholder="8 dígitos" inputmode="tel"></div>
       <div class="campo"><span>Nº de expediente</span><input name="expediente" value="{{ p.expediente }}"></div>
       <div class="acciones">
         <a class="btn" href="{{ url_for('expediente', pid=p.id) }}">Cancelar</a>
