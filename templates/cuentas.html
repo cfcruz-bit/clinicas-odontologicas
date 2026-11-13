@@ -4,6 +4,14 @@
   <h2>Cuentas</h2>
   <p class="tenue">La Facultad crea las cuentas y les pone la contraseña; se guarda cifrada y nadie la puede ver después.
      Una cuenta desactivada no puede entrar, pero su nombre sigue en el historial de los pacientes y en la bitácora.</p>
+  <form method="get" class="en-linea buscar">
+    <select name="rol" aria-label="Filtrar por rol"><option value="">Todos los roles</option>
+      {% for k, v in roles.items() %}<option value="{{ k }}"{{ ' selected' if filtro.rol == k }}>{{ v }}</option>{% endfor %}</select>
+    <select name="estado" aria-label="Filtrar por estado"><option value="">Activas y desactivadas</option>
+      <option value="activas"{{ ' selected' if filtro.estado == 'activas' }}>Solo activas</option>
+      <option value="desactivadas"{{ ' selected' if filtro.estado == 'desactivadas' }}>Solo desactivadas</option></select>
+    <button class="btn">Filtrar</button>
+  </form>
   <div class="tabla">
     <table>
       <thead><tr><th>CIF</th><th>Nombre</th><th>Rol</th><th>Estado</th><th></th></tr></thead>
@@ -21,6 +29,12 @@
               <button class="btn chico" name="accion" value="clave">Poner contraseña</button>
               {% if c.cif != cif %}<button class="btn chico{{ ' peligro' if c.activa }}" name="accion" value="activa" formnovalidate>{{ "Desactivar" if c.activa else "Activar" }}</button>{% endif %}
             </form>
+            <details class="decidir"><summary>Corregir</summary>
+              <form method="post"><input type="hidden" name="accion" value="editar"><input type="hidden" name="cif" value="{{ c.cif }}">
+                <label for="nom-{{ c.cif }}">Nombre</label><input id="nom-{{ c.cif }}" name="nombre" value="{{ c.nombre }}" required>
+                <label for="rol-{{ c.cif }}">Rol</label>
+                <select id="rol-{{ c.cif }}" name="rol">{% for k, v in roles.items() %}<option value="{{ k }}"{{ ' selected' if c.rol == k }}>{{ v }}</option>{% endfor %}</select>
+                <button class="btn chico">Guardar</button></form></details>
           </td>
         </tr>
         {% endfor %}

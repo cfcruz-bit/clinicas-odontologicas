@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block titulo %}Orden de cobro Nº {{ o.id }} - Clínicas Odontológicas{% endblock %}
+{% block contenido %}
+  <p class="sin-imprimir"><a href="{{ url_for('tratamientos', pid=p.id) }}">&larr; Volver a tratamientos y cobros</a></p>
+  <h2>Orden de cobro Nº {{ o.id }}</h2>
+  <p>Paciente: <b>{{ p.nombre }}</b> · Cédula {{ p.cedula }} · Expediente {{ p.expediente or '—' }}<br>
+     Generada el {{ o.creada_texto }} por {{ nombre_de(o.creada_por) }}</p>
+  <div class="tabla">
+    <table>
+      <thead><tr><th>Código</th><th>Procedimiento</th><th>Diente</th><th class="num">Precio</th></tr></thead>
+      <tbody>
+        {% for l in lineas %}<tr><td>{{ l.codigo or '—' }}</td><td>{{ l.nombre }}</td><td>{{ l.diente or '—' }}</td><td class="num">{{ l.precio|cordobas }}</td></tr>{% endfor %}
+        <tr><th colspan="3">Total a pagar</th><td class="num"><b>{{ o.total|cordobas }}</b></td></tr>
+      </tbody>
+    </table>
+  </div>
+  {% if o.pagada %}
+  <p class="verde"><b>Pagada</b> el {{ o.pagada_texto }} ({{ nombre_de(o.cobrada_por) }}).</p>
+  {% else %}
+  <p class="amarillo"><b>Pendiente de pago.</b> Preséntela en caja.</p>
+  {% if es_rol == "admin" %}<form method="post" class="sin-imprimir"><button class="btn">Marcar como pagada y registrar el abono</button></form>{% endif %}
+  {% endif %}
+{% endblock %}

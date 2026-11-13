@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block titulo %}Materiales - Clínicas Odontológicas{% endblock %}
+{% block contenido %}
+  <h2>Pedir materiales a proveeduría</h2>
+  {% if materiales %}
+  <form method="post">
+    <fieldset>
+      <legend>Nueva solicitud</legend>
+      <div class="campo"><span>Material: *</span>
+        <select name="material" required><option value="">Seleccione…</option>
+          {% for m in materiales %}<option value="{{ m.id }}">{{ m.nombre }} (hay {{ m.cantidad }} {{ m.unidad }})</option>{% endfor %}</select></div>
+      <div class="campo"><span>¿Cuántos? *</span><input type="number" name="cantidad" min="1" step="1" value="1" required></div>
+      <div class="campo"><span>Para la cita del: *</span><input type="date" name="para" min="{{ hoy }}" value="{{ hoy }}" required></div>
+      <div class="acciones"><button class="btn">Enviar solicitud</button></div>
+    </fieldset>
+  </form>
+  {% endif %}
+  <h2>Disponibilidad</h2>
+  <div class="tabla">
+    <table>
+      <thead><tr><th>Material</th><th class="num">Hay</th><th>Unidad</th><th>Estado</th></tr></thead>
+      <tbody>
+        {% for m in materiales %}<tr><td>{{ m.nombre }}</td><td class="num">{{ m.cantidad }}</td><td>{{ m.unidad }}</td>
+          <td class="{{ 'rojo' if m.bajo else 'verde' }}">{{ "Se está acabando" if m.bajo else "Disponible" }}</td></tr>
+        {% else %}<tr><td class="vacio" colspan="4"><b>Proveeduría todavía no ha cargado materiales</b>Los agrega la Facultad.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <h2>Mis solicitudes</h2>
+  <div class="tabla">
+    <table>
+      <thead><tr><th>Pedida</th><th>Material</th><th class="num">Cantidad</th><th>Para</th><th>Estado</th></tr></thead>
+      <tbody>
+        {% for s in solicitudes %}<tr><td class="fecha">{{ s.pedida }}</td><td>{{ s.material }}</td><td class="num">{{ s.cantidad }} {{ s.unidad }}</td>
+          <td class="fecha">{{ s.para|dmy }}</td>
+          <td class="{{ {'Entregada': 'verde', 'Rechazada': 'rojo'}.get(s.estado, 'amarillo') }}">{{ s.estado }}{% if s.nota %}<div class="tenue">{{ s.nota }}</div>{% endif %}</td></tr>
+        {% else %}<tr><td class="vacio" colspan="5"><b>Todavía no ha pedido materiales</b>Use el formulario de arriba.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}

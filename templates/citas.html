@@ -36,28 +36,72 @@
   <h2>{{ "Mis citas" if es_rol == "estudiante" else "Citas" }}</h2>
   <div class="tabla">
     <table>
-      <thead><tr><th>Fecha</th><th>Hora</th><th>Paciente</th><th>Razón de la cita</th><th>Clínica</th>
+      <thead><tr><th>Fecha</th><th>Hora</th><th>Paciente</th><th>Razón de la cita</th><th>Clínica</th><th>Estado</th>
         {% if es_rol != "estudiante" %}<th>Estudiante</th>{% else %}<th></th>{% endif %}</tr></thead>
       <tbody>
         {% for c in citas|sort(attribute='fecha,hora') %}
         {% set p = mios[c.paciente_id] %}
-        <tr>
+        <tr{% if c.estado == "Cancelada" %} class="tenue"{% endif %}>
           <td class="fecha">{{ c.fecha|dmy }}</td>
           <td>{{ c.hora }}</td>
           <td><a href="{{ url_for('expediente', pid=p.id) }}">{{ p.nombre }}</a>
-            {% if p.razon %}<div class="tenue">{{ p.razon }}</div>{% endif %}</td>
+            {% if p.razon %}<div class="tenue">{{ p.razon }}</div>{% endif %}
+            {% if p.inasistencias %}<div class="rojo">No se presentó a {{ p.inasistencias }} {{ "cita" if p.inasistencias == 1 else "citas" }}</div>{% endif %}</td>
           <td>{{ c.razon }}</td>
           <td>{{ c.sala or '' }}</td>
+          <td class="{{ color_cita[c.estado] }}">{{ c.estado }}{% if c.motivo_cancelacion %}<div class="tenue">{{ c.motivo_cancelacion }}</div>{% endif %}{% if c.indicaciones %}<div class="tenue">Indicaciones: {{ c.indicaciones }}</div>{% endif %}</td>
           {% if es_rol != "estudiante" %}<td>{{ nombre_de(p.estudiante) }}</td>
-          {% else %}<td class="acciones">{% if c.fecha >= hoy %}
+          {% else %}<td class="acciones">{% if c.estado in activas and not p.finalizado %}
+            {% if c.fecha >= hoy and c.estado == "Programada" %}
             <form method="post" class="en-linea">
-              <input type="hidden" name="accion" value="cancelar">
-              <input type="hidden" name="id" value="{{ c.id }}">
-              <button class="btn chico">Cancelar cita</button>
-            </form>{% endif %}</td>{% endif %}
+              <input type="hidden" name="accion" value="estado"><input type="hidden" name="id" value="{{ c.id }}">
+              <input type="hidden" name="estado" value="Confirmada">
+              <button class="btn chico">Confirmar</button>
+            </form>{% endif %}
+            {% if c.fecha <= hoy %}
+            <details class="decidir">
+              <summary>Atendida</summary>
+              <form method="post">
+                <input type="hidden" name="accion" value="estado"><input type="hidden" name="id" value="{{ c.id }}">
+                <input type="hidden" name="estado" value="Atendida">
+                <label for="i-{{ c.id }}">Indicaciones para el paciente</label>
+                <textarea id="i-{{ c.id }}" name="indicaciones" rows="2" maxlength="500"></textarea>
+                <button class="btn chico">Marcar atendida</button>
+              </form>
+            </details>
+            <form method="post" class="en-linea">
+              <input type="hidden" name="accion" value="estado"><input type="hidden" name="id" value="{{ c.id }}">
+              <button class="btn chico" name="estado" value="No se presentó">No se presentó</button>
+            </form>{% endif %}
+            {% if c.fecha > hoy and p.telefono %}<a class="btn chico" href="{{ whatsapp(p.nombre, p.telefono, c) }}" target="_blank" rel="noopener">Recordar por WhatsApp</a>{% endif %}
+            {% if c.fecha >= hoy %}
+            <details class="decidir">
+              <summary>Reprogramar</summary>
+              <form method="post">
+                <input type="hidden" name="accion" value="reprogramar"><input type="hidden" name="id" value="{{ c.id }}">
+                <label for="f-{{ c.id }}">Fecha</label><input id="f-{{ c.id }}" type="date" name="fecha" value="{{ c.fecha }}" min="{{ hoy }}" required>
+                <label for="h-{{ c.id }}">Hora</label><input id="h-{{ c.id }}" type="time" name="hora" value="{{ c.hora }}" required>
+                <label for="s-{{ c.id }}">Clínica</label>
+                <select id="s-{{ c.id }}" name="sala">
+                  <option value="">Sin asignar</option>
+                  {% for s in salas %}<option value="{{ s.nombre }}"{{ ' selected' if s.nombre == c.sala }}{{ ' disabled' if not s.disponible and s.nombre != c.sala }}>{{ s.nombre }}</option>{% endfor %}
+                </select>
+                <button class="btn chico">Guardar la nueva fecha</button>
+              </form>
+            </details>
+            <details class="decidir">
+              <summary>Cancelar</summary>
+              <form method="post">
+                <input type="hidden" name="accion" value="cancelar"><input type="hidden" name="id" value="{{ c.id }}">
+                <label for="m-{{ c.id }}">Motivo de la cancelación: *</label>
+                <input id="m-{{ c.id }}" name="motivo" maxlength="500" required>
+                <button class="btn chico peligro">Cancelar cita</button>
+              </form>
+            </details>{% endif %}
+          {% endif %}</td>{% endif %}
         </tr>
         {% else %}
-        <tr><td class="vacio" colspan="6"><b>No hay citas agendadas</b>{{ "Agende la primera con el formulario de arriba." if es_rol == "estudiante" and pacientes else "Aparecen aquí cuando un estudiante agenda una." }}</td></tr>
+        <tr><td class="vacio" colspan="7"><b>No hay citas agendadas</b>{{ "Agende la primera con el formulario de arriba." if es_rol == "estudiante" and pacientes else "Aparecen aquí cuando un estudiante agenda una." }}</td></tr>
         {% endfor %}
       </tbody>
     </table>

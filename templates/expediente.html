@@ -7,6 +7,7 @@
     {{ p.finalizado_resumen }}. El expediente queda como historial y ya no se puede cambiar.</div>
   {% endif %}
 
+  {% for a in alertas %}<div class="mensaje error"><b>{{ a }}</b></div>{% endfor %}
   <div class="ficha">
     <div>
       <h1>{{ p.nombre }}{% if p.razon %} <small class="razon">{{ p.razon }}</small>{% endif %}</h1>
@@ -14,16 +15,19 @@
       <div class="tenue">Cédula {{ p.cedula }}{% if p.telefono %} · Tel. {{ p.telefono }}{% endif %}</div>
       <div class="tenue">Estudiante a cargo: {{ nombre_de(p.estudiante) }}</div>
       <div>
-        Aprobación docente: {% if p.aprobado %}<span class="verde">Aprobado</span>{% else %}<span class="amarillo">Pendiente</span>{% endif %}
+        Aprobación docente: {% if p.aprobado %}<span class="verde">Aprobado</span>{% elif p.rechazo %}<span class="rojo">Rechazado</span>{% else %}<span class="amarillo">Pendiente</span>{% endif %}{% if p.decision_por %}
+        <span class="tenue">({{ nombre_de(p.decision_por) }}, {{ p.decision_cuando.astimezone(MANAGUA).strftime('%d/%m/%Y %H:%M') }})</span>{% endif %}
         · Consentimiento informado: {% if p.firma %}<span class="verde">Firmado</span>{% else %}<span class="amarillo">Falta firma</span>{% endif %}
         · Odontograma: <span class="{{ 'verde' if p.odonto_revision == 'aprobada' else 'amarillo' }}">{{ revisiones[p.odonto_revision] }}</span>
       </div>
+      {% if p.rechazo and not p.aprobado %}<div class="mensaje error">Observación del profesor: {{ p.rechazo }}</div>{% endif %}
     </div>
     <div class="en-linea">
       {% if es_rol == "estudiante" and not p.finalizado %}<a class="btn" href="{{ url_for('editar', pid=p.id) }}">Corregir datos</a>
       <a class="btn" href="{{ url_for('razon', pid=p.id) }}">Cambiar la razón</a>{% endif %}
+      <a class="btn" href="{{ url_for('historia', pid=p.id) }}">Historia clínica</a>
       <a class="btn" href="{{ url_for('odontograma', pid=p.id) }}">Odontograma</a>
-      <a class="btn" href="{{ url_for('tratamientos', pid=p.id) }}">Tratamientos y cobros</a>
+      <a class="btn" href="{{ url_for('tratamientos', pid=p.id) }}">Tratamientos y cobros ({{ avance.porcentaje }} %)</a>
       <a class="btn" href="{{ url_for('consentimiento', pid=p.id) }}">Consentimiento informado</a>
       {% if es_rol == "admin" %}{% if not p.finalizado %}<a class="btn" href="{{ url_for('traspaso', pid=p.id) }}">Cambiar de estudiante</a>{% endif %}
       <a class="btn peligro" href="{{ url_for('cerrar', pid=p.id) }}">{{ "Anular el alta o eliminar" if p.finalizado else "Dar de alta o eliminar" }}</a>{% endif %}
@@ -50,14 +54,16 @@
   </div>
 
   <h2>Citas</h2>
+  {% if inasistencias %}<p class="rojo">No se presentó a {{ "1 cita" if inasistencias == 1 else "%d citas"|format(inasistencias) }}.</p>{% endif %}
   <div class="tabla">
     <table>
-      <thead><tr><th>Fecha</th><th>Hora</th><th>Razón de la cita</th><th>Clínica</th></tr></thead>
+      <thead><tr><th>Fecha</th><th>Hora</th><th>Razón de la cita</th><th>Clínica</th><th>Estado</th></tr></thead>
       <tbody>
         {% for c in citas|sort(attribute='fecha,hora') %}
-        <tr><td class="fecha">{{ c.fecha|dmy }}</td><td>{{ c.hora }}</td><td>{{ c.razon }}</td><td>{{ c.sala or '' }}</td></tr>
+        <tr><td class="fecha">{{ c.fecha|dmy }}</td><td>{{ c.hora }}</td><td>{{ c.razon }}</td><td>{{ c.sala or '' }}</td>
+          <td class="{{ color_cita[c.estado] }}">{{ c.estado }}{% if c.motivo_cancelacion %}<div class="tenue">{{ c.motivo_cancelacion }}</div>{% endif %}{% if c.indicaciones %}<div class="tenue">Indicaciones: {{ c.indicaciones }}</div>{% endif %}</td></tr>
         {% else %}
-        <tr><td class="vacio" colspan="4"><b>Este paciente no tiene citas</b>{% if es_rol == "estudiante" and not p.finalizado %}<a href="{{ url_for('citas') }}">Agendar una cita</a>{% endif %}</td></tr>
+        <tr><td class="vacio" colspan="5"><b>Este paciente no tiene citas</b>{% if es_rol == "estudiante" and not p.finalizado %}<a href="{{ url_for('citas') }}">Agendar una cita</a>{% endif %}</td></tr>
         {% endfor %}
       </tbody>
     </table>

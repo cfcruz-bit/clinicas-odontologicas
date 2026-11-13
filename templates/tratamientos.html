@@ -28,6 +28,9 @@
           {% for t in tarifario %}<option value="{{ t.id }}">{{ t.nombre }} · {{ t.precio|cordobas }}</option>{% endfor %}
         </select>
       </div>
+      <div class="campo"><span>Fase: *</span>
+        <select name="fase" required>{% for f in fases %}<option{{ ' selected' if f == 'Operatoria' }}>{{ f }}</option>{% endfor %}</select>
+      </div>
       <div class="campo"><span>Diente</span>
         <select name="diente">
           <option value="">Toda la boca / no aplica</option>
@@ -44,14 +47,16 @@
   {% endif %}
 
   <h2>Plan de tratamiento</h2>
+  <p>Avance: <b>{{ avance.hechos }} de {{ avance.total }}</b> procedimientos realizados ({{ avance.porcentaje }} %).</p>
+  <progress max="100" value="{{ avance.porcentaje }}" aria-label="Avance del plan">{{ avance.porcentaje }} %</progress>
   <div class="tabla">
     <table>
-      <thead><tr><th>Procedimiento</th><th>Diente</th><th class="num">Precio</th><th>Estudiante</th><th>Anotado</th><th>Estado</th>
+      <thead><tr><th>Fase</th><th>Procedimiento</th><th>Diente</th><th class="num">Precio</th><th>Estudiante</th><th>Anotado</th><th>Estado</th>
         {% if es_rol == "estudiante" and not p.finalizado %}<th></th>{% endif %}</tr></thead>
       <tbody>
         {% for t in plan %}
         <tr>
-          <td>{{ t.nombre }}</td><td>{{ t.diente or '—' }}</td><td class="num">{{ t.precio|cordobas }}</td>
+          <td>{{ t.fase }}</td><td>{{ t.nombre }}{% if t.orden_id %}<div class="tenue">Orden Nº {{ t.orden_id }}</div>{% endif %}</td><td>{{ t.diente or '—' }}</td><td class="num">{{ t.precio|cordobas }}</td>
           <td>{{ nombre_de(t.estudiante) }}</td><td class="fecha">{{ t.anotado|dmy }}</td>
           <td class="{{ 'verde' if t.realizado else 'amarillo' }}">{{ "Realizado el " ~ t.realizado|dmy if t.realizado else "Pendiente" }}</td>
           {% if es_rol == "estudiante" and not p.finalizado %}
@@ -60,18 +65,30 @@
             <form method="post" class="en-linea">
               <input type="hidden" name="id" value="{{ t.id }}">
               <button class="btn chico" name="accion" value="realizado">Marcar realizado</button>
-              <button class="btn chico peligro" name="accion" value="quitar">Quitar</button>
+              {% if not t.orden_id %}<button class="btn chico peligro" name="accion" value="quitar">Quitar</button>{% endif %}
             </form>
             {% endif %}
           </td>
           {% endif %}
         </tr>
         {% else %}
-        <tr><td class="vacio" colspan="7"><b>Todavía no hay tratamientos en el plan</b>{{ "Anote el primero con el formulario de arriba." if es_rol == "estudiante" and not p.finalizado and tarifario else "Los anota el estudiante a cargo." }}</td></tr>
+        <tr><td class="vacio" colspan="8"><b>Todavía no hay tratamientos en el plan</b>{{ "Anote el primero con el formulario de arriba." if es_rol == "estudiante" and not p.finalizado and tarifario else "Los anota el estudiante a cargo." }}</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
+
+  <h2>Órdenes de cobro</h2>
+  <p class="tenue">La orden lleva lo del plan que todavía no está en otra orden, con el precio del tarifario. El paciente la
+     presenta en caja; al cobrarla, la Facultad la marca como pagada y queda registrado el abono.</p>
+  {% if ordenes %}
+  <ul>{% for o in ordenes %}<li><a href="{{ url_for('orden', oid=o.id) }}">Orden Nº {{ o.id }}</a> · {{ o.creada }} ·
+    {{ o.total|cordobas }} · <span class="{{ 'verde' if o.pagada else 'amarillo' }}">{{ "Pagada" if o.pagada else "Pendiente de pago" }}</span></li>{% endfor %}</ul>
+  {% endif %}
+  {% if es_rol in ("estudiante", "admin") and sin_orden and not p.finalizado %}
+  <form method="post"><input type="hidden" name="accion" value="orden">
+    <button class="btn">Generar orden de cobro ({{ sin_orden }} {{ "tratamiento" if sin_orden == 1 else "tratamientos" }})</button></form>
+  {% endif %}
 
   <h2>Abonos</h2>
   {% if es_rol == "admin" %}

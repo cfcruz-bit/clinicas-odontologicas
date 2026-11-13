@@ -89,23 +89,24 @@
     </table>
   </div>
 
-  <h2>Fotos presenciales</h2>
+  <h2>Fotos presenciales y radiografías</h2>
   {% if es_rol == "estudiante" and not p.finalizado %}
   <form method="post" enctype="multipart/form-data" class="sin-imprimir">
     <input type="hidden" name="accion" value="foto">
     <fieldset>
       <legend>Subir foto</legend>
-      <div class="en-linea"><input type="file" name="foto" accept="image/*" required aria-label="Foto presencial">
+      <div class="en-linea"><select name="tipo" aria-label="Tipo de imagen">{% for t in tipos_foto %}<option>{{ t }}</option>{% endfor %}</select>
+        <input type="file" name="foto" accept="image/jpeg,image/png" required aria-label="Foto presencial o radiografía">
         <button class="btn">Subir</button></div>
-      <p class="tenue">En el celular o la tableta se puede tomar con la cámara. Se guarda achicada.</p>
+      <p class="tenue">JPG o PNG de hasta 5 MB. En el celular o la tableta se puede tomar con la cámara. Se guarda achicada.</p>
     </fieldset>
   </form>
   {% endif %}
   <div class="fotos">
     {% for f in fotos %}
     <a href="{{ url_for('foto', pid=p.id, fid=f.id) }}" target="_blank" title="Abrir la foto en grande">
-      <img class="miniatura" src="{{ url_for('foto', pid=p.id, fid=f.id) }}" alt="Foto presencial del {{ f.cuando }}">
-      <small class="tenue">{{ f.cuando }} · {{ nombre_de(f.cif) }}</small>
+      <img class="miniatura" src="{{ url_for('foto', pid=p.id, fid=f.id) }}" alt="{{ f.tipo }} del {{ f.cuando }}">
+      <small class="tenue">{{ f.tipo }} · {{ f.cuando }} · {{ nombre_de(f.cif) }}</small>
     </a>
     {% else %}
     <p class="vacio"><b>Todavía no hay fotos</b>{{ "Suba la primera con el formulario de arriba." if es_rol == "estudiante" and not p.finalizado else "Las sube el estudiante a cargo." }}</p>

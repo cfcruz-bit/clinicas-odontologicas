@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block titulo %}Historia clínica de {{ p.nombre }} - Clínicas Odontológicas{% endblock %}
+{% block contenido %}
+  <p><a href="{{ url_for('expediente', pid=p.id) }}">&larr; Volver al expediente</a></p>
+  <h2>Historia clínica de {{ p.nombre }}</h2>
+  {% for a in alertas %}<div class="mensaje error"><b>{{ a }}</b></div>{% endfor %}
+  {% if h.actualizado %}<p class="tenue">Última actualización: {{ h.actualizado.astimezone(MANAGUA).strftime('%d/%m/%Y %H:%M') }}
+    ({{ nombre_de(h.actualizado_por) }}). Cada cambio queda en la bitácora.</p>{% endif %}
+  {% set largos = ["antecedentes", "alergias", "medicamentos", "antecedentes_odontologicos", "examen_extraoral", "examen_intraoral", "diagnostico"] %}
+  {% if puede %}
+  <form method="post">
+    <fieldset>
+      <legend>Datos generales</legend>
+      <div class="campo"><span>{{ campos.nacimiento }}</span><input type="date" name="nacimiento" value="{{ h.nacimiento or '' }}" max="{{ hoy }}"></div>
+      <div class="campo"><span>{{ campos.sexo }}</span><select name="sexo"><option value="">—</option>
+        {% for x in sexos %}<option{{ ' selected' if h.sexo == x }}>{{ x }}</option>{% endfor %}</select></div>
+      {% for c in ["direccion", "emergencia_nombre", "emergencia_telefono"] %}
+      <div class="campo"><span>{{ campos[c] }}</span><input name="{{ c }}" value="{{ h[c] or '' }}"></div>{% endfor %}
+    </fieldset>
+    <fieldset>
+      <legend>Anamnesis, signos vitales y examen clínico</legend>
+      <div class="campo"><span>{{ campos.presion }}</span><input name="presion" value="{{ h.presion or '' }}" placeholder="Ej.: 120/80"></div>
+      {% for c in largos %}
+      <div class="campo arriba"><span>{{ campos[c] }}</span><textarea name="{{ c }}" rows="2">{{ h[c] or '' }}</textarea></div>{% endfor %}
+      <p class="tenue">Puede guardarla a medias y seguir en la próxima cita. Si anota alergias o una presión de 140/90 o más,
+         el expediente lo muestra como alerta.</p>
+      <div class="acciones"><button class="btn">Guardar</button></div>
+    </fieldset>
+  </form>
+  {% else %}
+  <dl class="datos">
+    {% for c, etiqueta in campos.items() %}<dt>{{ etiqueta }}</dt><dd>{{ (h[c]|dmy if c == "nacimiento" else h[c]) or '—' }}</dd>{% endfor %}
+  </dl>
+  {% endif %}
+{% endblock %}
