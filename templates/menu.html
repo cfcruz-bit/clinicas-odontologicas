@@ -69,6 +69,12 @@
   <p class="tenue">No hay pacientes esperando su aprobación.</p>
   {% endif %}
   {% endif %}
+  {% if es_rol == "estudiante" %}
+  <h2>Mis turnos clínicos</h2>
+  {% if turnos %}<ul>{% for t in turnos %}<li>{{ dias[t.dia] }} de {{ t.desde }} a {{ t.hasta }}</li>{% endfor %}</ul>
+  <p class="tenue">Sus citas se agendan dentro de estos turnos.</p>
+  {% else %}<p class="tenue">La Facultad todavía no le asigna turnos.</p>{% endif %}
+  {% endif %}
   <h2>Estado de las clínicas</h2>
   <p>{{ clinicas.disponibles }} disponibles{% if clinicas.no_disponibles %} · <span class="rojo">{{ clinicas.no_disponibles }} no disponibles</span>{% endif %}.
     <a href="{{ url_for('salas') }}">Ver el plano</a></p>

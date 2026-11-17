@@ -18,7 +18,7 @@
       <tbody>
         {% for c in lista %}
         <tr>
-          <td>{{ c.cif }}</td><td>{{ c.nombre }}</td><td>{{ roles[c.rol] }}</td>
+          <td>{{ c.cif }}</td><td>{{ c.nombre }}{% if c.correo %}<br><span class="tenue">{{ c.correo }}</span>{% endif %}</td><td>{{ roles[c.rol] }}{% if c.anio %}, {{ c.anio }}.º año{% endif %}{% if c.profesor %}<br><span class="tenue">Profesor: {{ nombre_de(c.profesor) }}</span>{% endif %}</td>
           <td class="{{ 'tenue' if not c.activa else ('rojo' if c.bloqueada else 'verde') }}">
             {{ "Desactivada" if not c.activa else ("Bloqueada hasta las " ~ c.bloqueada if c.bloqueada else "Activa") }}</td>
           <td class="acciones">
@@ -29,12 +29,7 @@
               <button class="btn chico" name="accion" value="clave">Poner contraseña</button>
               {% if c.cif != cif %}<button class="btn chico{{ ' peligro' if c.activa }}" name="accion" value="activa" formnovalidate>{{ "Desactivar" if c.activa else "Activar" }}</button>{% endif %}
             </form>
-            <details class="decidir"><summary>Corregir</summary>
-              <form method="post"><input type="hidden" name="accion" value="editar"><input type="hidden" name="cif" value="{{ c.cif }}">
-                <label for="nom-{{ c.cif }}">Nombre</label><input id="nom-{{ c.cif }}" name="nombre" value="{{ c.nombre }}" required>
-                <label for="rol-{{ c.cif }}">Rol</label>
-                <select id="rol-{{ c.cif }}" name="rol">{% for k, v in roles.items() %}<option value="{{ k }}"{{ ' selected' if c.rol == k }}>{{ v }}</option>{% endfor %}</select>
-                <button class="btn chico">Guardar</button></form></details>
+            <a class="btn chico" href="{{ url_for('cuenta', cif=c.cif) }}">Ficha{{ " y turnos" if c.rol == "estudiante" }}</a>
           </td>
         </tr>
         {% endfor %}
@@ -85,6 +80,9 @@
           {% for clave_rol, nombre_rol in roles.items() %}<option value="{{ clave_rol }}">{{ nombre_rol }}</option>{% endfor %}
         </select>
       </div>
+      <div class="campo"><span>Correo:</span><input type="email" name="correo" maxlength="120"></div>
+      <div class="campo"><span>Año de la carrera (estudiantes):</span>
+        <select name="anio"><option value="">—</option>{% for a in anios %}<option value="{{ a }}">{{ a }}.º año</option>{% endfor %}</select></div>
       <div class="campo"><span>Contraseña: *</span><input type="password" name="clave" required minlength="{{ clave_minima }}"
         autocomplete="new-password" placeholder="Al menos {{ clave_minima }} caracteres"></div>
       <div class="acciones"><button class="btn">Crear cuenta</button></div>

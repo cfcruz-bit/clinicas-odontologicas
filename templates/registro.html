@@ -19,6 +19,17 @@
   </label>
   {% if errores.nombre %}<p class="error">{{ errores.nombre }}</p>{% endif %}
 
+  <label>Correo
+    <input name="correo" type="email" value="{{ correo }}" required maxlength="120" autocomplete="email">
+  </label>
+  {% if errores.correo %}<p class="error">{{ errores.correo }}</p>{% endif %}
+
+  <label>Año de la carrera
+    <select name="anio" required><option value="">Seleccione…</option>
+      {% for a in anios %}<option value="{{ a }}"{{ ' selected' if anio == a }}>{{ a }}.º año</option>{% endfor %}</select>
+  </label>
+  {% if errores.anio %}<p class="error">{{ errores.anio }}</p>{% endif %}
+
   <label>Contraseña (al menos {{ clave_minima }} caracteres)
     <input name="clave" type="password" required minlength="{{ clave_minima }}" autocomplete="new-password">
   </label>

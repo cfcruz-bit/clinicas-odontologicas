@@ -243,6 +243,19 @@ CREATE INDEX IF NOT EXISTS tratamientos_paciente ON tratamientos (paciente_id);
 CREATE INDEX IF NOT EXISTS fotos_paciente ON fotos (paciente_id);
 CREATE INDEX IF NOT EXISTS abonos_paciente ON abonos (paciente_id);
 CREATE INDEX IF NOT EXISTS solicitudes_estado ON solicitudes (estado);
+-- RF02: el correo y el año de la carrera de cada cuenta (el estudiante los escribe al registrarse)
+ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS correo text NOT NULL DEFAULT '',
+                    ADD COLUMN IF NOT EXISTS anio int CHECK (anio BETWEEN 1 AND 6);
+-- RF06/RNF06: el profesor a cargo de cada estudiante. Es una relacion uno a muchos dentro de cuentas
+-- (un profesor, muchos estudiantes); el profesor ve solo a los pacientes de sus estudiantes
+ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS profesor text REFERENCES cuentas ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS cuentas_profesor ON cuentas (profesor);
+-- RF10: los turnos clinicos de cada estudiante (dia 0 = lunes ... 5 = sabado, horas HH:MM).
+-- Si el estudiante tiene turnos, sus citas tienen que caer dentro de uno
+CREATE TABLE IF NOT EXISTS turnos (
+    id serial PRIMARY KEY, estudiante text NOT NULL REFERENCES cuentas ON DELETE CASCADE,
+    dia int NOT NULL CHECK (dia BETWEEN 0 AND 5), desde text NOT NULL, hasta text NOT NULL,
+    CHECK (desde < hasta), UNIQUE (estudiante, dia, desde));
 """
 
 app = Flask(__name__)
@@ -267,6 +280,9 @@ CLAVE_MINIMA = 8  # caracteres de la contraseña que la Facultad le pone a una c
 CUPO_MAXIMO, DIAS_MAXIMO = 200, 30  # de un grupo: cuántos estudiantes se registran con su QR y cuánto dura
 CIF_MAXIMO, NOMBRE_MAXIMO = 20, 80  # caracteres de lo que escribe el estudiante al registrarse
 FOTO_LADO = 1600  # pixeles del lado mas largo de la foto presencial guardada
+DIAS = ("Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado")  # turnos.dia: 0 a 5
+ANIOS = range(1, 7)  # año de la carrera
+CORREO = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
 
 
 def bd():
@@ -384,7 +400,15 @@ def error_de_cita(fecha, hora, sala, paciente_id, estudiante, cita_id=None):
         return "El paciente ya tiene otra cita a esa hora."
     if estudiante and sql(otra + "p.estudiante = %s", fecha, hora, cita_id or 0, estudiante).fetchone():
         return "Usted ya tiene otra cita a esa hora con otro paciente."
+    turnos = turnos_de(estudiante) if estudiante else []
+    if turnos and not any(t["dia"] == cuando.weekday() and t["desde"] <= hora < t["hasta"] for t in turnos):
+        return "Esa hora está fuera de sus turnos clínicos: " + ", ".join(
+            f"{DIAS[t['dia']]} de {t['desde']} a {t['hasta']}" for t in turnos) + "."
     return None
+
+def turnos_de(estudiante):
+    """RF10: los turnos clinicos del estudiante, por dia y hora."""
+    return sql("SELECT * FROM turnos WHERE estudiante = %s ORDER BY dia, desde", estudiante).fetchall()
 
 app.jinja_env.filters["dmy"] = dmy
 app.jinja_env.globals["GRUPOS"] = GRUPOS
@@ -552,9 +576,10 @@ def comun():
                      " (SELECT count(*) FROM materiales WHERE cantidad <= minimo) AS inventario,"
                      " (SELECT count(*) FROM solicitudes WHERE estado = 'Pendiente') AS solicitudes").fetchone()
     elif rol == "profesor":  # y el profesor, cuantos recibos esperan su firma y cuantos pacientes su decision
-        avisos = sql("SELECT (SELECT count(*) FROM recibos WHERE firmado IS NULL) AS control,"
-                     " (SELECT count(*) FROM pacientes WHERE NOT aprobado AND rechazo = '' AND finalizado IS NULL"
-                     " AND eliminado IS NULL) AS pacientes").fetchone()
+        avisos = sql("SELECT (SELECT count(*) FROM recibos WHERE firmado IS NULL AND " + de_mi_grupo("recibos.estudiante")
+                     + ") AS control, (SELECT count(*) FROM pacientes WHERE NOT aprobado AND rechazo = ''"
+                     " AND finalizado IS NULL AND eliminado IS NULL AND " + de_mi_grupo("pacientes.estudiante")
+                     + ") AS pacientes", cif, cif).fetchone()
     else:  # y el estudiante, cuantos de sus pacientes rechazo el profesor (RF04: el aviso al estudiante)
         avisos = sql("SELECT count(*) AS pacientes FROM pacientes WHERE estudiante = %s AND rechazo <> ''"
                      " AND finalizado IS NULL AND eliminado IS NULL", cif).fetchone()
@@ -564,13 +589,27 @@ def comun():
             "fallas": avisos.get("salas", 0), "bajos": avisos.get("inventario", 0),
             "solicitudes_pendientes": avisos.get("solicitudes", 0)}
 
+def visibles(alias="pacientes"):
+    """Condicion SQL (y sus argumentos) de los pacientes que el usuario puede ver. El estudiante, los suyos;
+    el profesor, los de sus estudiantes (RF06/RNF06), y los de estudiantes que todavia no tienen profesor
+    asignado, para que nadie quede sin revisar; la Facultad, todos."""
+    cif, _, rol = quien()
+    if rol == "estudiante":
+        return f"{alias}.estudiante = %s", [cif]
+    if rol == "profesor":
+        return de_mi_grupo(f"{alias}.estudiante"), [cif]
+    return "true", []
+
+def de_mi_grupo(columna):
+    """Condicion SQL: el estudiante de `columna` no esta a cargo de otro profesor (argumento: el profesor)."""
+    return f"NOT EXISTS (SELECT 1 FROM cuentas e WHERE e.cif = {columna} AND e.profesor <> %s)"
+
 def paciente(pid):
     """El paciente, solo si el usuario puede verlo: cada estudiante ve unicamente los suyos.
     Si la Facultad le dio de alta, solo ella puede cambiar algo (por ejemplo, un abono)."""
     cif, _, rol = quien()
-    p = sql("SELECT * FROM pacientes WHERE id = %s AND eliminado IS NULL", pid).fetchone()
-    if p and rol == "estudiante" and p["estudiante"] != cif:
-        return None
+    condicion, args = visibles()
+    p = sql("SELECT * FROM pacientes WHERE id = %s AND eliminado IS NULL AND " + condicion, pid, *args).fetchone()
     if p and p["finalizado"] and rol != "admin" and request.method == "POST":
         flash(f"{p['nombre']} ya recibió el alta: su expediente ya no se puede cambiar.", "error")
         return None
@@ -580,16 +619,16 @@ def mis_pacientes(buscar=""):
     """Los pacientes que el usuario puede ver; con `buscar`, solo los que coinciden en parte con el nombre, la
     cédula (con o sin guiones) o el número de expediente (RF06). Trae cuántas veces no llegó a una cita."""
     # La firma solo importa para saber si ya firmo; no hace falta traer la imagen
-    cif, _, rol = quien()
+    condicion, args = visibles()
     texto = "%" + re.sub(r"([\\%_])", r"\\\1", buscar.strip()) + "%"
     cedula = "%" + sin_signos(buscar) + "%" if sin_signos(buscar) else ""
     return sql("SELECT id, nombre, cedula, telefono, expediente, razon, estudiante, aprobado, rechazo,"
                " firma <> '' AS firma, finalizado, (SELECT count(*) FROM citas c WHERE c.paciente_id = pacientes.id"
                " AND c.estado = 'No se presentó') AS inasistencias"
-               " FROM pacientes WHERE eliminado IS NULL AND (%s OR estudiante = %s)"
+               " FROM pacientes WHERE eliminado IS NULL AND " + condicion +
                " AND (%s = '' OR nombre ILIKE %s OR expediente ILIKE %s"
                " OR regexp_replace(upper(cedula), '[^0-9A-Z]', '', 'g') LIKE %s) ORDER BY id",
-               rol != "estudiante", cif, buscar.strip(), texto, texto, cedula).fetchall()
+               *args, buscar.strip(), texto, texto, cedula).fetchall()
 
 def nombre_de(cif):
     return cuentas()[cif][0] if cif in cuentas() else "sin asignar"
@@ -650,23 +689,26 @@ def entrar():
 def menu():
     # Al profesor le aparecen los odontogramas que esperan su revision
     cif, _, rol = quien()
+    condicion, args = visibles()
     revisar = sql("SELECT id, nombre, estudiante FROM pacientes WHERE odonto_revision = 'pedida'"
-                  " AND eliminado IS NULL ORDER BY id").fetchall() if rol == "profesor" else []
+                  " AND eliminado IS NULL AND " + condicion + " ORDER BY id", *args).fetchall() if rol == "profesor" else []
     rechazados = sql("SELECT id, nombre, rechazo, decision_por FROM pacientes WHERE estudiante = %s AND rechazo <> ''"
                      " AND finalizado IS NULL AND eliminado IS NULL ORDER BY id", cif).fetchall() if rol == "estudiante" else []
     # RF13: la jornada de hoy segun el rol. El estudiante ve sus citas; el profesor y la Facultad, todas
-    de_quien = "p.estudiante = %s" if rol == "estudiante" else "%s::text IS NOT NULL"
+    de_quien, args_agenda = visibles("p")
     agenda = ("SELECT c.*, p.nombre AS paciente, p.telefono, p.estudiante FROM citas c JOIN pacientes p ON p.id = c.paciente_id"
               " WHERE p.eliminado IS NULL AND c.fecha = %s AND c.estado <> 'Cancelada' AND " + de_quien + " ORDER BY c.hora")
     manana = (datetime.now(MANAGUA) + timedelta(days=1)).date().isoformat()
     por_aprobar = sql("SELECT id, nombre, estudiante FROM pacientes WHERE NOT aprobado AND rechazo = ''"
-                      " AND finalizado IS NULL AND eliminado IS NULL ORDER BY id").fetchall() if rol == "profesor" else []
+                      " AND finalizado IS NULL AND eliminado IS NULL AND " + condicion + " ORDER BY id",
+                      *args).fetchall() if rol == "profesor" else []
     clinicas = sql("SELECT count(*) FILTER (WHERE disponible) AS disponibles, count(*) FILTER (WHERE NOT disponible)"
                    " AS no_disponibles FROM salas").fetchone()
     return render_template("menu.html", **comun(), que_hace=QUE_HACE[rol], revisar=revisar, rechazados=rechazados,
-                           nombre_de=nombre_de, citas_hoy=sql(agenda, hoy(), cif).fetchall(),
+                           nombre_de=nombre_de, citas_hoy=sql(agenda, hoy(), *args_agenda).fetchall(),
+                           turnos=turnos_de(cif) if rol == "estudiante" else [], dias=DIAS,
                            # RF12: las citas de manana que el paciente todavia no confirma, para recordarselas
-                           sin_confirmar=[c for c in sql(agenda, manana, cif).fetchall() if c["estado"] == "Programada"]
+                           sin_confirmar=[c for c in sql(agenda, manana, *args_agenda).fetchall() if c["estado"] == "Programada"]
                            if rol == "estudiante" else [], por_aprobar=por_aprobar, clinicas=clinicas)
 
 
@@ -1434,15 +1476,19 @@ def administrar_cuentas():
                               request.form.get("clave", ""))
         if accion == "crear":
             nombre, rol_nuevo = request.form.get("nombre", "").strip(), request.form.get("rol")
+            correo, anio = request.form.get("correo", "").strip(), request.form.get("anio", type=int)
             if not cif.isalnum() or not nombre or rol_nuevo not in ROLES:
                 flash("Escriba el CIF (solo números y letras), el nombre y el rol.", "error")
+            elif correo and not CORREO.fullmatch(correo):
+                flash("Ese correo no es válido.", "error")
             elif len(clave) < CLAVE_MINIMA:
                 flash(f"La contraseña debe tener al menos {CLAVE_MINIMA} caracteres.", "error")
             elif cif in cuentas():
                 flash("Ya existe una cuenta con ese CIF.", "error")
             else:
-                sql("INSERT INTO cuentas (cif, nombre, rol, clave) VALUES (%s, %s, %s, %s)",
-                    cif, nombre, rol_nuevo, generate_password_hash(clave))
+                sql("INSERT INTO cuentas (cif, nombre, rol, clave, correo, anio) VALUES (%s, %s, %s, %s, %s, %s)",
+                    cif, nombre, rol_nuevo, generate_password_hash(clave), correo,
+                    anio if rol_nuevo == "estudiante" and anio in ANIOS else None)
                 anotar(f"Creó la cuenta de {nombre} ({cif}, {ROLES[rol_nuevo]})")
                 flash(f"Cuenta de {nombre} creada. Dele la contraseña en privado.", "ok")
         elif accion == "grupo":
@@ -1485,12 +1531,75 @@ def administrar_cuentas():
         return redirect(url_for("administrar_cuentas", **request.args))
     filtro = {"rol": request.args.get("rol", ""), "estado": request.args.get("estado", "")}
     return render_template("cuentas.html", **comun(), roles=ROLES, clave_minima=CLAVE_MINIMA, filtro=filtro,
+                           anios=ANIOS, nombre_de=nombre_de,
                            cupo_maximo=CUPO_MAXIMO, dias_maximo=DIAS_MAXIMO,
                            grupos=sql(INVITACIONES + " ORDER BY i.id DESC").fetchall(), lista=sql(
-        "SELECT cif, nombre, rol, activa, CASE WHEN bloqueada_hasta > now() THEN"
+        "SELECT cif, nombre, rol, activa, correo, anio, profesor, CASE WHEN bloqueada_hasta > now() THEN"
         " to_char(bloqueada_hasta AT TIME ZONE 'America/Managua', 'HH24:MI') END AS bloqueada"
         " FROM cuentas WHERE (%s = '' OR rol = %s) AND (%s = '' OR activa = (%s = 'activas'))"
         " ORDER BY activa DESC, rol, nombre", filtro["rol"], filtro["rol"], filtro["estado"], filtro["estado"]).fetchall())
+
+
+@app.route("/cuentas/<cif>", methods=["GET", "POST"])
+def cuenta(cif):
+    """Ficha de una cuenta para la Facultad: nombre, rol, correo y año (RF02); el profesor a cargo del estudiante
+    (RF06) y sus turnos clínicos (RF10)."""
+    yo, _, rol = quien()
+    if rol != "admin":
+        return redirect(url_for("menu"))
+    c = sql("SELECT * FROM cuentas WHERE cif = %s", cif).fetchone()
+    if not c:
+        return redirect(url_for("administrar_cuentas"))
+    profesores = {p["cif"]: p["nombre"] for p in sql(
+        "SELECT cif, nombre FROM cuentas WHERE rol = 'profesor' AND activa ORDER BY nombre").fetchall()}
+    if request.method == "POST":
+        accion = request.form.get("accion")
+        if accion == "datos":
+            f = {k: request.form.get(k, "").strip() for k in ("nombre", "rol", "correo", "profesor")}
+            anio = request.form.get("anio", type=int)
+            if not f["nombre"] or len(f["nombre"]) > NOMBRE_MAXIMO or f["rol"] not in ROLES:
+                flash("Escriba el nombre y elija el rol.", "error")
+            elif cif == yo and f["rol"] != rol:
+                flash("No puede cambiar el rol de su propia cuenta.", "error")
+            elif f["correo"] and not CORREO.fullmatch(f["correo"]):
+                flash("Ese correo no es válido.", "error")
+            elif f["profesor"] and f["profesor"] not in profesores:
+                flash("Elija un profesor de la lista.", "error")
+            else:
+                estudiante = f["rol"] == "estudiante"
+                sql("UPDATE cuentas SET nombre = %s, rol = %s, correo = %s, anio = %s, profesor = %s WHERE cif = %s",
+                    f["nombre"], f["rol"], f["correo"], anio if estudiante and anio in ANIOS else None,
+                    (f["profesor"] or None) if estudiante else None, cif)
+                if not estudiante:
+                    sql("DELETE FROM turnos WHERE estudiante = %s", cif)
+                anotar(f"Corrigió la cuenta {cif}: {f['nombre']}, {ROLES[f['rol']]}"
+                       + (f", profesor {profesores[f['profesor']]}" if estudiante and f["profesor"] else ""))
+                flash(f"Cuenta de {f['nombre']} guardada.", "ok")
+        elif accion == "turno" and c["rol"] == "estudiante":
+            dia = request.form.get("dia", type=int)
+            desde, hasta = request.form.get("desde", ""), request.form.get("hasta", "")
+            horas = all(re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", h) for h in (desde, hasta))
+            if dia not in range(len(DIAS)) or not horas or desde >= hasta:
+                flash("Elija el día y las horas del turno; la hora de inicio va antes de la de fin.", "error")
+            elif sql("SELECT 1 FROM turnos WHERE estudiante = %s AND dia = %s AND desde < %s AND %s < hasta",
+                     cif, dia, hasta, desde).fetchone():
+                flash("Ese turno se cruza con otro que ya tiene ese día.", "error")
+            else:
+                sql("INSERT INTO turnos (estudiante, dia, desde, hasta) VALUES (%s, %s, %s, %s)", cif, dia, desde, hasta)
+                anotar(f"Asignó a {c['nombre']} el turno del {DIAS[dia].lower()} de {desde} a {hasta}")
+                flash("Turno agregado.", "ok")
+        elif accion == "quitar_turno":
+            t = sql("DELETE FROM turnos WHERE id = %s AND estudiante = %s RETURNING dia, desde, hasta",
+                    request.form.get("id", type=int), cif).fetchone()
+            if t:
+                anotar(f"Quitó a {c['nombre']} el turno del {DIAS[t['dia']].lower()} de {t['desde']} a {t['hasta']}")
+                flash("Turno quitado.", "ok")
+        return redirect(url_for("cuenta", cif=cif))
+    return render_template("cuenta.html", **comun(), c=c, roles=ROLES, anios=ANIOS, dias=DIAS, profesores=profesores,
+                           turnos=turnos_de(cif), nombre_maximo=NOMBRE_MAXIMO, grupo=c["invitacion_id"] and sql(
+                               "SELECT nombre FROM invitaciones WHERE id = %s", c["invitacion_id"]).fetchone(),
+                           estudiantes=sql("SELECT cif, nombre FROM cuentas WHERE profesor = %s ORDER BY nombre",
+                                           cif).fetchall() if c["rol"] == "profesor" else [])
 
 
 # Cada grupo con cuántos se han registrado y si su código todavía sirve
@@ -1511,6 +1620,19 @@ def grupo(gid):
     """El código QR del grupo, para proyectarlo o imprimirlo, y quiénes se han registrado con él."""
     if quien()[2] != "admin":
         return redirect(url_for("menu"))
+    if request.method == "POST" and request.form.get("accion") == "profesor":
+        # RF06: el profesor a cargo de todos los que se registraron con este grupo
+        profesor = request.form.get("profesor", "")
+        fila = sql("SELECT nombre FROM cuentas WHERE cif = %s AND rol = 'profesor'", profesor).fetchone()
+        if fila:
+            n = sql("UPDATE cuentas SET profesor = %s WHERE invitacion_id = %s AND rol = 'estudiante'",
+                    profesor, gid).rowcount
+            grupo_nombre = sql("SELECT nombre FROM invitaciones WHERE id = %s", gid).fetchone()["nombre"]
+            anotar(f"Puso a {fila['nombre']} a cargo de los {n} estudiantes del grupo {grupo_nombre}")
+            flash(f"{fila['nombre']} queda a cargo de los {n} estudiantes del grupo.", "ok")
+        else:
+            flash("Elija el profesor.", "error")
+        return redirect(url_for("grupo", gid=gid))
     if request.method == "POST":  # cerrar el registro: el código deja de servir
         cerrado = sql("UPDATE invitaciones SET cerrado = true WHERE id = %s AND NOT cerrado RETURNING nombre",
                       gid).fetchone()
@@ -1524,8 +1646,9 @@ def grupo(gid):
     direccion = SITIO + url_for("registro", codigo=invitacion["codigo"])
     return render_template(
         "grupo.html", **comun(), grupo=invitacion, direccion=direccion, qr=qr(direccion), clave_minima=CLAVE_MINIMA,
-        registrados=sql("SELECT cif, nombre, activa FROM cuentas WHERE invitacion_id = %s ORDER BY nombre",
-                        gid).fetchall())
+        registrados=sql("SELECT cif, nombre, activa, correo, anio, profesor FROM cuentas WHERE invitacion_id = %s"
+                        " ORDER BY nombre", gid).fetchall(), nombre_de=nombre_de,
+        profesores=sql("SELECT cif, nombre FROM cuentas WHERE rol = 'profesor' AND activa ORDER BY nombre").fetchall())
 
 
 @app.route("/registro/<codigo>", methods=["GET", "POST"])
@@ -1534,11 +1657,12 @@ def registro(codigo):
     No pide sesión; la protege el código del grupo, que vence, tiene cupo y la Facultad puede cerrar.
     Solo crea cuentas de estudiante, y un estudiante nuevo no ve a ningún paciente."""
     invitacion = sql(INVITACIONES + " WHERE i.codigo = %s", codigo).fetchone()
-    datos = {"cif": "", "nombre": "", "errores": {}}
+    datos = {"cif": "", "nombre": "", "correo": "", "anio": None, "errores": {}}
     if request.method == "POST" and invitacion and invitacion["estado"] == "Abierto":
-        cif, nombre = (request.form.get(c, "").strip() for c in ("cif", "nombre"))
+        cif, nombre, correo = (request.form.get(c, "").strip() for c in ("cif", "nombre", "correo"))
+        anio = request.form.get("anio", type=int)
         clave, errores = request.form.get("clave", ""), datos["errores"]
-        datos.update(cif=cif, nombre=nombre)
+        datos.update(cif=cif, nombre=nombre, correo=correo, anio=anio)
         ya_existe = "Ya existe una cuenta con ese CIF. Si es suya, entre con su contraseña; si no, avise a la Facultad."
         if not cif.isalnum() or len(cif) > CIF_MAXIMO:
             errores["cif"] = "Escriba su CIF, solo con números y letras."
@@ -1546,6 +1670,10 @@ def registro(codigo):
             errores["cif"] = ya_existe
         if not nombre or len(nombre) > NOMBRE_MAXIMO:
             errores["nombre"] = "Escriba su nombre completo."
+        if not CORREO.fullmatch(correo) or len(correo) > 120:
+            errores["correo"] = "Escriba su correo, por ejemplo nombre@uamv.edu.ni."
+        if anio not in ANIOS:
+            errores["anio"] = "Elija el año de la carrera que cursa."
         if len(clave) < CLAVE_MINIMA:
             errores["clave"] = f"La contraseña debe tener al menos {CLAVE_MINIMA} caracteres."
         elif clave != request.form.get("clave2", ""):
@@ -1557,8 +1685,9 @@ def registro(codigo):
                 sql("SELECT 1 FROM invitaciones WHERE id = %s FOR UPDATE", invitacion["id"])
                 invitacion = sql(INVITACIONES + " WHERE i.id = %s", invitacion["id"]).fetchone()
                 creada = invitacion["estado"] == "Abierto" and sql(
-                    "INSERT INTO cuentas (cif, nombre, rol, clave, invitacion_id) VALUES (%s, %s, 'estudiante', %s, %s)"
-                    " ON CONFLICT DO NOTHING RETURNING cif", cif, nombre, cifrada, invitacion["id"]).fetchone()
+                    "INSERT INTO cuentas (cif, nombre, rol, clave, invitacion_id, correo, anio)"
+                    " VALUES (%s, %s, 'estudiante', %s, %s, %s, %s) ON CONFLICT DO NOTHING RETURNING cif",
+                    cif, nombre, cifrada, invitacion["id"], correo, anio).fetchone()
             if creada:
                 g.pop("cuentas", None)  # para que la sesión ya encuentre la cuenta nueva
                 session.clear()
@@ -1569,7 +1698,7 @@ def registro(codigo):
                 return redirect(url_for("menu"))
             if invitacion["estado"] == "Abierto":  # otro la creó con ese CIF en el mismo instante
                 errores["cif"] = ya_existe
-    return render_template("registro.html", **datos, grupo=invitacion, clave_minima=CLAVE_MINIMA,
+    return render_template("registro.html", **datos, grupo=invitacion, clave_minima=CLAVE_MINIMA, anios=ANIOS,
                            cif_maximo=CIF_MAXIMO, nombre_maximo=NOMBRE_MAXIMO)
 
 
@@ -1632,9 +1761,10 @@ def control():
                 anotar(f"Quitó el recibo {r['numero']} de su hoja de control")
                 flash(f"Recibo {r['numero']} quitado.", "ok")
         elif rol == "profesor" and accion in ("firmar", "quitar_firma"):
-            if accion == "firmar":
-                r = sql("UPDATE recibos SET firmado_por = %s, firmado = %s WHERE id = %s AND firmado IS NULL"
-                        " RETURNING numero, estudiante", cif, hoy(), request.form.get("id", type=int)).fetchone()
+            if accion == "firmar":  # solo los recibos de sus estudiantes
+                r = sql("UPDATE recibos SET firmado_por = %s, firmado = %s WHERE id = %s AND firmado IS NULL AND "
+                        + de_mi_grupo("recibos.estudiante") + " RETURNING numero, estudiante",
+                        cif, hoy(), request.form.get("id", type=int), cif).fetchone()
             else:  # solo el profesor que firmó puede quitar su firma
                 r = sql("UPDATE recibos SET firmado_por = NULL, firmado = NULL WHERE id = %s AND firmado_por = %s"
                         " RETURNING numero, estudiante", request.form.get("id", type=int), cif).fetchone()
@@ -1643,7 +1773,9 @@ def control():
                        + f" el recibo {r['numero']} de {nombre_de(r['estudiante'])}")
                 flash(f"Recibo {r['numero']} " + ("firmado." if accion == "firmar" else "sin firma otra vez."), "ok")
         return redirect(url_for("control", estudiante=request.args.get("estudiante") or None))
-    estudiantes = sorted(((c, n) for c, (n, r) in cuentas().items() if r == "estudiante"), key=lambda e: e[1])
+    estudiantes = [(e["cif"], e["nombre"]) for e in sql(
+        "SELECT cif, nombre FROM cuentas WHERE rol = 'estudiante' AND (%s OR " + de_mi_grupo("cuentas.cif")
+        + ") ORDER BY nombre", rol != "profesor", cif).fetchall()]
     elegido = cif if rol == "estudiante" else request.args.get("estudiante") or None
     if elegido not in dict(estudiantes):
         elegido = None
@@ -1654,7 +1786,10 @@ def control():
                          " JOIN tarifario a ON a.id = t.procedimiento_id"
                          " WHERE t.estudiante = %s AND t.realizado IS NOT NULL AND p.eliminado IS NULL"
                          " ORDER BY p.nombre, t.id", cif).fetchall()
-    return render_template("control.html", **comun(), recibos=recibos_de(estudiante=elegido), elegido=elegido,
+    recibos = recibos_de(estudiante=elegido)
+    if rol == "profesor":  # sin elegir estudiante, los recibos de todos los de su grupo
+        recibos = [r for r in recibos if r["estudiante"] in dict(estudiantes)]
+    return render_template("control.html", **comun(), recibos=recibos, elegido=elegido,
                            estudiantes=estudiantes, pendientes=pendientes, hoy=hoy(), nombre_de=nombre_de,
                            recibo_maximo=RECIBO_MAXIMO)
 
@@ -1663,8 +1798,9 @@ def control():
 def recibo_foto(rid):
     # El estudiante ve solo sus recibos; el profesor y la Facultad, todos
     cif, _, rol = quien()
-    r = sql("SELECT url FROM recibos WHERE id = %s AND (%s OR estudiante = %s)", rid, rol != "estudiante",
-            cif).fetchone()
+    r = sql("SELECT url FROM recibos WHERE id = %s AND CASE %s WHEN 'estudiante' THEN estudiante = %s"
+            " WHEN 'profesor' THEN " + de_mi_grupo("recibos.estudiante") + " ELSE true END",
+            rid, rol, cif, cif).fetchone()
     if not r:
         return redirect(url_for("control"))
     return ver_archivo(r["url"])
