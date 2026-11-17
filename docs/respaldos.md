@@ -1,27 +1,40 @@
 # Respaldos de la base de datos (RNF07)
 
-La base está en Neon. Neon guarda el historial de cambios y permite volver a cualquier momento dentro de la ventana de restauración del plan (en el plan gratuito, 1 día; en los planes de pago se puede ampliar).
+## Qué hay
+1. **Respaldo diario propio.** Una vez al día una máquina de Fly (`respaldo-diario`) corre
+   `flask --app prototipo respaldar`. Copia todas las tablas en un archivo `.zip` y lo guarda en el almacén privado
+   de las fotos, en la carpeta `respaldos/`. Se guardan los últimos 30.
+2. **Volver a un momento de las últimas 6 horas.** Neon lo permite en el plan gratuito. Sirve, por ejemplo, si
+   alguien borró algo por error esta mañana.
+3. **Las fotos, radiografías y recibos** ya están en el almacén y la base guarda solo su enlace. El sistema nunca
+   cambia una foto: solo agrega o borra.
 
-## Además, un respaldo propio cada semana
-1. Instalar las herramientas de PostgreSQL (`pg_dump`, versión 16 o más nueva).
-2. Copiar la cadena de conexión de Neon (Dashboard → Connect). No se guarda en el repositorio.
-3. Ejecutar:
-   ```
-   pg_dump "<cadena de Neon>" --format=custom --file=clinicas-AAAA-MM-DD.dump
-   ```
-4. Guardar el archivo en el Drive de la Facultad. Conservar al menos los 4 últimos.
-
-Las fotos y recibos no están dentro de la base (solo su enlace): el almacenamiento S3 debe tener activado el versionado o su propia copia.
+Neon no programa copias propias en el plan gratuito. Por eso existe el respaldo diario propio.
 
 ## Restaurar
-1. En Neon, crear una rama nueva desde el momento anterior al problema (Branches → Create branch → Point in time), o
-2. Restaurar el respaldo propio en una rama vacía:
-   ```
-   pg_restore --no-owner --dbname "<cadena de la rama>" clinicas-AAAA-MM-DD.dump
-   ```
-3. Revisar los datos y, si están bien, apuntar `DATABASE_URL` de Fly.io a esa rama.
+Siempre en una rama nueva de Neon, nunca encima de la base real: el comando se niega si la base ya tiene datos.
 
-Probar una restauración al menos una vez por semestre.
+**Desde el respaldo diario:**
+1. Ver los respaldos guardados:
+   `fly ssh console -a clinicas-odontologicas-uam -C "python -c \"import prototipo as m; print([o['Key'] for o in m.s3().list_objects_v2(Bucket=m.ALMACEN['bucket'], Prefix='respaldos/')['Contents']])\""`
+2. Crear una rama vacía en Neon y copiar su cadena de conexión:
+   `neonctl branches create --project-id weathered-salad-12660737 --name restaurada --parent main --schema-only`
+   (o en la consola de Neon: Branches → Create branch).
+3. Cargar el respaldo en esa rama:
+   `fly ssh console -a clinicas-odontologicas-uam -C "env DATABASE_URL='<cadena de la rama nueva>' flask --app prototipo restaurar respaldos/AAAA-MM-DD_HHMM.zip"`
+4. Revisar los datos de la rama. Si están bien, apuntar el sistema a ella:
+   `fly secrets set -a clinicas-odontologicas-uam DATABASE_URL='<cadena de la rama nueva>'`
+
+**A un momento de las últimas 6 horas:** en la consola de Neon, Branches → main → Restore, y elegir la fecha y la
+hora. Neon guarda el estado anterior por si hay que deshacerlo.
+
+## Prueba de restauración
+- Las pruebas automáticas (`pruebas.py`) sacan un respaldo, vacían la base, lo restauran y comprueban que vuelvan
+  todas las filas de todas las tablas y que los números automáticos sigan sin chocar.
+- Hacer además una restauración de verdad, como arriba, al menos una vez por semestre, y anotar la fecha aquí.
+
+| Fecha | Quién | Respaldo | Resultado |
+|---|---|---|---|
 
 ## Ya en el sistema
 - Los pacientes eliminados no se borran: quedan marcados y la Facultad los puede restaurar.

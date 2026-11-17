@@ -3,6 +3,7 @@
 {% block contenido %}
   <p><a href="{{ url_for('expediente', pid=p.id) }}">&larr; Volver al expediente</a></p>
   <h2>Historia clínica de {{ p.nombre }}</h2>
+  <p>Estado: {% if h.completa %}<span class="verde">Completa</span>{% else %}<span class="amarillo">Borrador</span>{% endif %}</p>
   {% for a in alertas %}<div class="mensaje error"><b>{{ a }}</b></div>{% endfor %}
   {% if h.actualizado %}<p class="tenue">Última actualización: {{ h.actualizado.astimezone(MANAGUA).strftime('%d/%m/%Y %H:%M') }}
     ({{ nombre_de(h.actualizado_por) }}). Cada cambio queda en la bitácora.</p>{% endif %}
@@ -22,9 +23,11 @@
       <div class="campo"><span>{{ campos.presion }}</span><input name="presion" value="{{ h.presion or '' }}" placeholder="Ej.: 120/80"></div>
       {% for c in largos %}
       <div class="campo arriba"><span>{{ campos[c] }}</span><textarea name="{{ c }}" rows="2">{{ h[c] or '' }}</textarea></div>{% endfor %}
-      <p class="tenue">Puede guardarla a medias y seguir en la próxima cita. Si anota alergias o una presión de 140/90 o más,
-         el expediente lo muestra como alerta.</p>
-      <div class="acciones"><button class="btn">Guardar</button></div>
+      <p class="tenue">Puede guardarla como borrador y seguir en la próxima cita. Para marcarla completa llene
+         {{ obligatorios|join(', ')|lower }}; si no tiene alergias o medicamentos, escriba «Ninguna».
+         Si anota alergias o una presión de 140/90 o más, el expediente lo muestra como alerta.</p>
+      <div class="acciones"><button class="btn" name="accion" value="borrador">Guardar borrador</button>
+        <button class="btn" name="accion" value="completa">Guardar como completa</button></div>
     </fieldset>
   </form>
   {% else %}

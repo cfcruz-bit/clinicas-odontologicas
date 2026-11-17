@@ -18,6 +18,7 @@
         Aprobación docente: {% if p.aprobado %}<span class="verde">Aprobado</span>{% elif p.rechazo %}<span class="rojo">Rechazado</span>{% else %}<span class="amarillo">Pendiente</span>{% endif %}{% if p.decision_por %}
         <span class="tenue">({{ nombre_de(p.decision_por) }}, {{ p.decision_cuando.astimezone(MANAGUA).strftime('%d/%m/%Y %H:%M') }})</span>{% endif %}
         · Consentimiento informado: {% if p.firma %}<span class="verde">Firmado</span>{% else %}<span class="amarillo">Falta firma</span>{% endif %}
+        · Historia clínica: {% if h.completa %}<span class="verde">Completa</span>{% else %}<span class="amarillo">Borrador</span>{% endif %}
         · Odontograma: <span class="{{ 'verde' if p.odonto_revision == 'aprobada' else 'amarillo' }}">{{ revisiones[p.odonto_revision] }}</span>
       </div>
       {% if p.rechazo and not p.aprobado %}<div class="mensaje error">Observación del profesor: {{ p.rechazo }}</div>{% endif %}

@@ -713,6 +713,24 @@ grace.post(hist, data={**vacia, "alergias": "Ninguna"})
 caso("Otro estudiante no cambia la historia", de_rosa("alergias") == "Penicilina")
 caso("El profesor la lee pero no la cambia",
      "Penicilina" in texto(profe.get(hist)) and 'name="alergias"' not in texto(profe.get(hist)))
+caso("Guardada a medias, la historia queda como borrador (RF05)",
+     de_rosa("completa") is None and "Borrador" in texto(gabriel.get(hist)) and "Borrador" in exp_rosa)
+gabriel.post(hist, data={**vacia, "sexo": "Femenino", "alergias": "Penicilina", "presion": "150/95",
+                         "diagnostico": "Caries en 36", "accion": "completa"})
+caso("Si falta algo no se marca completa, pero lo escrito se guarda y se dice qué falta",
+     de_rosa("completa") is None and de_rosa("diagnostico") == "Caries en 36"
+     and "fecha de nacimiento" in texto(gabriel.get(hist)))
+llena = {**vacia, "nacimiento": "1985-08-15", "sexo": "Femenino", "emergencia_nombre": "Juan Méndez",
+         "emergencia_telefono": "88776655", "antecedentes": "Ninguno", "alergias": "Penicilina",
+         "medicamentos": "Ninguna", "presion": "150/95", "examen_intraoral": "Caries en 36",
+         "diagnostico": "Caries en 36"}
+gabriel.post(hist, data={**llena, "accion": "completa"})
+caso("Con todo lo necesario se marca completa y queda en la bitácora",
+     de_rosa("completa") is not None and "Completa" in texto(gabriel.get(f"/pacientes/{rosa['id']}"))
+     and uno("SELECT 1 FROM bitacora WHERE accion = 'Marcó como completa la historia clínica de Rosa Méndez'"))
+gabriel.post(hist, data={**llena, "accion": "borrador"})
+caso("Se puede volver a borrador para seguir corrigiendo", de_rosa("completa") is None)
+gabriel.post(hist, data={**llena, "accion": "completa"})
 caso("La historia sale en el expediente en PDF", gabriel.get(f"/pacientes/{rosa['id']}/expediente.pdf").data[:4] == b"%PDF")
 
 # ---- Radiografías y límite de las imágenes (RF05, RNF09)
@@ -874,6 +892,22 @@ except SystemExit:
 finally:
     del os.environ["FLY_APP_NAME"]
 caso("Publicado en Fly sin almacenamiento configurado, el despliegue se detiene antes de cambiar la base", detenido)
+
+# ---- Respaldo diario y restauración (RNF07)
+consola = m.app.test_cli_runner()
+todas = [t["tablename"] for t in base.execute("SELECT tablename FROM pg_tables WHERE schemaname = current_schema()")]
+antes = {t: cuantos(t) for t in todas}
+salida = consola.invoke(m.respaldar).output
+respaldo = salida.split("Respaldo guardado: ")[1].split(" ")[0]
+caso("El respaldo queda guardado en el almacén", (m.CARPETA_LOCAL / respaldo).is_file())
+caso("No se restaura encima de una base que tiene datos",
+     "ya tiene datos" in str(consola.invoke(m.restaurar, [respaldo]).exception) and cuantos("cuentas") == antes["cuentas"])
+base.execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public")
+consola.invoke(m.restaurar, [respaldo])
+caso("Restaurado en una base vacía, vuelven todas las filas de todas las tablas",
+     {t: cuantos(t) for t in todas} == antes)
+gabriel.post("/pacientes", data={"accion": "registrar", "nombre": "Después del respaldo", "cedula": "001-010101-0099Z"})
+caso("Después de restaurar los números siguen sin chocar", uno("SELECT 1 FROM pacientes WHERE nombre = 'Después del respaldo'"))
 
 print(f"\n{'Todo correcto.' if not fallos else str(len(fallos)) + ' fallos.'}")
 sys.exit(1 if fallos else 0)

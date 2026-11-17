@@ -5,6 +5,7 @@ Variables: DATABASE_URL (cadena de conexión de Neon), SECRET_KEY, el almacenami
            abajo) y, opcionales, CLAVE_INICIAL, SITIO y COMENTARIOS
 Ejecutar:  python prototipo.py   (crea las tablas si no existen)
 """
+import atexit
 import base64
 import io
 import ipaddress
@@ -12,6 +13,7 @@ import json
 import os
 import re
 import secrets
+import threading
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -19,19 +21,21 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 
 import boto3
+import click
 import psycopg
 from botocore.config import Config
 from flask import (Flask, Response, abort, flash, g, redirect, render_template, request,
                    send_file, session, url_for)
 from PIL import Image, ImageOps
 from psycopg.rows import dict_row
+from psycopg_pool import ConnectionPool
 from reportlab.graphics import renderSVG
 from reportlab.graphics.barcode.qr import QrCodeWidget
 from reportlab.graphics.shapes import Drawing
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
-from werkzeug.security import check_password_hash, generate_password_hash
+from werkzeug.security import check_password_hash as _revisar, generate_password_hash as _cifrar
 
 # Cuentas iniciales: dos por cada tipo y una de la Facultad. Se crean una sola vez en la base de datos
 CUENTAS_INICIALES = {"00000001": ("Dra. Grace Mendoza", "profesor"),
@@ -102,6 +106,9 @@ HISTORIA = {"nacimiento": "Fecha de nacimiento", "sexo": "Sexo", "direccion": "D
             "antecedentes_odontologicos": "Antecedentes odontológicos", "presion": "Presión arterial",
             "examen_extraoral": "Examen extraoral", "examen_intraoral": "Examen intraoral",
             "diagnostico": "Diagnóstico"}
+# Para marcarla completa (RF05) estos no pueden quedar vacios: si no hay alergias se escribe "Ninguna"
+HISTORIA_COMPLETA = ("nacimiento", "sexo", "emergencia_nombre", "emergencia_telefono", "antecedentes", "alergias",
+                     "medicamentos", "presion", "examen_intraoral", "diagnostico")
 IMAGEN_MAXIMA = 5 * 1024 * 1024  # RNF09: fotos JPG o PNG de hasta 5 MB
 REVISIONES = {"": "Sin pedir", "pedida": "Pedida, esperando al profesor", "aprobada": "Aprobada",
               "devuelta": "Devuelta para corregir"}
@@ -206,6 +213,8 @@ CREATE TABLE IF NOT EXISTS historias (
     antecedentes_odontologicos text NOT NULL DEFAULT '', presion text NOT NULL DEFAULT '',
     examen_extraoral text NOT NULL DEFAULT '', examen_intraoral text NOT NULL DEFAULT '',
     diagnostico text NOT NULL DEFAULT '', actualizado timestamptz, actualizado_por text REFERENCES cuentas);
+-- RF05: mientras completa sea NULL la historia es un borrador
+ALTER TABLE historias ADD COLUMN IF NOT EXISTS completa timestamptz;
 -- RF09: fase de cada tratamiento e indicaciones al terminar cada cita
 ALTER TABLE tratamientos ADD COLUMN IF NOT EXISTS fase text NOT NULL DEFAULT 'Operatoria'
       CHECK (fase IN ('Higiénica', 'Periodoncia', 'Operatoria', 'Endodoncia', 'Cirugía', 'Prótesis', 'Mantenimiento'));
@@ -285,17 +294,39 @@ ANIOS = range(1, 7)  # año de la carrera
 CORREO = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
 
 
+_conexiones = []
+_candado_conexiones = threading.Lock()
+
 def bd():
-    """Una conexion a Neon por peticion; se cierra al terminar."""
+    """Una conexion a Neon por peticion. Se toman de un grupo que las reutiliza: abrir una nueva en cada pagina
+    (con su cifrado TLS) era lo mas lento con muchos usuarios a la vez (RNF02)."""
     if "bd" not in g:
-        g.bd = psycopg.connect(os.environ["DATABASE_URL"], autocommit=True, row_factory=dict_row,
-                               prepare_threshold=None)  # el pooler de Neon no admite sentencias preparadas
+        with _candado_conexiones:  # el grupo se crea en cada proceso de gunicorn, al primer uso
+            if not _conexiones:
+                _conexiones.append(ConnectionPool(
+                    os.environ["DATABASE_URL"], min_size=1, max_size=4, check=ConnectionPool.check_connection,
+                    kwargs={"autocommit": True, "row_factory": dict_row,
+                            "prepare_threshold": None}))  # el pooler de Neon no admite sentencias preparadas
+                atexit.register(_conexiones[0].close)  # al terminar un comando (crear-tablas) se cierra en orden
+        g.bd = _conexiones[0].getconn()
     return g.bd
 
 @app.teardown_appcontext
 def cerrar_bd(_):
     if (conexion := g.pop("bd", None)) is not None:
-        conexion.close()
+        _conexiones[0].putconn(conexion)
+
+# Cada clave cifrada con scrypt usa 32 MB de memoria mientras se calcula. Con muchos entrando a la vez (al empezar
+# un turno) la maquina de 512 MB se quedaba sin memoria; de a dos por proceso alcanza y no se cae (RNF02)
+_claves = threading.BoundedSemaphore(2)
+
+def cifrar(clave):
+    with _claves:
+        return _cifrar(clave)
+
+def clave_correcta(cifrada, clave):
+    with _claves:
+        return _revisar(cifrada, clave)
 
 def sql(consulta, *args):
     return bd().execute(consulta, args)
@@ -312,7 +343,7 @@ def crear_tablas():
         mover_imagenes()
         for cif, (nombre, rol) in CUENTAS_INICIALES.items():
             sql("INSERT INTO cuentas VALUES (%s, %s, %s, %s) ON CONFLICT DO NOTHING",
-                cif, nombre, rol, generate_password_hash(CLAVE_INICIAL))
+                cif, nombre, rol, cifrar(CLAVE_INICIAL))
         # Las clínicas se completan una sola vez, hasta que existe la última. Una base que nació con 20
         # (10 y 10) conserva las suyas con sus citas y reportes: de la 11 a la 20 pasan a pregrado
         if not sql("SELECT 1 FROM salas WHERE nombre = %s", f"Clínica {PREGRADO + POSGRADO}").fetchone():
@@ -326,6 +357,76 @@ def crear_tablas():
 @app.cli.command("crear-tablas")
 def crear_tablas_cli():
     crear_tablas()
+
+
+# RNF07: respaldo diario propio. Neon solo deja volver 6 horas atras en el plan gratis y no programa copias,
+# asi que la maquina respaldo-diario de Fly corre `flask --app prototipo respaldar` cada dia (docs/respaldos.md).
+# El respaldo es un .zip con cada tabla en formato COPY y va al mismo almacen privado de las fotos.
+RESPALDOS_GUARDADOS = 30  # ponytail: arma el .zip en memoria; pasar a archivo temporal si la base pasa de ~100 MB
+
+def tablas_en_orden():
+    """Las tablas de la base, cada una despues de las que referencia, para poder cargarlas en ese orden."""
+    from graphlib import TopologicalSorter
+    orden = TopologicalSorter({t["tablename"]: set() for t in sql(
+        "SELECT tablename FROM pg_tables WHERE schemaname = current_schema()")})
+    for r in sql("SELECT conrelid::regclass::text AS hija, confrelid::regclass::text AS madre FROM pg_constraint"
+                 " WHERE contype = 'f' AND connamespace = current_schema()::regnamespace AND conrelid <> confrelid"):
+        orden.add(r["hija"], r["madre"])
+    return list(orden.static_order())
+
+def columnas_de(tabla):
+    return [c["column_name"] for c in sql("SELECT column_name FROM information_schema.columns WHERE table_schema ="
+                                          " current_schema() AND table_name = %s ORDER BY ordinal_position", tabla)]
+
+@app.cli.command("respaldar")
+def respaldar():
+    import zipfile
+    archivo = io.BytesIO()
+    orden = tablas_en_orden()
+    with zipfile.ZipFile(archivo, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("orden.json", json.dumps({t: columnas_de(t) for t in orden}))
+        with bd().transaction(), bd().cursor() as cur:  # una sola foto de la base, aunque alguien escriba
+            cur.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+            for t in orden:
+                with cur.copy(f'COPY "{t}" TO STDOUT') as copia:
+                    z.writestr(f"{t}.copy", b"".join(bytes(b) for b in copia))
+    nombre = f"respaldos/{datetime.now(MANAGUA):%Y-%m-%d_%H%M}.zip"
+    if ALMACEN["bucket"]:
+        s3().put_object(Bucket=ALMACEN["bucket"], Key=nombre, Body=archivo.getvalue())
+        viejos = sorted(o["Key"] for o in s3().list_objects_v2(Bucket=ALMACEN["bucket"], Prefix="respaldos/")
+                        .get("Contents", []))[:-RESPALDOS_GUARDADOS]
+        for clave in viejos:
+            s3().delete_object(Bucket=ALMACEN["bucket"], Key=clave)
+    else:
+        (CARPETA_LOCAL / nombre).parent.mkdir(parents=True, exist_ok=True)
+        (CARPETA_LOCAL / nombre).write_bytes(archivo.getvalue())
+    print(f"Respaldo guardado: {nombre} ({len(archivo.getvalue()) // 1024} KB, {len(orden)} tablas)")
+
+@app.cli.command("restaurar")
+@click.argument("nombre")
+def restaurar(nombre):
+    """Carga un respaldo en la base de DATABASE_URL, que tiene que estar vacia (una rama nueva de Neon)."""
+    import zipfile
+    if sql("SELECT to_regclass('cuentas') AS t").fetchone()["t"] and sql("SELECT 1 FROM cuentas LIMIT 1").fetchone():
+        raise SystemExit("Esa base ya tiene datos. Restaure en una rama nueva y vacía de Neon, nunca encima de otra.")
+    if ALMACEN["bucket"]:
+        datos = s3().get_object(Bucket=ALMACEN["bucket"], Key=nombre)["Body"].read()
+    else:
+        datos = (CARPETA_LOCAL / nombre).read_bytes()
+    sql(TABLAS)  # las tablas de esta version del sistema, vacias
+    with zipfile.ZipFile(io.BytesIO(datos)) as z, bd().transaction(), bd().cursor() as cur:
+        orden = json.loads(z.read("orden.json"))
+        cur.execute("TRUNCATE " + ", ".join(f'"{t}"' for t in orden) + " RESTART IDENTITY CASCADE")
+        for t, cols in orden.items():
+            with cur.copy(f'COPY "{t}" ({", ".join(chr(34) + c + chr(34) for c in cols)}) FROM STDIN') as copia:
+                copia.write(z.read(f"{t}.copy"))
+        # Los numeros automaticos siguen despues del ultimo que habia
+        for s in cur.execute("SELECT table_name AS t, column_name AS c FROM information_schema.columns WHERE"
+                             " table_schema = current_schema() AND column_default LIKE 'nextval%'").fetchall():
+            cur.execute(f'SELECT setval(pg_get_serial_sequence(%s, %s), coalesce((SELECT max("{s["c"]}") FROM'
+                        f' "{s["t"]}"), 0) + 1, false)', (s["t"], s["c"]))
+    cuantas = {t: sql(f'SELECT count(*) AS n FROM "{t}"').fetchone()["n"] for t in orden}
+    print(f"Restaurado {nombre}: " + ", ".join(f"{t} {n}" for t, n in cuantas.items()))
 
 
 def hoy():
@@ -665,9 +766,9 @@ def entrar():
             if cuenta and cuenta["espera"] and cuenta["espera"] > 0:
                 # Mientras esta bloqueada ni se mira la clave: asi no se puede seguir probando
                 datos["aviso"] = f"Cuenta bloqueada por intentos fallidos. Intente de nuevo en {cuenta['espera']:.0f} min."
-            elif cuenta and check_password_hash(cuenta["clave"], clave) and not cuenta["activa"]:
+            elif cuenta and (correcta := clave_correcta(cuenta["clave"], clave)) and not cuenta["activa"]:
                 datos["aviso"] = "Esta cuenta está desactivada. Consulte con la Facultad."
-            elif cuenta and check_password_hash(cuenta["clave"], clave):
+            elif cuenta and correcta:
                 sql("UPDATE cuentas SET fallos = 0 WHERE cif = %s", cif)
                 session.permanent = True  # cuenta los 15 min desde la ultima pagina que se abrio
                 session["cif"] = cif
@@ -895,18 +996,33 @@ def historia(pid):
             h = {**h, **form}
         else:
             cambiados = [HISTORIA[c] for c in HISTORIA if (str(h.get(c) or "")) != form[c]]
+            # Se guarda siempre, para no perder lo escrito; completa solo si se pide y no falta nada
+            faltan = [HISTORIA[c] for c in HISTORIA_COMPLETA if not form[c]]
+            completa = request.form.get("accion") == "completa" and not faltan
             form["nacimiento"] = form["nacimiento"] or None
             columnas = list(HISTORIA)
-            sql("INSERT INTO historias (paciente_id, " + ", ".join(columnas) + ", actualizado, actualizado_por)"
-                " VALUES (%s, " + ", ".join(["%s"] * len(columnas)) + ", now(), %s) ON CONFLICT (paciente_id) DO UPDATE SET "
-                + ", ".join(f"{c} = excluded.{c}" for c in columnas) + ", actualizado = now(), actualizado_por = %s",
-                pid, *[form[c] for c in columnas], cif, cif)
+            sql("INSERT INTO historias (paciente_id, " + ", ".join(columnas) + ", actualizado, actualizado_por, completa)"
+                " VALUES (%s, " + ", ".join(["%s"] * len(columnas)) + ", now(), %s, %s) ON CONFLICT (paciente_id) DO UPDATE SET "
+                + ", ".join(f"{c} = excluded.{c}" for c in columnas)
+                + ", actualizado = now(), actualizado_por = excluded.actualizado_por, completa = excluded.completa",
+                pid, *[form[c] for c in columnas], cif, datetime.now(MANAGUA) if completa else None)
             if cambiados:
                 anotar(f"Actualizó la historia clínica de {p['nombre']}: " + ", ".join(cambiados).lower())
-            flash("Historia clínica guardada. Puede seguir llenándola en la próxima cita.", "ok")
+            if completa and not h.get("completa"):
+                anotar(f"Marcó como completa la historia clínica de {p['nombre']}")
+            elif not completa and h.get("completa"):
+                anotar(f"Volvió a borrador la historia clínica de {p['nombre']}")
+            if request.form.get("accion") == "completa" and faltan:
+                flash("Se guardó como borrador. Para marcarla completa falta: " + ", ".join(faltan).lower()
+                      + ". Si no tiene alergias o medicamentos, escriba «Ninguna».", "error")
+            elif completa:
+                flash("Historia clínica guardada y marcada como completa.", "ok")
+            else:
+                flash("Borrador guardado. Puede seguir llenándolo en la próxima cita.", "ok")
             return redirect(url_for("historia", pid=pid))
     return render_template("historia.html", **comun(), p=p, h=h, campos=HISTORIA, sexos=SEXOS, alertas=alertas_de(h),
-                           hoy=hoy(), nombre_de=nombre_de, puede=rol == "estudiante" and not p["finalizado"])
+                           hoy=hoy(), nombre_de=nombre_de, puede=rol == "estudiante" and not p["finalizado"],
+                           obligatorios=[HISTORIA[c] for c in HISTORIA_COMPLETA])
 
 
 @app.route("/pacientes/<int:pid>/traspaso", methods=["GET", "POST"])
@@ -1487,7 +1603,7 @@ def administrar_cuentas():
                 flash("Ya existe una cuenta con ese CIF.", "error")
             else:
                 sql("INSERT INTO cuentas (cif, nombre, rol, clave, correo, anio) VALUES (%s, %s, %s, %s, %s, %s)",
-                    cif, nombre, rol_nuevo, generate_password_hash(clave), correo,
+                    cif, nombre, rol_nuevo, cifrar(clave), correo,
                     anio if rol_nuevo == "estudiante" and anio in ANIOS else None)
                 anotar(f"Creó la cuenta de {nombre} ({cif}, {ROLES[rol_nuevo]})")
                 flash(f"Cuenta de {nombre} creada. Dele la contraseña en privado.", "ok")
@@ -1508,7 +1624,7 @@ def administrar_cuentas():
             if len(clave) < CLAVE_MINIMA:
                 flash(f"La contraseña debe tener al menos {CLAVE_MINIMA} caracteres.", "error")
             elif sql("UPDATE cuentas SET clave = %s, fallos = 0, bloqueada_hasta = NULL WHERE cif = %s RETURNING cif",
-                     generate_password_hash(clave), cif).fetchone():
+                     cifrar(clave), cif).fetchone():
                 anotar(f"Le puso una contraseña nueva a {nombre_de(cif)} ({cif})")
                 flash(f"Contraseña de {nombre_de(cif)} cambiada; si estaba bloqueada, ya puede entrar.", "ok")
         elif accion == "editar":
@@ -1679,7 +1795,7 @@ def registro(codigo):
         elif clave != request.form.get("clave2", ""):
             errores["clave2"] = "Las dos contraseñas no son iguales."
         if not errores:
-            cifrada = generate_password_hash(clave)
+            cifrada = cifrar(clave)
             with bd().transaction():
                 # FOR UPDATE: si dos se registran a la vez por el último cupo, el segundo espera y ya lo ve lleno
                 sql("SELECT 1 FROM invitaciones WHERE id = %s FOR UPDATE", invitacion["id"])
@@ -1882,8 +1998,8 @@ def expediente_pdf(pid):
               f"{p['finalizado_resumen']}")
 
     y -= 10
-    linea("Historia clínica", "Helvetica-Bold", 12)
     h = historia_de(pid)
+    linea("Historia clínica" + ("" if h.get("completa") else " (BORRADOR, sin completar)"), "Helvetica-Bold", 12)
     for c, etiqueta in HISTORIA.items():
         if h.get(c):
             linea(f"{etiqueta}: {dmy(h[c]) if c == 'nacimiento' else h[c]}"[:110], "Helvetica", 10)
