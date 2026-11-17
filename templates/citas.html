@@ -73,6 +73,7 @@
               <input type="hidden" name="accion" value="estado"><input type="hidden" name="id" value="{{ c.id }}">
               <button class="btn chico" name="estado" value="No se presentó">No se presentó</button>
             </form>{% endif %}
+            {% if c.recordada %}<span class="verde">Recordatorio enviado</span>{% endif %}
             {% if c.fecha > hoy and p.telefono %}<a class="btn chico" href="{{ whatsapp(p.nombre, p.telefono, c) }}" target="_blank" rel="noopener">Recordar por WhatsApp</a>{% endif %}
             {% if c.fecha >= hoy %}
             <details class="decidir">

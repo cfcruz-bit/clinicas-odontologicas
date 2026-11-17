@@ -893,6 +893,57 @@ finally:
     del os.environ["FLY_APP_NAME"]
 caso("Publicado en Fly sin almacenamiento configurado, el despliegue se detiene antes de cambiar la base", detenido)
 
+# ---- Recordatorios automáticos por WhatsApp (RF12). WhatsApp se simula: no sale ningún mensaje
+manana = (datetime.now(m.MANAGUA) + timedelta(days=1)).date().isoformat()
+pasado = (datetime.now(m.MANAGUA) + timedelta(days=2)).date().isoformat()
+rosa_id = uno("SELECT id FROM pacientes WHERE nombre = 'Rosa Méndez'")["id"]
+base.execute("UPDATE pacientes SET telefono = '88112233', finalizado = NULL, eliminado = NULL WHERE id = %s", (rosa_id,))
+nueva_cita = lambda fecha, hora, estado="Programada": base.execute(  # noqa: E731
+    "INSERT INTO citas (paciente_id, fecha, hora, sala, razon, estado) VALUES (%s, %s, %s, 'Clínica 1', 'Control', %s)"
+    " RETURNING id", (rosa_id, fecha, hora, estado)).fetchone()["id"]
+base.execute("UPDATE citas SET recordada = now() WHERE recordada IS NULL")  # solo cuentan las de esta prueba
+c_manana, c_confirmada, c_pasado = nueva_cita(manana, "07:10"), nueva_cita(manana, "07:20", "Confirmada"), nueva_cita(pasado, "07:30")
+c_falla = nueva_cita(manana, "07:40")
+enviados = []
+def envio_falso(telefono, variables):
+    if variables[2] == "07:40" and len([e for e in enviados if e[1][2] == "07:40"]) == 0:
+        enviados.append(("falló", variables))
+        raise OSError("Meta no respondió")
+    enviados.append((telefono, variables))
+    return "wamid.prueba"
+m.enviar_whatsapp = envio_falso
+consola = m.app.test_cli_runner()
+for v in ("WHATSAPP_TOKEN", "WHATSAPP_NUMERO_ID", "WHATSAPP_PLANTILLA"):
+    os.environ.pop(v, None)
+caso("Sin configurar WhatsApp no se envía nada",
+     "no está configurado" in consola.invoke(m.recordar).output and not enviados)
+os.environ.update(WHATSAPP_TOKEN="x", WHATSAPP_NUMERO_ID="1", WHATSAPP_PLANTILLA="recordatorio_cita")
+m.HORARIO_RECORDATORIOS = (0, 0)
+caso("Fuera del horario no se envía", "Fuera del horario" in consola.invoke(m.recordar).output and not enviados)
+m.HORARIO_RECORDATORIOS = (0, 24)
+salida = consola.invoke(m.recordar).output
+recordada = lambda cid: uno("SELECT recordada FROM citas WHERE id = %s", cid)["recordada"]  # noqa: E731
+caso("Se envía el recordatorio de la cita programada de mañana, con nombre, fecha, hora y clínica (RF12)",
+     ("88112233", ["Rosa Méndez", m.dmy(manana), "07:10", "Clínica 1"]) in enviados and recordada(c_manana))
+caso("No se recuerdan las confirmadas ni las de pasado mañana",
+     not recordada(c_confirmada) and not recordada(c_pasado)
+     and not any(e[1][2] in ("07:20", "07:30") for e in enviados))
+caso("Si un envío falla, los demás siguen y ese queda para la próxima hora",
+     "No se pudo enviar" in salida and not recordada(c_falla) and "Recordatorios enviados: 1 de 2" in salida)
+antes_envios = len(enviados)
+consola.invoke(m.recordar)
+caso("La siguiente corrida no repite los enviados y reintenta el que falló",
+     len(enviados) == antes_envios + 1 and recordada(c_falla))
+caso("El envío queda en la bitácora",
+     uno("SELECT 1 FROM bitacora WHERE nombre = 'Sistema' AND accion LIKE 'Recordatorio automático por WhatsApp a Rosa Méndez%%'"))
+caso("El estudiante ve en Inicio que ya se envió el recordatorio",
+     "Recordatorio enviado" in texto(gabriel.get("/menu")))
+gabriel.post("/citas", data={"accion": "reprogramar", "id": c_manana, "fecha": pasado, "hora": "07:50", "sala": ""})
+caso("Al reprogramar la cita, el recordatorio se vuelve a enviar para la fecha nueva",
+     uno("SELECT fecha FROM citas WHERE id = %s", c_manana)["fecha"] == pasado and not recordada(c_manana))
+for v in ("WHATSAPP_TOKEN", "WHATSAPP_NUMERO_ID", "WHATSAPP_PLANTILLA"):
+    os.environ.pop(v, None)
+
 # ---- Respaldo diario y restauración (RNF07)
 consola = m.app.test_cli_runner()
 todas = [t["tablename"] for t in base.execute("SELECT tablename FROM pg_tables WHERE schemaname = current_schema()")]

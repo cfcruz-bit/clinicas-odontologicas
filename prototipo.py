@@ -219,6 +219,8 @@ ALTER TABLE historias ADD COLUMN IF NOT EXISTS completa timestamptz;
 ALTER TABLE tratamientos ADD COLUMN IF NOT EXISTS fase text NOT NULL DEFAULT 'Operatoria'
       CHECK (fase IN ('Higiénica', 'Periodoncia', 'Operatoria', 'Endodoncia', 'Cirugía', 'Prótesis', 'Mantenimiento'));
 ALTER TABLE citas ADD COLUMN IF NOT EXISTS indicaciones text NOT NULL DEFAULT '';
+-- RF12: cuando se le envio al paciente el recordatorio automatico por WhatsApp (NULL: todavia no)
+ALTER TABLE citas ADD COLUMN IF NOT EXISTS recordada timestamptz;
 -- RF14: que le pasa a la clinica
 ALTER TABLE reportes ADD COLUMN IF NOT EXISTS tipo text NOT NULL DEFAULT 'Necesita reparación'
       CHECK (tipo IN ('Necesita limpieza', 'Necesita reparación', 'Fuera de servicio'));
@@ -525,6 +527,49 @@ def whatsapp(nombre, telefono, cita):
     return f"https://wa.me/505{telefono}?text={urllib.parse.quote(texto)}"
 
 app.jinja_env.globals["whatsapp"] = whatsapp
+
+# RF12: recordatorio automatico con la API oficial de WhatsApp (Cloud API de Meta). Lo corre cada hora la
+# maquina recordatorios de Fly: `flask --app prototipo recordar` (ver docs/recordatorios-whatsapp.md)
+HORARIO_RECORDATORIOS = (8, 18)  # solo se envia de 8:00 a 18:00 de Managua
+
+def enviar_whatsapp(telefono, variables):
+    """Envia la plantilla aprobada en Meta. Devuelve el id del mensaje; lanza una excepcion si Meta lo rechaza."""
+    cuerpo = {"messaging_product": "whatsapp", "to": f"505{telefono}", "type": "template",
+              "template": {"name": os.environ["WHATSAPP_PLANTILLA"], "language": {"code": "es"},
+                           "components": [{"type": "body", "parameters": [{"type": "text", "text": v}
+                                                                          for v in variables]}]}}
+    pedido = urllib.request.Request(
+        f"https://graph.facebook.com/v21.0/{os.environ['WHATSAPP_NUMERO_ID']}/messages",
+        data=json.dumps(cuerpo).encode(), method="POST",
+        headers={"Authorization": f"Bearer {os.environ['WHATSAPP_TOKEN']}", "Content-Type": "application/json"})
+    with urllib.request.urlopen(pedido, timeout=15) as r:
+        return json.load(r)["messages"][0]["id"]
+
+@app.cli.command("recordar")
+def recordar():
+    if not all(os.environ.get(v) for v in ("WHATSAPP_TOKEN", "WHATSAPP_NUMERO_ID", "WHATSAPP_PLANTILLA")):
+        print("WhatsApp no está configurado: faltan WHATSAPP_TOKEN, WHATSAPP_NUMERO_ID y WHATSAPP_PLANTILLA.")
+        return
+    ahora = datetime.now(MANAGUA)
+    if not HORARIO_RECORDATORIOS[0] <= ahora.hour < HORARIO_RECORDATORIOS[1]:
+        print(f"Fuera del horario de envío ({ahora:%H:%M}).")
+        return
+    manana = (ahora + timedelta(days=1)).date().isoformat()
+    citas = sql("SELECT c.*, p.nombre AS paciente, p.telefono FROM citas c JOIN pacientes p ON p.id = c.paciente_id"
+                " WHERE c.fecha = %s AND c.estado = 'Programada' AND c.recordada IS NULL AND p.telefono <> ''"
+                " AND p.eliminado IS NULL AND p.finalizado IS NULL ORDER BY c.hora", manana).fetchall()
+    enviados = 0
+    for c in citas:
+        try:
+            enviar_whatsapp(c["telefono"], [c["paciente"], dmy(c["fecha"]), c["hora"], c["sala"] or "la clínica"])
+        except Exception as e:  # noqa: BLE001 - uno que falla no detiene a los demas; la proxima hora se reintenta
+            print(f"No se pudo enviar el recordatorio de la cita {c['id']}: {e}")
+            continue
+        sql("UPDATE citas SET recordada = now() WHERE id = %s", c["id"])
+        sql("INSERT INTO bitacora (nombre, rol, accion) VALUES ('Sistema', 'Sistema', %s)",
+            f"Recordatorio automático por WhatsApp a {c['paciente']} de su cita del {dmy(c['fecha'])} a las {c['hora']}")
+        enviados += 1
+    print(f"Recordatorios enviados: {enviados} de {len(citas)}.")
 
 def monto(texto):
     """'1250.5' -> Decimal('1250.50'); None si no es un monto valido (cabe en numeric(10, 2))."""
@@ -1155,7 +1200,8 @@ def cambiar_cita(cita, p, accion):
         elif error := error_de_cita(f["fecha"], f["hora"], f["sala"], p["id"], p["estudiante"], cita["id"]):
             flash(error, "error")
         else:
-            sql("UPDATE citas SET fecha = %s, hora = %s, sala = %s, estado = 'Programada' WHERE id = %s",
+            sql("UPDATE citas SET fecha = %s, hora = %s, sala = %s, estado = 'Programada', recordada = NULL"
+                " WHERE id = %s",
                 f["fecha"], f["hora"], f["sala"], cita["id"])
             anotar(f"Reprogramó la cita de {p['nombre']} del {cuando} al {dmy(f['fecha'])} a las {f['hora']}")
             flash("Cita reprogramada.", "ok")
