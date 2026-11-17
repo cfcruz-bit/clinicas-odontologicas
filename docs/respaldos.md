@@ -35,7 +35,7 @@ hora. Neon guarda el estado anterior por si hay que deshacerlo.
 
 | Fecha | Quién | Respaldo | Resultado |
 |---|---|---|---|
-| 16/11/2026 | Claude Code | respaldos/2026-11-16_2008.zip | Restaurado en una rama vacía: las 20 tablas con las mismas filas que la base real |
+| 16/11/2026 | Equipo de desarrollo | respaldos/2026-11-16_2008.zip | Restaurado en una rama vacía: las 20 tablas con las mismas filas que la base real |
 
 ## Ya en el sistema
 - Los pacientes eliminados no se borran: quedan marcados y la Facultad los puede restaurar.
