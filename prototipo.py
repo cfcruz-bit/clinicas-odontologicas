@@ -263,6 +263,10 @@ ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS correo text NOT NULL DEFAULT '',
 -- (un profesor, muchos estudiantes); el profesor ve solo a los pacientes de sus estudiantes
 ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS profesor text REFERENCES cuentas ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS cuentas_profesor ON cuentas (profesor);
+-- RF12: pacientes que pidieron por WhatsApp que su estudiante les contacte (atendido NULL: pendiente)
+CREATE TABLE IF NOT EXISTS pedidos_contacto (
+    id serial PRIMARY KEY, paciente_id int NOT NULL REFERENCES pacientes ON DELETE CASCADE,
+    pedido timestamptz NOT NULL DEFAULT now(), atendido timestamptz, atendido_por text REFERENCES cuentas);
 -- RF10: los turnos clinicos de cada estudiante (dia 0 = lunes ... 5 = sabado, horas HH:MM).
 -- Si el estudiante tiene turnos, sus citas tienen que caer dentro de uno
 CREATE TABLE IF NOT EXISTS turnos (
@@ -586,10 +590,104 @@ def recordar():
     print(f"Recordatorios enviados: {enviados} de {len(citas)}.")
 
 
+# RF12: el bot de WhatsApp. Ademas de los botones del recordatorio, contesta lo que escriba el paciente con un
+# menu numerado. Solo trabaja con las citas que ya agendo el estudiante: no agenda citas nuevas
+UBICACION = os.environ.get("CLINICA_UBICACION") or (
+    "Clínicas Odontológicas de la Universidad Americana (UAM), Managua. Se atiende de lunes a sábado, en los turnos"
+    " de su estudiante. Le pedimos llegar 10 minutos antes de su cita.")
+MENU_BOT = ("Responda con un número:\n1. Ver mis próximas citas\n2. Confirmar mi próxima cita\n"
+            "3. No podré asistir a mi próxima cita\n4. Ubicación y horario\n5. Que mi estudiante me contacte")
+NO_REGISTRADO = ("Hola. Este número no está registrado en las Clínicas Odontológicas de la UAM. Si es paciente,"
+                 " pídale a su estudiante que anote este número en su expediente.")
+
+def cuando_es(c, con_paciente=False):
+    texto = f"{dmy(c['fecha'])} a las {c['hora']}" + (f" en la {c['sala']}" if c["sala"] else "")
+    return texto + (f" ({c['paciente']})" if con_paciente else "")
+
+def cita_por_whatsapp(cita_id, telefono, estados):
+    """La cita, si es del paciente de ese telefono, esta en uno de esos estados y no ha pasado."""
+    return sql("SELECT c.*, p.nombre AS paciente FROM citas c JOIN pacientes p ON p.id = c.paciente_id"
+               " WHERE c.id = %s AND '505' || p.telefono = %s AND c.estado = ANY(%s) AND c.fecha >= %s"
+               " AND p.eliminado IS NULL", cita_id, telefono, list(estados), hoy()).fetchone()
+
+def confirmar_por_whatsapp(c):
+    sql("UPDATE citas SET estado = 'Confirmada' WHERE id = %s", c["id"])
+    sql("INSERT INTO bitacora (nombre, rol, accion) VALUES ('Sistema', 'Sistema', %s)",
+        f"{c['paciente']} confirmó su cita del {cuando_es(c)} por WhatsApp")
+    return f"Gracias. Su cita del {cuando_es(c)} quedó confirmada."
+
+def cancelar_por_whatsapp(c):
+    sql("UPDATE citas SET estado = 'Cancelada', motivo_cancelacion = %s WHERE id = %s",
+        "El paciente avisó por WhatsApp que no podrá asistir", c["id"])
+    sql("INSERT INTO bitacora (nombre, rol, accion) VALUES ('Sistema', 'Sistema', %s)",
+        f"{c['paciente']} avisó que no podrá asistir a su cita del {cuando_es(c)} por WhatsApp")
+    return f"Gracias por avisar. Su cita del {cuando_es(c)} quedó cancelada; su estudiante le contactará para darle otra."
+
+def preguntar_whatsapp(telefono, texto, botones):
+    """Mensaje con botones de respuesta (hasta 3, de hasta 20 letras). Va dentro de las 24 h, sin plantilla."""
+    return _a_whatsapp({"messaging_product": "whatsapp", "to": telefono, "type": "interactive", "interactive": {
+        "type": "button", "body": {"text": texto},
+        "action": {"buttons": [{"type": "reply", "reply": {"id": i, "title": t}} for i, t in botones]}}})
+
+def atender_whatsapp(m):
+    """Lo que contesta el bot a un mensaje del paciente. Devuelve el texto, o None si no hay que contestar."""
+    de = m.get("from", "")
+    # Lo que toco: un boton del recordatorio (plantilla) o uno de los que manda el bot (interactivo)
+    boton = ((m.get("button") or {}).get("payload")
+             or ((m.get("interactive") or {}).get("button_reply") or {}).get("id") or "")
+    accion, _, cita_id = boton.partition(":")
+    if accion in ("asistira", "no_asistira", "cancelar") and cita_id.isdigit():
+        # Los botones del recordatorio solo valen mientras la cita esta Programada; el bot tambien cancela confirmadas
+        c = cita_por_whatsapp(int(cita_id), de, ACTIVAS if accion == "cancelar" else ("Programada",))
+        if not c:
+            return None
+        return confirmar_por_whatsapp(c) if accion == "asistira" else cancelar_por_whatsapp(c)
+    # Un mismo telefono puede ser de varios pacientes (una madre y sus hijos): se atienden todos juntos
+    suyos = sql("SELECT id, nombre, estudiante FROM pacientes WHERE telefono <> '' AND '505' || telefono = %s"
+                " AND eliminado IS NULL AND finalizado IS NULL ORDER BY id", de).fetchall()
+    if not suyos:
+        return NO_REGISTRADO
+    varios = len(suyos) > 1
+    escrito = (m.get("text") or {}).get("body", "") if m.get("type") == "text" else ""
+    opcion = re.match(r"\s*([1-5])\b", escrito)
+    opcion = opcion.group(1) if opcion else ""
+    if not opcion:  # un saludo, una pregunta, un audio o el boton "No, mantenerla": se muestra el menu
+        saludo = "Hola" if varios else f"Hola, {suyos[0]['nombre'].split()[0]}"
+        return f"{saludo}. Soy el asistente de las Clínicas Odontológicas de la UAM.\n{MENU_BOT}"
+    if opcion == "4":
+        return UBICACION
+    if opcion == "5":
+        for p in suyos:  # uno pendiente por paciente: escribir 5 varias veces no lo repite
+            if sql("INSERT INTO pedidos_contacto (paciente_id) SELECT %s WHERE NOT EXISTS (SELECT 1 FROM"
+                   " pedidos_contacto WHERE paciente_id = %s AND atendido IS NULL) RETURNING id",
+                   p["id"], p["id"]).fetchone():
+                sql("INSERT INTO bitacora (nombre, rol, accion) VALUES ('Sistema', 'Sistema', %s)",
+                    f"{p['nombre']} pidió por WhatsApp que su estudiante le contacte")
+        quienes = ", ".join(sorted({nombre_de(p["estudiante"]) for p in suyos}))
+        return f"Listo. Le avisamos a su estudiante ({quienes}) para que le contacte."
+    proximas = sql("SELECT c.*, p.nombre AS paciente FROM citas c JOIN pacientes p ON p.id = c.paciente_id"
+                   " WHERE c.paciente_id = ANY(%s) AND c.estado = ANY(%s) AND c.fecha >= %s ORDER BY c.fecha, c.hora",
+                   [p["id"] for p in suyos], list(ACTIVAS), hoy()).fetchall()
+    if not proximas:
+        return ("No tiene citas próximas. Si necesita una, responda 5 y su estudiante le contactará.\n" + MENU_BOT)
+    if opcion == "1":
+        return "Sus próximas citas:\n" + "\n".join(f"- {cuando_es(c, varios)}: {c['estado'].lower()}"
+                                                   for c in proximas[:5])
+    c = proximas[0]
+    if opcion == "2":
+        if c["estado"] == "Confirmada":
+            return f"Su cita del {cuando_es(c, varios)} ya está confirmada. ¡Le esperamos!"
+        return confirmar_por_whatsapp(c)
+    # Opcion 3: antes de cancelar se pregunta, con botones
+    preguntar_whatsapp(de, f"¿Seguro que no podrá asistir a su cita del {cuando_es(c, varios)}?",
+                       [(f"cancelar:{c['id']}", "Sí, cancelarla"), ("menu", "No, mantenerla")])
+    return None
+
+
 @app.route("/whatsapp", methods=["GET", "POST"])
 def whatsapp_respuestas():
-    """RF12: Meta avisa aqui cuando el paciente toca un boton del recordatorio. Si confirma, la cita queda
-    Confirmada; si dice que no podra, queda Cancelada con ese motivo y la clinica se libera."""
+    """RF12: Meta avisa aqui de cada mensaje que el paciente le escribe al numero de la clinica: los botones del
+    recordatorio y lo que conversa con el bot (ver atender_whatsapp)."""
     if request.method == "GET":  # Meta comprueba la direccion una vez, al configurarla
         verificar = os.environ.get("WHATSAPP_VERIFICAR", "")
         if verificar and request.args.get("hub.mode") == "subscribe" and                 hmac.compare_digest(request.args.get("hub.verify_token", ""), verificar):
@@ -604,31 +702,25 @@ def whatsapp_respuestas():
     mensajes = [m for e in datos.get("entry", []) for c in e.get("changes", [])
                 for m in c.get("value", {}).get("messages", [])]
     for m in mensajes:
-        accion, _, cita_id = (m.get("button") or {}).get("payload", "").partition(":")
-        if accion not in ("asistira", "no_asistira") or not cita_id.isdigit():
-            continue  # un mensaje escrito a mano: lo atiende el estudiante
-        # El boton tiene que venir del mismo telefono del paciente, y la cita seguir pendiente
-        c = sql("SELECT c.*, p.nombre AS paciente FROM citas c JOIN pacientes p ON p.id = c.paciente_id"
-                " WHERE c.id = %s AND '505' || p.telefono = %s AND c.estado = 'Programada' AND c.fecha >= %s",
-                int(cita_id), m.get("from", ""), hoy()).fetchone()
-        if not c:
-            continue
-        cuando = f"{dmy(c['fecha'])} a las {c['hora']}"
-        if accion == "asistira":
-            sql("UPDATE citas SET estado = 'Confirmada' WHERE id = %s", c["id"])
-            hecho, respuesta = "confirmó", f"Gracias. Su cita del {cuando} quedó confirmada."
-        else:
-            sql("UPDATE citas SET estado = 'Cancelada', motivo_cancelacion = %s WHERE id = %s",
-                "El paciente avisó por WhatsApp que no podrá asistir", c["id"])
-            hecho, respuesta = "avisó que no podrá asistir a", (f"Gracias por avisar. Su cita del {cuando} quedó "
-                                                                "cancelada; su estudiante le contactará para darle otra.")
-        sql("INSERT INTO bitacora (nombre, rol, accion) VALUES ('Sistema', 'Sistema', %s)",
-            f"{c['paciente']} {hecho} su cita del {cuando} por WhatsApp")
         try:
-            responder_whatsapp(m["from"], respuesta)
-        except Exception as e:  # noqa: BLE001 - la cita ya quedo registrada; la respuesta es una cortesia
-            app.logger.warning("No se pudo responder por WhatsApp: %s", e)
-    return "ok"
+            respuesta = atender_whatsapp(m)
+            if respuesta:
+                responder_whatsapp(m["from"], respuesta)
+        except Exception as e:  # noqa: BLE001 - lo que ya se guardo queda; un mensaje que falla no frena a los demas
+            app.logger.warning("No se pudo atender un mensaje de WhatsApp: %s", e)
+    return "ok"  # siempre 200: si no, Meta reenvia el mismo mensaje
+
+
+@app.route("/contactos/<int:kid>", methods=["POST"])
+def contacto_atendido(kid):
+    """RF12: el estudiante marca que ya contacto al paciente que lo pidio por WhatsApp."""
+    cif = quien()[0]
+    fila = sql("UPDATE pedidos_contacto k SET atendido = now(), atendido_por = %s FROM pacientes p WHERE k.id = %s"
+               " AND p.id = k.paciente_id AND p.estudiante = %s AND k.atendido IS NULL RETURNING p.nombre",
+               cif, kid, cif).fetchone()
+    if fila:
+        anotar(f"Contactó a {fila['nombre']}, que lo pidió por WhatsApp")
+    return redirect(url_for("menu"))
 
 def monto(texto):
     """'1250.5' -> Decimal('1250.50'); None si no es un monto valido (cabe en numeric(10, 2))."""
@@ -786,8 +878,11 @@ def comun():
                      " AND finalizado IS NULL AND eliminado IS NULL AND " + de_mi_grupo("pacientes.estudiante")
                      + ") AS pacientes", cif, cif).fetchone()
     else:  # y el estudiante, cuantos de sus pacientes rechazo el profesor (RF04: el aviso al estudiante)
-        avisos = sql("SELECT count(*) AS pacientes FROM pacientes WHERE estudiante = %s AND rechazo <> ''"
-                     " AND finalizado IS NULL AND eliminado IS NULL", cif).fetchone()
+        # y cuantos pacientes pidieron por WhatsApp que les contacte (RF12)
+        avisos = sql("SELECT count(*) AS pacientes, (SELECT count(*) FROM pedidos_contacto k JOIN pacientes p ON"
+                     " p.id = k.paciente_id WHERE k.atendido IS NULL AND p.estudiante = %s AND p.eliminado IS NULL)"
+                     " AS menu FROM pacientes WHERE estudiante = %s AND rechazo <> ''"
+                     " AND finalizado IS NULL AND eliminado IS NULL", cif, cif).fetchone()
     pestanas = [(f"{t} ({avisos[e]})" if avisos.get(e) else t, e) for t, e in MENUS[rol]
                 if e != "comentarios" or COMENTARIOS]
     return {"cif": cif, "nombre": nombre, "rol": ROLES[rol], "es_rol": rol, "pestanas": pestanas,
@@ -914,7 +1009,12 @@ def menu():
                            turnos=turnos_de(cif) if rol == "estudiante" else [], dias=DIAS,
                            # RF12: las citas de manana que el paciente todavia no confirma, para recordarselas
                            sin_confirmar=[c for c in sql(agenda, manana, *args_agenda).fetchall() if c["estado"] == "Programada"]
-                           if rol == "estudiante" else [], por_aprobar=por_aprobar, clinicas=clinicas)
+                           if rol == "estudiante" else [], por_aprobar=por_aprobar, clinicas=clinicas,
+                           # RF12: los pacientes que pidieron por WhatsApp que el estudiante les contacte
+                           contactar=sql("SELECT k.id, k.pedido, p.id AS paciente_id, p.nombre, p.telefono FROM"
+                                         " pedidos_contacto k JOIN pacientes p ON p.id = k.paciente_id WHERE"
+                                         " k.atendido IS NULL AND p.estudiante = %s AND p.eliminado IS NULL"
+                                         " ORDER BY k.pedido", cif).fetchall() if rol == "estudiante" else [])
 
 
 @app.route("/pacientes", methods=["GET", "POST"])

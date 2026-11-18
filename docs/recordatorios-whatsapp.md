@@ -15,8 +15,39 @@ El mensaje trae dos botones. Cuando el paciente toca uno, Meta avisa al sistema 
 - **No podré asistir:** la cita pasa a **Cancelada** con el motivo "El paciente avisó por WhatsApp que no podrá
   asistir", la clínica queda libre y el paciente recibe un aviso de que su estudiante le contactará.
 - Solo se acepta el botón si viene firmado por Meta, si llega desde el mismo teléfono del paciente y si la cita
-  sigue Programada. Un mensaje escrito a mano no cambia nada: lo atiende el estudiante.
+  sigue Programada.
 - La respuesta queda en la bitácora.
+
+## El bot: cuando el paciente escribe
+Si el paciente le escribe cualquier cosa al número de la clínica ("hola", "¿a qué hora es mi cita?", un audio),
+el bot le contesta por su nombre con un menú:
+
+```
+1. Ver mis próximas citas
+2. Confirmar mi próxima cita
+3. No podré asistir a mi próxima cita
+4. Ubicación y horario
+5. Que mi estudiante me contacte
+```
+
+- **1:** hasta 5 citas programadas o confirmadas, de hoy en adelante, con fecha, hora, clínica y estado.
+- **2:** confirma la próxima cita. Si ya estaba confirmada, solo se lo dice.
+- **3:** antes de cancelar pregunta con dos botones, *Sí, cancelarla* y *No, mantenerla*. Con el primero la cita
+  pasa a Cancelada con el mismo motivo que el botón del recordatorio, aunque ya estuviera confirmada.
+- **4:** el texto de `CLINICA_UBICACION`, o uno general si no está configurado.
+- **5:** al estudiante le aparece en Inicio "Pacientes que pidieron que les contacte", con un botón para
+  escribirle y otro para marcar "Ya le contacté". La pestaña muestra *Inicio (1)* mientras haya pendientes.
+  Pedirlo varias veces no repite el aviso.
+- El bot **no agenda citas nuevas**. Las agenda el estudiante, porque tiene que respetar sus turnos y las clínicas
+  libres. Si el paciente no tiene citas, el bot le ofrece la opción 5.
+- Reconoce al paciente por su teléfono. Si varios pacientes tienen el mismo número (una madre y sus hijos), les
+  muestra las citas de todos con el nombre de cada uno. A un número que no es de ningún paciente le dice que pida a
+  su estudiante que lo anote.
+- Lo que cambia queda en la bitácora. Estas respuestas van dentro de las 24 horas en que escribió el paciente y no
+  usan plantilla, así que entran en las conversaciones gratis de Meta.
+
+Para cambiar el texto de ubicación y horario:
+`fly secrets set -a clinicas-odontologicas-uam CLINICA_UBICACION="Clínicas Odontológicas UAM, <dirección>. Lunes a sábado..."`
 
 Si un envío falla, lo intenta de nuevo la hora siguiente. Si la cita se reprograma, se vuelve a recordar para la fecha
 nueva. El botón "Recordar por WhatsApp", para enviarlo a mano, sigue disponible.
@@ -52,7 +83,8 @@ teléfonos del equipo haciendo de pacientes.
 7. Para probar: crear una cita para mañana a un paciente cuyo teléfono sea uno de los 5 registrados. Esperar a la
    hora siguiente, o correrlo en el momento:
    `fly ssh console -a clinicas-odontologicas-uam -C "flask --app prototipo recordar"`. Después tocar uno de los botones
-   en el teléfono y revisar que la cita cambie de estado en Citas.
+   en el teléfono y revisar que la cita cambie de estado en Citas. Para el bot, escribir "hola" al número de prueba
+   desde uno de los 5 teléfonos y probar las opciones del menú.
 
 Con el número de prueba, a un teléfono que no está entre los 5 registrados el envío falla (error 131030). El sistema
 lo deja anotado en el registro de la máquina y sigue con los demás.
