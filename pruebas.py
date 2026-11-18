@@ -905,7 +905,7 @@ base.execute("UPDATE citas SET recordada = now() WHERE recordada IS NULL")  # so
 c_manana, c_confirmada, c_pasado = nueva_cita(manana, "07:10"), nueva_cita(manana, "07:20", "Confirmada"), nueva_cita(pasado, "07:30")
 c_falla = nueva_cita(manana, "07:40")
 enviados = []
-def envio_falso(telefono, variables):
+def envio_falso(telefono, variables, cita_id):
     if variables[2] == "07:40" and len([e for e in enviados if e[1][2] == "07:40"]) == 0:
         enviados.append(("falló", variables))
         raise OSError("Meta no respondió")
@@ -941,7 +941,38 @@ caso("El estudiante ve en Inicio que ya se envió el recordatorio",
 gabriel.post("/citas", data={"accion": "reprogramar", "id": c_manana, "fecha": pasado, "hora": "07:50", "sala": ""})
 caso("Al reprogramar la cita, el recordatorio se vuelve a enviar para la fecha nueva",
      uno("SELECT fecha FROM citas WHERE id = %s", c_manana)["fecha"] == pasado and not recordada(c_manana))
-for v in ("WHATSAPP_TOKEN", "WHATSAPP_NUMERO_ID", "WHATSAPP_PLANTILLA"):
+
+# El paciente responde con los botones del recordatorio (Meta llama a /whatsapp)
+import hashlib, hmac, json  # noqa: E401,E402
+os.environ.update(WHATSAPP_VERIFICAR="palabra-de-prueba", WHATSAPP_SECRETO="secreto-de-prueba")
+respuestas = []
+m.responder_whatsapp = lambda telefono, texto: respuestas.append((telefono, texto))
+meta = m.app.test_client()
+caso("Meta comprueba la dirección con la palabra acordada",
+     meta.get("/whatsapp?hub.mode=subscribe&hub.verify_token=palabra-de-prueba&hub.challenge=123").data == b"123"
+     and meta.get("/whatsapp?hub.mode=subscribe&hub.verify_token=otra&hub.challenge=123").status_code == 403)
+def boton(payload, telefono="50588112233", firma=None):
+    cuerpo = json.dumps({"entry": [{"changes": [{"value": {"messages": [
+        {"from": telefono, "type": "button", "button": {"payload": payload, "text": "Sí"}}]}}]}]}).encode()
+    firma = firma or "sha256=" + hmac.new(b"secreto-de-prueba", cuerpo, hashlib.sha256).hexdigest()
+    return meta.post("/whatsapp", data=cuerpo, headers={"X-Hub-Signature-256": firma, "Content-Type": "application/json"})
+estado_de = lambda cid: uno("SELECT estado, motivo_cancelacion FROM citas WHERE id = %s", cid)  # noqa: E731
+c_si, c_no = nueva_cita(pasado, "08:10"), nueva_cita(pasado, "08:20")
+caso("Sin la firma de Meta no se acepta nada",
+     boton(f"asistira:{c_si}", firma="sha256=falsa").status_code == 403 and estado_de(c_si)["estado"] == "Programada")
+caso("Un botón desde otro teléfono no cambia la cita",
+     boton(f"asistira:{c_si}", telefono="50599998888").status_code == 200 and estado_de(c_si)["estado"] == "Programada")
+boton(f"asistira:{c_si}")
+caso("Si el paciente toca «Sí, asistiré», la cita queda Confirmada y se le responde (RF12)",
+     estado_de(c_si)["estado"] == "Confirmada" and any("confirmada" in r[1] for r in respuestas))
+boton(f"no_asistira:{c_no}")
+caso("Si toca «No podré asistir», la cita queda Cancelada con el motivo y la clínica se libera",
+     estado_de(c_no) == {"estado": "Cancelada", "motivo_cancelacion": "El paciente avisó por WhatsApp que no podrá asistir"})
+boton(f"no_asistira:{c_si}")
+caso("Una cita ya confirmada no se cambia con otro botón", estado_de(c_si)["estado"] == "Confirmada")
+caso("La respuesta del paciente queda en la bitácora",
+     uno("SELECT 1 FROM bitacora WHERE nombre = 'Sistema' AND accion LIKE 'Rosa Méndez confirmó su cita%%por WhatsApp'"))
+for v in ("WHATSAPP_TOKEN", "WHATSAPP_NUMERO_ID", "WHATSAPP_PLANTILLA", "WHATSAPP_VERIFICAR", "WHATSAPP_SECRETO"):
     os.environ.pop(v, None)
 
 # ---- Respaldo diario y restauración (RNF07)

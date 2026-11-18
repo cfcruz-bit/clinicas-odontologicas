@@ -7,6 +7,8 @@ Ejecutar:  python prototipo.py   (crea las tablas si no existen)
 """
 import atexit
 import base64
+import hashlib
+import hmac
 import io
 import ipaddress
 import json
@@ -532,12 +534,23 @@ app.jinja_env.globals["whatsapp"] = whatsapp
 # maquina recordatorios de Fly: `flask --app prototipo recordar` (ver docs/recordatorios-whatsapp.md)
 HORARIO_RECORDATORIOS = (8, 18)  # solo se envia de 8:00 a 18:00 de Managua
 
-def enviar_whatsapp(telefono, variables):
-    """Envia la plantilla aprobada en Meta. Devuelve el id del mensaje; lanza una excepcion si Meta lo rechaza."""
-    cuerpo = {"messaging_product": "whatsapp", "to": f"505{telefono}", "type": "template",
-              "template": {"name": os.environ["WHATSAPP_PLANTILLA"], "language": {"code": "es"},
-                           "components": [{"type": "body", "parameters": [{"type": "text", "text": v}
-                                                                          for v in variables]}]}}
+def enviar_whatsapp(telefono, variables, cita_id):
+    """Envia la plantilla aprobada en Meta, con sus dos botones de respuesta (asistira / no podra). Cada boton
+    lleva el numero de la cita, para saber a cual responde el paciente. Lanza una excepcion si Meta lo rechaza."""
+    botones = [{"type": "button", "sub_type": "quick_reply", "index": str(i),
+                "parameters": [{"type": "payload", "payload": f"{accion}:{cita_id}"}]}
+               for i, accion in enumerate(("asistira", "no_asistira"))]
+    return _a_whatsapp({"messaging_product": "whatsapp", "to": f"505{telefono}", "type": "template",
+                        "template": {"name": os.environ["WHATSAPP_PLANTILLA"], "language": {"code": "es"},
+                                     "components": [{"type": "body", "parameters": [{"type": "text", "text": v}
+                                                                                    for v in variables]}]
+                                     + botones}})
+
+def responder_whatsapp(telefono, texto):
+    """Respuesta de texto al paciente. Va dentro de las 24 h en que el paciente escribio, sin plantilla."""
+    return _a_whatsapp({"messaging_product": "whatsapp", "to": telefono, "type": "text", "text": {"body": texto}})
+
+def _a_whatsapp(cuerpo):
     pedido = urllib.request.Request(
         f"https://graph.facebook.com/v21.0/{os.environ['WHATSAPP_NUMERO_ID']}/messages",
         data=json.dumps(cuerpo).encode(), method="POST",
@@ -561,7 +574,8 @@ def recordar():
     enviados = 0
     for c in citas:
         try:
-            enviar_whatsapp(c["telefono"], [c["paciente"], dmy(c["fecha"]), c["hora"], c["sala"] or "la clínica"])
+            enviar_whatsapp(c["telefono"], [c["paciente"], dmy(c["fecha"]), c["hora"], c["sala"] or "la clínica"],
+                            c["id"])
         except Exception as e:  # noqa: BLE001 - uno que falla no detiene a los demas; la proxima hora se reintenta
             print(f"No se pudo enviar el recordatorio de la cita {c['id']}: {e}")
             continue
@@ -570,6 +584,51 @@ def recordar():
             f"Recordatorio automático por WhatsApp a {c['paciente']} de su cita del {dmy(c['fecha'])} a las {c['hora']}")
         enviados += 1
     print(f"Recordatorios enviados: {enviados} de {len(citas)}.")
+
+
+@app.route("/whatsapp", methods=["GET", "POST"])
+def whatsapp_respuestas():
+    """RF12: Meta avisa aqui cuando el paciente toca un boton del recordatorio. Si confirma, la cita queda
+    Confirmada; si dice que no podra, queda Cancelada con ese motivo y la clinica se libera."""
+    if request.method == "GET":  # Meta comprueba la direccion una vez, al configurarla
+        verificar = os.environ.get("WHATSAPP_VERIFICAR", "")
+        if verificar and request.args.get("hub.mode") == "subscribe" and                 hmac.compare_digest(request.args.get("hub.verify_token", ""), verificar):
+            return request.args.get("hub.challenge", "")
+        abort(403)
+    # Solo se acepta lo que firma Meta con el secreto de la app: nadie mas puede confirmar o cancelar citas
+    secreto = os.environ.get("WHATSAPP_SECRETO", "").encode()
+    firma = "sha256=" + hmac.new(secreto, request.get_data(), hashlib.sha256).hexdigest()
+    if not secreto or not hmac.compare_digest(request.headers.get("X-Hub-Signature-256", ""), firma):
+        abort(403)
+    datos = request.get_json(silent=True) or {}
+    mensajes = [m for e in datos.get("entry", []) for c in e.get("changes", [])
+                for m in c.get("value", {}).get("messages", [])]
+    for m in mensajes:
+        accion, _, cita_id = (m.get("button") or {}).get("payload", "").partition(":")
+        if accion not in ("asistira", "no_asistira") or not cita_id.isdigit():
+            continue  # un mensaje escrito a mano: lo atiende el estudiante
+        # El boton tiene que venir del mismo telefono del paciente, y la cita seguir pendiente
+        c = sql("SELECT c.*, p.nombre AS paciente FROM citas c JOIN pacientes p ON p.id = c.paciente_id"
+                " WHERE c.id = %s AND '505' || p.telefono = %s AND c.estado = 'Programada' AND c.fecha >= %s",
+                int(cita_id), m.get("from", ""), hoy()).fetchone()
+        if not c:
+            continue
+        cuando = f"{dmy(c['fecha'])} a las {c['hora']}"
+        if accion == "asistira":
+            sql("UPDATE citas SET estado = 'Confirmada' WHERE id = %s", c["id"])
+            hecho, respuesta = "confirmó", f"Gracias. Su cita del {cuando} quedó confirmada."
+        else:
+            sql("UPDATE citas SET estado = 'Cancelada', motivo_cancelacion = %s WHERE id = %s",
+                "El paciente avisó por WhatsApp que no podrá asistir", c["id"])
+            hecho, respuesta = "avisó que no podrá asistir a", (f"Gracias por avisar. Su cita del {cuando} quedó "
+                                                                "cancelada; su estudiante le contactará para darle otra.")
+        sql("INSERT INTO bitacora (nombre, rol, accion) VALUES ('Sistema', 'Sistema', %s)",
+            f"{c['paciente']} {hecho} su cita del {cuando} por WhatsApp")
+        try:
+            responder_whatsapp(m["from"], respuesta)
+        except Exception as e:  # noqa: BLE001 - la cita ya quedo registrada; la respuesta es una cortesia
+            app.logger.warning("No se pudo responder por WhatsApp: %s", e)
+    return "ok"
 
 def monto(texto):
     """'1250.5' -> Decimal('1250.50'); None si no es un monto valido (cabe en numeric(10, 2))."""
@@ -790,7 +849,7 @@ def todas_las_salas():
 
 @app.before_request
 def exigir_sesion():
-    if request.endpoint not in ("entrar", "registro", "static") and quien() is None:
+    if request.endpoint not in ("entrar", "registro", "static", "whatsapp_respuestas") and quien() is None:
         return redirect(url_for("entrar"))
 
 

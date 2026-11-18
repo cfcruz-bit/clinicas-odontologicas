@@ -8,6 +8,16 @@ El día antes de cada cita programada, el sistema le envía al paciente un recor
 - envía la plantilla con el nombre del paciente, la fecha, la hora y la clínica;
 - marca la cita como recordada y lo anota en la bitácora. En Inicio y en Citas se ve "Recordatorio enviado".
 
+El mensaje trae dos botones. Cuando el paciente toca uno, Meta avisa al sistema en
+`https://clinicas-odontologicas-uam.fly.dev/whatsapp`:
+
+- **Sí, asistiré:** la cita pasa a **Confirmada** y el paciente recibe "Gracias. Su cita del … quedó confirmada."
+- **No podré asistir:** la cita pasa a **Cancelada** con el motivo "El paciente avisó por WhatsApp que no podrá
+  asistir", la clínica queda libre y el paciente recibe un aviso de que su estudiante le contactará.
+- Solo se acepta el botón si viene firmado por Meta, si llega desde el mismo teléfono del paciente y si la cita
+  sigue Programada. Un mensaje escrito a mano no cambia nada: lo atiende el estudiante.
+- La respuesta queda en la bitácora.
+
 Si un envío falla, lo intenta de nuevo la hora siguiente. Si la cita se reprograma, se vuelve a recordar para la fecha
 nueva. El botón "Recordar por WhatsApp", para enviarlo a mano, sigue disponible.
 
@@ -22,20 +32,27 @@ teléfonos del equipo haciendo de pacientes.
    - en *Para*, agregar hasta 5 teléfonos del equipo y confirmarlos con el código que llega por WhatsApp.
 3. En *WhatsApp Manager → Plantillas de mensajes*, crear una plantilla:
    - Nombre: `recordatorio_cita` · Categoría: **Utilidad** · Idioma: **Español**.
-   - Cuerpo: `Hola, {{1}}. Le recordamos su cita en las Clínicas Odontológicas de la UAM el {{2}} a las {{3}} en {{4}}. Si no puede asistir, avísele a su estudiante.`
+   - Cuerpo: `Hola, {{1}}. Le recordamos su cita en las Clínicas Odontológicas de la UAM el {{2}} a las {{3}} en {{4}}. ¿Asistirá?`
+   - Botones: tipo **Respuesta rápida**, dos botones en este orden: `Sí, asistiré` y `No podré asistir`.
    - Esperar a que la aprueben; suele tardar minutos.
 4. Crear un token que no venza; el de la página de inicio vence en 24 horas. En *business.facebook.com →
    Configuración del negocio → Usuarios del sistema*:
    - crear uno con rol de administrador;
    - asignarle la app y la cuenta de WhatsApp;
    - generar un token con los permisos `whatsapp_business_messaging` y `whatsapp_business_management`.
-5. Guardar los datos en Fly:
+5. Configurar las respuestas, en *WhatsApp → Configuración* de la app:
+   - URL de devolución de llamada: `https://clinicas-odontologicas-uam.fly.dev/whatsapp`.
+   - Token de verificación: una palabra secreta inventada por ustedes, la misma de `WHATSAPP_VERIFICAR` en el paso 6.
+   - Suscribirse al campo **messages**.
+   - En *Configuración de la app → Básica*, copiar la **Clave secreta de la app**.
+6. Guardar los datos en Fly, antes del paso 5 para que la verificación funcione:
    ```
-   fly secrets set -a clinicas-odontologicas-uam WHATSAPP_TOKEN=<token> WHATSAPP_NUMERO_ID=<id del número> WHATSAPP_PLANTILLA=recordatorio_cita
+   fly secrets set -a clinicas-odontologicas-uam WHATSAPP_TOKEN=<token> WHATSAPP_NUMERO_ID=<id del número> WHATSAPP_PLANTILLA=recordatorio_cita WHATSAPP_VERIFICAR=<palabra secreta> WHATSAPP_SECRETO=<clave secreta de la app>
    ```
-6. Para probar: crear una cita para mañana a un paciente cuyo teléfono sea uno de los 5 registrados. Esperar a la
+7. Para probar: crear una cita para mañana a un paciente cuyo teléfono sea uno de los 5 registrados. Esperar a la
    hora siguiente, o correrlo en el momento:
-   `fly ssh console -a clinicas-odontologicas-uam -C "flask --app prototipo recordar"`.
+   `fly ssh console -a clinicas-odontologicas-uam -C "flask --app prototipo recordar"`. Después tocar uno de los botones
+   en el teléfono y revisar que la cita cambie de estado en Citas.
 
 Con el número de prueba, a un teléfono que no está entre los 5 registrados el envío falla (error 131030). El sistema
 lo deja anotado en el registro de la máquina y sigue con los demás.
@@ -50,6 +67,8 @@ lo deja anotado en el registro de la máquina y sigue con los demás.
   unos **US$0.011 a 0.013 por mensaje entregado**. Por ejemplo, 870 recordatorios al mes son unos US$10 a 12. Las
   tarifas cambian por fechas: confirmar en la tabla oficial,
   https://developers.facebook.com/documentation/business-messaging/whatsapp/pricing.
+  La respuesta de "Gracias…" va dentro de las 24 horas en que escribió el paciente; Meta da 1,000 de esas gratis al
+  mes por número, así que en la práctica no suma costo.
 - **Ley 787:** el consentimiento informado ya autoriza el uso de los datos del paciente para su atención. El
   recordatorio solo lleva nombre, fecha, hora y clínica, sin datos clínicos.
 
