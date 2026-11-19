@@ -18,6 +18,16 @@ El mensaje trae dos botones. Cuando el paciente toca uno, Meta avisa al sistema 
   sigue Programada.
 - La respuesta queda en la bitácora.
 
+## Aviso al agendar o reprogramar
+Cuando el estudiante agenda o reprograma una cita, el paciente con teléfono recibe en el momento la plantilla
+`cita_agendada` (Utilidad, español):
+
+`Hola, {{1}}. Su cita en las Clínicas Odontológicas de la UAM quedó agendada para el {{2}} a las {{3}} en {{4}}. Si necesita cambiarla, responda a este mensaje.`
+
+{{1}} es el primer nombre, {{2}} la fecha, {{3}} la hora y {{4}} la clínica, o "la clínica" si no tiene una
+asignada. Si el paciente responde, le contesta el bot. Si Meta falla, la cita queda guardada igual y la bitácora
+anota "No se pudo avisar por WhatsApp…". Para usar otra plantilla, se configura `WHATSAPP_PLANTILLA_AGENDADA`.
+
 ## El bot: cuando el paciente escribe
 Si el paciente le escribe cualquier cosa al número de la clínica ("hola", "¿a qué hora es mi cita?", un audio),
 el bot le contesta por su nombre con un menú:
