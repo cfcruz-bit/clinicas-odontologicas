@@ -22,7 +22,7 @@ for variable in ("ALMACEN_BUCKET", "FLY_APP_NAME"):
 import prototipo as m  # noqa: E402
 
 base = psycopg.connect(os.environ["DATABASE_URL"], autocommit=True, row_factory=dict_row, prepare_threshold=None)
-base.execute("DROP TABLE IF EXISTS turnos, historias, precios_anteriores, solicitudes, ordenes, recibos, abonos, tratamientos, tarifario, materiales, fotos, dientes, reportes, bitacora,"
+base.execute("DROP TABLE IF EXISTS pedidos_contacto, turnos,historias, precios_anteriores, solicitudes, ordenes, recibos, abonos, tratamientos, tarifario, materiales, fotos, dientes, reportes, bitacora,"
              " citas, trabajo, pacientes, salas, cuentas, invitaciones CASCADE")
 m.crear_tablas()
 
@@ -972,6 +972,61 @@ boton(f"no_asistira:{c_si}")
 caso("Una cita ya confirmada no se cambia con otro botón", estado_de(c_si)["estado"] == "Confirmada")
 caso("La respuesta del paciente queda en la bitácora",
      uno("SELECT 1 FROM bitacora WHERE nombre = 'Sistema' AND accion LIKE 'Rosa Méndez confirmó su cita%%por WhatsApp'"))
+
+# El bot: el paciente escribe y se le contesta con el menú numerado
+preguntas = []
+m.preguntar_whatsapp = lambda telefono, texto, botones: preguntas.append((telefono, texto, botones))
+def escribir(contenido, telefono="50588112233"):
+    """Manda a /whatsapp un mensaje escrito (str) o un toque en un botón del bot (dict con el id del botón)."""
+    mensaje = ({"type": "text", "text": {"body": contenido}} if isinstance(contenido, str) else
+               {"type": "interactive", "interactive": {"type": "button_reply", "button_reply": contenido}})
+    cuerpo = json.dumps({"entry": [{"changes": [{"value": {"messages": [{"from": telefono, **mensaje}]}}]}]}).encode()
+    firma = "sha256=" + hmac.new(b"secreto-de-prueba", cuerpo, hashlib.sha256).hexdigest()
+    respuestas.clear()
+    meta.post("/whatsapp", data=cuerpo, headers={"X-Hub-Signature-256": firma, "Content-Type": "application/json"})
+    return respuestas[-1][1] if respuestas else ""
+base.execute("UPDATE citas SET estado = 'Cancelada' WHERE paciente_id = %s AND estado IN ('Programada', 'Confirmada')",
+             (rosa_id,))
+b1, b2 = nueva_cita(manana, "09:00"), nueva_cita(pasado, "09:10")
+saludo = escribir("Buenas, ¿a qué hora es mi cita?")
+caso("Si el paciente escribe, el bot lo saluda por su nombre y le da el menú (RF12)",
+     "Hola, Rosa" in saludo and "1. Ver mis próximas citas" in saludo and "5. Que mi estudiante me contacte" in saludo)
+caso("A un número que no es de ningún paciente le dice que no está registrado",
+     "no está registrado" in escribir("hola", telefono="50599998888"))
+lista = escribir("1")
+caso("Con 1 le muestra sus próximas citas, con fecha, hora, clínica y estado",
+     f"{m.dmy(manana)} a las 09:00 en la Clínica 1: programada" in lista and f"{m.dmy(pasado)} a las 09:10" in lista)
+caso("Con 2 confirma la próxima cita", "quedó confirmada" in escribir("2") and estado_de(b1)["estado"] == "Confirmada")
+caso("Si ya estaba confirmada, se lo dice sin cambiar nada", "ya está confirmada" in escribir(" 2 "))
+escribir("3")
+caso("Con 3 no cancela todavía: pregunta con botones", estado_de(b1)["estado"] == "Confirmada" and preguntas
+     and preguntas[-1][2] == [(f"cancelar:{b1}", "Sí, cancelarla"), ("menu", "No, mantenerla")])
+caso("«No, mantenerla» vuelve al menú y la cita sigue igual",
+     "1. Ver mis próximas citas" in escribir({"id": "menu", "title": "No, mantenerla"})
+     and estado_de(b1)["estado"] == "Confirmada")
+escribir({"id": f"cancelar:{b1}", "title": "Sí, cancelarla"}, telefono="50599998888")
+caso("El botón de cancelar desde otro teléfono no cambia la cita", estado_de(b1)["estado"] == "Confirmada")
+caso("«Sí, cancelarla» cancela la cita aunque ya estuviera confirmada, con su motivo",
+     "quedó cancelada" in escribir({"id": f"cancelar:{b1}", "title": "Sí, cancelarla"})
+     and estado_de(b1) == {"estado": "Cancelada", "motivo_cancelacion": "El paciente avisó por WhatsApp que no podrá asistir"})
+caso("Con 4 le da la ubicación y el horario", escribir("4") == m.UBICACION)
+caso("Con 5 le avisa al estudiante y le dice quién es",
+     "Gabriel Espinoza" in escribir("5") and cuantos("pedidos_contacto") == 1)
+escribir("5")
+caso("Pedir 5 otra vez no repite el aviso", cuantos("pedidos_contacto") == 1)
+inicio = texto(gabriel.get("/menu"))
+caso("El estudiante ve en Inicio que el paciente pidió que le contacte", "Inicio (1)" in inicio
+     and "pidió" in inicio and "Rosa Méndez" in inicio and 'href="https://wa.me/50588112233"' in inicio)
+pedido = uno("SELECT id FROM pedidos_contacto")["id"]
+grace.post(f"/contactos/{pedido}")
+caso("Otro estudiante no puede marcarlo como atendido", uno("SELECT atendido FROM pedidos_contacto")["atendido"] is None)
+gabriel.post(f"/contactos/{pedido}")
+caso("El estudiante lo marca como contactado y queda en la bitácora",
+     uno("SELECT atendido_por FROM pedidos_contacto")["atendido_por"] == "00000005"
+     and "Inicio (1)" not in texto(gabriel.get("/menu"))
+     and uno("SELECT 1 FROM bitacora WHERE accion = 'Contactó a Rosa Méndez, que lo pidió por WhatsApp'"))
+base.execute("UPDATE citas SET estado = 'Cancelada' WHERE id = %s", (b2,))
+caso("Sin citas próximas se lo dice y le ofrece pedir contacto", "No tiene citas próximas" in escribir("1"))
 for v in ("WHATSAPP_TOKEN", "WHATSAPP_NUMERO_ID", "WHATSAPP_PLANTILLA", "WHATSAPP_VERIFICAR", "WHATSAPP_SECRETO"):
     os.environ.pop(v, None)
 

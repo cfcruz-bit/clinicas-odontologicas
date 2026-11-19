@@ -35,6 +35,17 @@
       {% else %}<span class="tenue">(sin teléfono)</span>{% endif %}</li>{% endfor %}</ul>
   </div>
   {% endif %}
+  {% if contactar %}
+  <div class="mensaje aviso">
+    {{ "1 paciente pidió" if contactar|length == 1 else "%d pacientes pidieron"|format(contactar|length) }}
+    por WhatsApp que le contacte:
+    <ul>{% for k in contactar %}<li><a href="{{ url_for('expediente', pid=k.paciente_id) }}">{{ k.nombre }}</a>
+      <span class="tenue">({{ k.pedido.astimezone(MANAGUA).strftime('%d/%m/%Y %H:%M') }})</span>
+      {% if k.telefono %}<a class="btn chico" href="https://wa.me/505{{ k.telefono }}" target="_blank" rel="noopener">Escribirle</a>{% endif %}
+      <form method="post" action="{{ url_for('contacto_atendido', kid=k.id) }}" class="en-linea">
+        <button class="btn chico">Ya le contacté</button></form></li>{% endfor %}</ul>
+  </div>
+  {% endif %}
   {% if rechazados %}
   <div class="mensaje error">
     El profesor rechazó {{ "a un paciente suyo" if rechazados|length == 1 else "a %d pacientes suyos"|format(rechazados|length) }}:
