@@ -914,6 +914,8 @@ def envio_falso(telefono, variables, cita_id):
     enviados.append((telefono, variables))
     return "wamid.prueba"
 m.enviar_whatsapp = envio_falso
+avisos = []
+m.enviar_aviso_cita = lambda telefono, variables: avisos.append((telefono, variables))
 consola = m.app.test_cli_runner()
 for v in ("WHATSAPP_TOKEN", "WHATSAPP_NUMERO_ID", "WHATSAPP_PLANTILLA"):
     os.environ.pop(v, None)
@@ -943,6 +945,26 @@ caso("El estudiante ve en Inicio que ya se envió el recordatorio",
 gabriel.post("/citas", data={"accion": "reprogramar", "id": c_manana, "fecha": pasado, "hora": "07:50", "sala": ""})
 caso("Al reprogramar la cita, el recordatorio se vuelve a enviar para la fecha nueva",
      uno("SELECT fecha FROM citas WHERE id = %s", c_manana)["fecha"] == pasado and not recordada(c_manana))
+caso("Al reprogramar, al paciente le llega por WhatsApp el aviso con la fecha nueva (RF12)",
+     avisos[-1:] == [("88112233", ["Rosa", m.dmy(pasado), "07:50", "la clínica"])]
+     and uno("SELECT 1 FROM bitacora WHERE accion LIKE 'Aviso por WhatsApp a Rosa Méndez: cita reprogramada%%'"))
+gabriel.post("/citas", data={"paciente_id": rosa_id, "fecha": pasado, "hora": "11:30", "sala": "Clínica 4",
+                             "razon": "Limpieza"})
+caso("Al agendar una cita, al paciente le llega el aviso con fecha, hora y clínica (RF12)",
+     avisos[-1:] == [("88112233", ["Rosa", m.dmy(pasado), "11:30", "Clínica 4"])])
+def aviso_que_falla(telefono, variables):
+    raise OSError("Meta no respondió")
+m.enviar_aviso_cita = aviso_que_falla
+gabriel.post("/citas", data={"paciente_id": rosa_id, "fecha": pasado, "hora": "11:50", "sala": "", "razon": "Control"})
+caso("Si el aviso falla, la cita queda agendada igual y se anota en la bitácora",
+     uno("SELECT 1 FROM citas WHERE paciente_id = %s AND hora = '11:50'", rosa_id)
+     and uno("SELECT 1 FROM bitacora WHERE accion LIKE 'No se pudo avisar por WhatsApp a Rosa Méndez%%'"))
+m.enviar_aviso_cita = lambda telefono, variables: avisos.append((telefono, variables))
+base.execute("UPDATE pacientes SET telefono = '' WHERE id = %s", (rosa_id,))
+antes_avisos = len(avisos)
+gabriel.post("/citas", data={"paciente_id": rosa_id, "fecha": pasado, "hora": "12:10", "sala": "", "razon": "Control"})
+caso("A un paciente sin teléfono no se le intenta avisar", len(avisos) == antes_avisos)
+base.execute("UPDATE pacientes SET telefono = '88112233' WHERE id = %s", (rosa_id,))
 
 # El paciente responde con los botones del recordatorio (Meta llama a /whatsapp)
 import hashlib, hmac, json  # noqa: E401,E402

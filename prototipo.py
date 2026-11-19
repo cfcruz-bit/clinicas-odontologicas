@@ -550,6 +550,31 @@ def enviar_whatsapp(telefono, variables, cita_id):
                                                                                     for v in variables]}]
                                      + botones}})
 
+# RF12: aviso inmediato al paciente cuando el estudiante le agenda o reprograma una cita. Usa la plantilla
+# cita_agendada aprobada en Meta: "Hola, {{1}}. Su cita en las Clinicas Odontologicas de la UAM quedo agendada
+# para el {{2}} a las {{3}} en {{4}}. Si necesita cambiarla, responda a este mensaje."
+PLANTILLA_AGENDADA = os.environ.get("WHATSAPP_PLANTILLA_AGENDADA", "cita_agendada")
+
+def enviar_aviso_cita(telefono, variables):
+    return _a_whatsapp({"messaging_product": "whatsapp", "to": f"505{telefono}", "type": "template",
+                        "template": {"name": PLANTILLA_AGENDADA, "language": {"code": "es"},
+                                     "components": [{"type": "body", "parameters": [{"type": "text", "text": v}
+                                                                                    for v in variables]}]}})
+
+def avisar_cita(p, fecha, hora, sala, que):
+    """Manda el aviso si el paciente tiene telefono y WhatsApp esta configurado. Si Meta falla, la cita ya quedo
+    guardada: solo se anota que el aviso no salio."""
+    if not (p["telefono"] and os.environ.get("WHATSAPP_TOKEN") and os.environ.get("WHATSAPP_NUMERO_ID")):
+        return
+    cuando = f"{dmy(fecha)} a las {hora}"
+    try:
+        enviar_aviso_cita(p["telefono"], [p["nombre"].split()[0], dmy(fecha), hora, sala or "la clínica"])
+        hecho = f"Aviso por WhatsApp a {p['nombre']}: cita {que} para el {cuando}"
+    except Exception as e:  # noqa: BLE001 - la cita no depende del aviso
+        app.logger.warning("No se pudo avisar la cita por WhatsApp: %s", e)
+        hecho = f"No se pudo avisar por WhatsApp a {p['nombre']} de su cita del {cuando}"
+    sql("INSERT INTO bitacora (nombre, rol, accion) VALUES ('Sistema', 'Sistema', %s)", hecho)
+
 def responder_whatsapp(telefono, texto):
     """Respuesta de texto al paciente. Va dentro de las 24 h en que el paciente escribio, sin plantilla."""
     return _a_whatsapp({"messaging_product": "whatsapp", "to": telefono, "type": "text", "text": {"body": texto}})
@@ -1337,6 +1362,7 @@ def citas():
             sql("INSERT INTO citas (paciente_id, fecha, hora, sala, razon) VALUES (%s, %s, %s, %s, %s)",
                 p["id"], f["fecha"], f["hora"], f["sala"], f["razon"])
             anotar(f"Agendó cita de {p['nombre']} el {dmy(f['fecha'])} a las {f['hora']}")
+            avisar_cita(p, f["fecha"], f["hora"], f["sala"], "agendada")
             flash("Cita agendada.", "ok")
         return redirect(url_for("citas"))
     mios = {p["id"]: p for p in mis_pacientes()}
@@ -1363,6 +1389,7 @@ def cambiar_cita(cita, p, accion):
                 " WHERE id = %s",
                 f["fecha"], f["hora"], f["sala"], cita["id"])
             anotar(f"Reprogramó la cita de {p['nombre']} del {cuando} al {dmy(f['fecha'])} a las {f['hora']}")
+            avisar_cita(p, f["fecha"], f["hora"], f["sala"], "reprogramada")
             flash("Cita reprogramada.", "ok")
     elif nuevo not in SIGUIENTE[cita["estado"]]:
         flash("Elija qué pasó con la cita.", "error")
