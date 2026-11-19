@@ -556,7 +556,7 @@ def responder_whatsapp(telefono, texto):
 
 def _a_whatsapp(cuerpo):
     pedido = urllib.request.Request(
-        f"https://graph.facebook.com/v21.0/{os.environ['WHATSAPP_NUMERO_ID']}/messages",
+        f"https://graph.facebook.com/v25.0/{os.environ['WHATSAPP_NUMERO_ID']}/messages",
         data=json.dumps(cuerpo).encode(), method="POST",
         headers={"Authorization": f"Bearer {os.environ['WHATSAPP_TOKEN']}", "Content-Type": "application/json"})
     with urllib.request.urlopen(pedido, timeout=15) as r:
