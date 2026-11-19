@@ -131,9 +131,11 @@ div.diente { cursor: default; }
 .pasos details form { margin-top: 6px; }
 .foto-grande { display: block; max-width: 100%; max-height: 70vh; border: 1px solid var(--borde); background: #f4f5f7; }
 @media (max-width: 760px) {
-  .arcada { grid-template-columns: repeat(8, 1fr); gap: 6px; }
-  .arcada .diente:nth-child(9) { grid-column-start: auto; }
-  .diente span { height: 42px; }
+  /* una sola fila de 16 por arcada, como en la computadora, solo que mas angosta */
+  .arcada { grid-template-columns: repeat(8, minmax(0, 1fr)) 4px repeat(8, minmax(0, 1fr)); gap: 6px 2px; }
+  .odonto { padding-left: 4px; padding-right: 4px; }
+  .diente { font-size: 10px; }
+  .diente span { height: 34px; }
 }
 .leyenda { display: flex; justify-content: center; flex-wrap: wrap; gap: 4px 14px; margin-top: 10px; }
 .leyenda i { display: inline-block; width: 12px; height: 12px; border: 1px solid #5a6068; vertical-align: -2px; margin-right: 4px; }
