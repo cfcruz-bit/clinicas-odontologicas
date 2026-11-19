@@ -944,7 +944,7 @@ def todas_las_salas():
 
 @app.before_request
 def exigir_sesion():
-    if request.endpoint not in ("entrar", "registro", "static", "whatsapp_respuestas") and quien() is None:
+    if request.endpoint not in ("entrar", "registro", "static", "whatsapp_respuestas", "privacidad") and quien() is None:
         return redirect(url_for("entrar"))
 
 
@@ -2272,6 +2272,12 @@ def expediente_pdf(pid):
     hoja.save()
     return Response(archivo.getvalue(), mimetype="application/pdf",
                     headers={"Content-Disposition": f"attachment; filename=expediente_{p['cedula']}.pdf"})
+
+
+@app.route("/privacidad")
+def privacidad():
+    """Politica de privacidad publica (Ley 787). Meta la pide para publicar la app de WhatsApp."""
+    return render_template("privacidad.html")
 
 
 @app.route("/salir")

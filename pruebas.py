@@ -52,6 +52,8 @@ grace, gabriel, profe, admin = cliente("00000002"), cliente("00000005"), cliente
 print("Clínicas Odontológicas - pruebas\n")
 caso("Sin sesion la pagina de pacientes manda a la entrada",
      m.app.test_client().get("/pacientes").headers["Location"].endswith("/"))
+caso("La política de privacidad se ve sin entrar (la pide Meta para WhatsApp)",
+     "Política de privacidad" in texto(m.app.test_client().get("/privacidad")))
 caso("La clave se guarda cifrada, no en texto plano", uno("SELECT clave FROM cuentas LIMIT 1")["clave"] != "uam2026")
 caso("Con una clave equivocada no se entra",
      m.app.test_client().post("/", data={"accion": "entrar", "cif": "00000002", "clave": "otra"}).status_code == 200)
