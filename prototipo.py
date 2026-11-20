@@ -563,17 +563,23 @@ def enviar_aviso_cita(telefono, variables):
 
 def avisar_cita(p, fecha, hora, sala, que):
     """Manda el aviso si el paciente tiene telefono y WhatsApp esta configurado. Si Meta falla, la cita ya quedo
-    guardada: solo se anota que el aviso no salio."""
-    if not (p["telefono"] and os.environ.get("WHATSAPP_TOKEN") and os.environ.get("WHATSAPP_NUMERO_ID")):
-        return
+    guardada: solo se anota que el aviso no salio. Devuelve la frase que se le agrega al mensaje del estudiante,
+    para que sepa si el paciente se entero o si tiene que avisarle el."""
+    if not p["telefono"]:
+        return " El paciente no tiene teléfono: avísele usted."
+    if not (os.environ.get("WHATSAPP_TOKEN") and os.environ.get("WHATSAPP_NUMERO_ID")):
+        return ""
     cuando = f"{dmy(fecha)} a las {hora}"
     try:
         enviar_aviso_cita(p["telefono"], [p["nombre"].split()[0], dmy(fecha), hora, sala or "la clínica"])
         hecho = f"Aviso por WhatsApp a {p['nombre']}: cita {que} para el {cuando}"
+        frase = " Se le avisó al paciente por WhatsApp."
     except Exception as e:  # noqa: BLE001 - la cita no depende del aviso
         app.logger.warning("No se pudo avisar la cita por WhatsApp: %s", e)
         hecho = f"No se pudo avisar por WhatsApp a {p['nombre']} de su cita del {cuando}"
+        frase = " No se pudo avisar al paciente por WhatsApp: avísele usted."
     sql("INSERT INTO bitacora (nombre, rol, accion) VALUES ('Sistema', 'Sistema', %s)", hecho)
+    return frase
 
 def responder_whatsapp(telefono, texto):
     """Respuesta de texto al paciente. Va dentro de las 24 h en que el paciente escribio, sin plantilla."""
@@ -1126,7 +1132,7 @@ def razon(pid):
                 sql("INSERT INTO citas (paciente_id, fecha, hora, sala, razon) VALUES (%s, %s, %s, %s, %s)",
                     pid, fecha, hora, sala, request.form.get("razon_cita", "").strip() or razon)
                 anotar(f"Agendó cita de {p['nombre']} el {dmy(fecha)} a las {hora}")
-                flash("Razón guardada y cita agendada.", "ok")
+                flash("Razón guardada y cita agendada." + avisar_cita(p, fecha, hora, sala, "agendada"), "ok")
             else:
                 flash("Razón de la consulta guardada.", "ok")
             return redirect(url_for("expediente", pid=pid))
@@ -1362,8 +1368,7 @@ def citas():
             sql("INSERT INTO citas (paciente_id, fecha, hora, sala, razon) VALUES (%s, %s, %s, %s, %s)",
                 p["id"], f["fecha"], f["hora"], f["sala"], f["razon"])
             anotar(f"Agendó cita de {p['nombre']} el {dmy(f['fecha'])} a las {f['hora']}")
-            avisar_cita(p, f["fecha"], f["hora"], f["sala"], "agendada")
-            flash("Cita agendada.", "ok")
+            flash("Cita agendada." + avisar_cita(p, f["fecha"], f["hora"], f["sala"], "agendada"), "ok")
         return redirect(url_for("citas"))
     mios = {p["id"]: p for p in mis_pacientes()}
     return render_template("citas.html", **comun(), hoy=hoy(), salas=todas_las_salas(), pacientes=list(mios.values()),
@@ -1389,8 +1394,7 @@ def cambiar_cita(cita, p, accion):
                 " WHERE id = %s",
                 f["fecha"], f["hora"], f["sala"], cita["id"])
             anotar(f"Reprogramó la cita de {p['nombre']} del {cuando} al {dmy(f['fecha'])} a las {f['hora']}")
-            avisar_cita(p, f["fecha"], f["hora"], f["sala"], "reprogramada")
-            flash("Cita reprogramada.", "ok")
+            flash("Cita reprogramada." + avisar_cita(p, f["fecha"], f["hora"], f["sala"], "reprogramada"), "ok")
     elif nuevo not in SIGUIENTE[cita["estado"]]:
         flash("Elija qué pasó con la cita.", "error")
     elif nuevo in ("Confirmada", "Cancelada") and cita["fecha"] < hoy():

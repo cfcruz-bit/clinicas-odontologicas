@@ -948,17 +948,26 @@ caso("Al reprogramar la cita, el recordatorio se vuelve a enviar para la fecha n
 caso("Al reprogramar, al paciente le llega por WhatsApp el aviso con la fecha nueva (RF12)",
      avisos[-1:] == [("88112233", ["Rosa", m.dmy(pasado), "07:50", "la clínica"])]
      and uno("SELECT 1 FROM bitacora WHERE accion LIKE 'Aviso por WhatsApp a Rosa Méndez: cita reprogramada%%'"))
-gabriel.post("/citas", data={"paciente_id": rosa_id, "fecha": pasado, "hora": "11:30", "sala": "Clínica 4",
-                             "razon": "Limpieza"})
+agendada = gabriel.post("/citas", data={"paciente_id": rosa_id, "fecha": pasado, "hora": "11:30", "sala": "Clínica 4",
+                                         "razon": "Limpieza"}, follow_redirects=True)
 caso("Al agendar una cita, al paciente le llega el aviso con fecha, hora y clínica (RF12)",
      avisos[-1:] == [("88112233", ["Rosa", m.dmy(pasado), "11:30", "Clínica 4"])])
+caso("El estudiante ve que se le avisó al paciente por WhatsApp",
+     "Se le avisó al paciente por WhatsApp" in texto(agendada))
+gabriel.post(f"/pacientes/{rosa_id}/razon", data={"razon": "Control", "fecha": pasado, "hora": "12:30",
+                                                  "sala": "Clínica 5"})
+caso("Al agendar la primera cita junto con la razón, al paciente también le llega el aviso (RF12)",
+     avisos[-1:] == [("88112233", ["Rosa", m.dmy(pasado), "12:30", "Clínica 5"])])
 def aviso_que_falla(telefono, variables):
     raise OSError("Meta no respondió")
 m.enviar_aviso_cita = aviso_que_falla
-gabriel.post("/citas", data={"paciente_id": rosa_id, "fecha": pasado, "hora": "11:50", "sala": "", "razon": "Control"})
+fallida = gabriel.post("/citas", data={"paciente_id": rosa_id, "fecha": pasado, "hora": "11:50", "sala": "",
+                                        "razon": "Control"}, follow_redirects=True)
 caso("Si el aviso falla, la cita queda agendada igual y se anota en la bitácora",
      uno("SELECT 1 FROM citas WHERE paciente_id = %s AND hora = '11:50'", rosa_id)
      and uno("SELECT 1 FROM bitacora WHERE accion LIKE 'No se pudo avisar por WhatsApp a Rosa Méndez%%'"))
+caso("Si el aviso falla, el estudiante sabe que tiene que avisarle él",
+     "No se pudo avisar al paciente por WhatsApp" in texto(fallida))
 m.enviar_aviso_cita = lambda telefono, variables: avisos.append((telefono, variables))
 base.execute("UPDATE pacientes SET telefono = '' WHERE id = %s", (rosa_id,))
 antes_avisos = len(avisos)
