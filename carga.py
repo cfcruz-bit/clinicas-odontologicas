@@ -39,17 +39,23 @@ clave = generate_password_hash(CLAVE)
 profesores = [f"9{n:07d}" for n in range(10)]
 estudiantes = [f"8{n:07d}" for n in range(40)]
 with psycopg.connect(URL_BD, autocommit=True) as bd:
+    clases = []  # (id de la clase, id de su profesor): cada profesor tiene una clase con 4 estudiantes
     for i, cif in enumerate(profesores):
-        bd.execute("INSERT INTO cuentas (cif, nombre, rol, clave) VALUES (%s, %s, 'profesor', %s)",
-                   (cif, f"Profesor {i}", clave))
+        pid = bd.execute("INSERT INTO cuentas (cif, nombre, correo, rol, clave_hash) VALUES (%s, %s, %s, 'profesor', %s)"
+                         " RETURNING id", (cif, f"Profesor {i}", f"{cif}@carga.uam", clave)).fetchone()[0]
+        clases.append((bd.execute("INSERT INTO clases (nombre, periodo, profesor_id) VALUES (%s, '2026-II', %s) RETURNING id",
+                                  (f"Clase {i}", pid)).fetchone()[0], pid))
     for i, cif in enumerate(estudiantes):
-        bd.execute("INSERT INTO cuentas (cif, nombre, rol, clave, profesor) VALUES (%s, %s, 'estudiante', %s, %s)",
-                   (cif, f"Estudiante {i}", clave, profesores[i % 10]))
-        for j in range(5):  # 200 pacientes en total
-            bd.execute("INSERT INTO pacientes (nombre, cedula, estudiante, aprobado, expediente)"
-                       " VALUES (%s, %s, %s, true, %s)",
-                       (f"Paciente {i}-{j}", f"001-0101{i:02d}-00{j:02d}A", cif, f"EXP-{i:03d}{j}"))
-    mios = {cif: [r[0] for r in bd.execute("SELECT id FROM pacientes WHERE estudiante = %s", (cif,))]
+        clase, profesor = clases[i % 10]
+        eid = bd.execute("INSERT INTO cuentas (cif, nombre, correo, anio, rol, clave_hash, clase_id)"
+                         " VALUES (%s, %s, %s, 3, 'estudiante', %s, %s) RETURNING id",
+                         (cif, f"Estudiante {i}", f"{cif}@carga.uam", clave, clase)).fetchone()[0]
+        for j in range(5):  # 200 pacientes en total, ya aprobados por su profesor
+            bd.execute("INSERT INTO pacientes (nombre, cedula, estudiante_id, aprobado_por_id, aprobado_en, expediente)"
+                       " VALUES (%s, %s, %s, %s, now(), %s)",
+                       (f"Paciente {i}-{j}", f"001-0101{i:02d}-00{j:02d}A", eid, profesor, f"EXP-{i:03d}{j}"))
+    mios = {cif: [r[0] for r in bd.execute("SELECT p.id FROM pacientes p JOIN cuentas c ON c.id = p.estudiante_id"
+                                            " WHERE c.cif = %s", (cif,))]
             for cif in estudiantes}
 
 servidor = None if "CARGA_SITIO" in os.environ else subprocess.Popen(

@@ -4,20 +4,51 @@
   <p class="sin-imprimir"><a href="{{ url_for('tratamientos', pid=p.id) }}">&larr; Volver a tratamientos y cobros</a></p>
   <h2>Orden de cobro Nº {{ o.id }}</h2>
   <p>Paciente: <b>{{ p.nombre }}</b> · Cédula {{ p.cedula }} · Expediente {{ p.expediente or '—' }}<br>
-     Generada el {{ o.creada_texto }} por {{ nombre_de(o.creada_por) }}</p>
+     Generada el {{ o.creada_texto }} por {{ creo }}</p>
   <div class="tabla">
     <table>
       <thead><tr><th>Código</th><th>Procedimiento</th><th>Diente</th><th class="num">Precio</th></tr></thead>
       <tbody>
-        {% for l in lineas %}<tr><td>{{ l.codigo or '—' }}</td><td>{{ l.nombre }}</td><td>{{ l.diente or '—' }}</td><td class="num">{{ l.precio|cordobas }}</td></tr>{% endfor %}
+        {% for l in lineas %}<tr><td>{{ l.codigo }}</td><td>{{ l.nombre }}</td><td>{{ l.diente or '—' }}{{ ' · ' ~ l.superficie if l.superficie }}</td>
+          <td class="num">{{ l.precio|cordobas }}{% if l.descuento_monto %}<div class="tenue">descuento {{ l.descuento_monto|cordobas }}</div>{% endif %}</td></tr>{% endfor %}
         <tr><th colspan="3">Total a pagar</th><td class="num"><b>{{ o.total|cordobas }}</b></td></tr>
+        {% if o.pagado %}<tr><th colspan="3">Pagado</th><td class="num">{{ o.pagado|cordobas }}</td></tr>
+        <tr><th colspan="3">Saldo</th><td class="num"><b>{{ o.saldo|cordobas }}</b></td></tr>{% endif %}
       </tbody>
     </table>
   </div>
-  {% if o.pagada %}
-  <p class="verde"><b>Pagada</b> el {{ o.pagada_texto }} ({{ nombre_de(o.cobrada_por) }}).</p>
+  {% if recibos %}
+  <h3>Pagos</h3>
+  <div class="tabla">
+    <table>
+      <thead><tr><th>Recibo</th><th>Fecha</th><th>Forma de pago</th><th class="num">Monto</th><th>Firma del docente</th></tr></thead>
+      <tbody>
+        {% for r in recibos %}<tr class="{{ 'tenue' if r.anulado_en }}"><td>{{ r.numero }}{{ ' (anulado)' if r.anulado_en }}</td><td class="fecha">{{ r.cuando }}</td>
+          <td>{{ metodos[r.metodo_pago] }}{{ ' · ' ~ r.referencia if r.referencia }}</td><td class="num">{{ r.monto|cordobas }}</td>
+          <td>{{ nombre_de(r.firmado_por_id) if r.firmado_por_id else '—' }}</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+  {% if o.estado == "anulada" %}
+  <p class="tenue"><b>Anulada.</b> Sus tratamientos pueden ir en otra orden.</p>
+  {% elif o.estado == "pagada" %}
+  <p class="verde"><b>Pagada.</b></p>
   {% else %}
-  <p class="amarillo"><b>Pendiente de pago.</b> Preséntela en caja.</p>
-  {% if es_rol == "admin" %}<form method="post" class="sin-imprimir"><button class="btn">Marcar como pagada y registrar el abono</button></form>{% endif %}
+  <p class="amarillo"><b>{{ "Pendiente de pago." if o.estado == "pendiente" else "Con abonos: falta " ~ (o.saldo|cordobas) ~ "." }}</b> Preséntela en caja.</p>
+  {% if es_rol == "facultad" %}
+  <form method="post" class="sin-imprimir">
+    <fieldset>
+      <legend>Registrar un pago</legend>
+      <div class="campo"><span>Nº de recibo: *</span><input name="numero" required maxlength="40"></div>
+      <div class="campo"><span>Monto</span><input name="monto" inputmode="decimal" placeholder="{{ o.saldo }} (todo el saldo)"></div>
+      <div class="campo"><span>Forma de pago</span><select name="metodo">{% for v, t in metodos.items() %}<option value="{{ v }}">{{ t }}</option>{% endfor %}</select></div>
+      <div class="campo"><span>Referencia</span><input name="referencia" placeholder="Nº de transferencia o voucher (si no es efectivo)"></div>
+      <div class="acciones"><button class="btn">Registrar el pago</button></div>
+    </fieldset>
+  </form>
+  {% if not o.pagado %}<form method="post" class="sin-imprimir"><input type="hidden" name="accion" value="anular">
+    <button class="btn peligro chico">Anular la orden</button></form>{% endif %}
+  {% endif %}
   {% endif %}
 {% endblock %}

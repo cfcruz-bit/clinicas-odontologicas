@@ -1,13 +1,26 @@
 {% extends "entrar.html" %}
-{% block titulo %}Crear mi cuenta{% endblock %}
+{% block titulo %}Entrar a la clase{% endblock %}
 {% block formulario %}
-  <h1>Crear mi cuenta</h1>
-  {% if not grupo or grupo.estado != "Abierto" %}
-  <p class="aviso">Este código de registro ya no está disponible{{ {"Cerrado": ": la Facultad cerró el registro", "Vencido": ": ya venció",
-     "Lleno": ": el grupo ya está completo"}[grupo.estado] if grupo }}. Pídale a la Facultad un código nuevo.</p>
-  <p class="nota"><a href="{{ url_for('entrar') }}">Ya tengo cuenta: iniciar sesión</a></p>
+  {% if not invitacion or invitacion.estado != "Disponible" %}
+  <h1>Código no disponible</h1>
+  <p class="aviso">Este código ya no sirve{{ {"Usado": ": ya lo usó otro estudiante (cada código sirve una sola vez)", "Vencido": ": ya venció"}[invitacion.estado] if invitacion }}.
+     Pídale a su profesor un código nuevo.</p>
+  <p class="nota"><a href="{{ url_for('entrar') }}">Iniciar sesión</a></p>
+  {% elif yo %}
+  <h1>Entrar a la clase</h1>
+  {% if yo[2] == "estudiante" %}
+  <p class="aviso">Clase <b>{{ k.nombre }}</b> ({{ k.periodo }}) con {{ k.profesor }}. Si ya estaba en otra clase, pasa a esta.</p>
+  <input type="hidden" name="accion" value="unirse">
+  <button>Entrar a la clase</button>
   {% else %}
-  <p class="aviso">Grupo <b>{{ grupo.nombre }}</b>. Escriba sus datos y cree la contraseña con la que va a entrar.</p>
+  <p class="aviso">Solo los estudiantes entran a una clase con un código.</p>
+  {% endif %}
+  <p class="nota"><a href="{{ url_for('menu') }}">Volver al inicio</a></p>
+  {% else %}
+  <h1>Entrar a la clase</h1>
+  <p class="aviso">Clase <b>{{ k.nombre }}</b> ({{ k.periodo }}) con {{ k.profesor }}.</p>
+  <button name="accion" value="entrar" formnovalidate>Ya tengo cuenta: iniciar sesión</button>
+  <p class="nota">¿Es su primera vez? Cree su cuenta aquí abajo con sus datos y la contraseña con la que va a entrar.</p>
 
   <label>CIF
     <input name="cif" value="{{ cif }}" required maxlength="{{ cif_maximo }}" autocomplete="username" autocapitalize="none">
@@ -40,8 +53,7 @@
   </label>
   {% if errores.clave2 %}<p class="error">{{ errores.clave2 }}</p>{% endif %}
 
-  <button>Crear mi cuenta</button>
-  <p class="nota">Nadie más puede ver su contraseña. Si la olvida, la Facultad le pone una nueva.<br>
-    <a href="{{ url_for('entrar') }}">Ya tengo cuenta: iniciar sesión</a></p>
+  <button name="accion" value="crear">Crear mi cuenta y entrar a la clase</button>
+  <p class="nota">Nadie más puede ver su contraseña. Si la olvida, la Facultad le pone una nueva.</p>
   {% endif %}
 {% endblock %}

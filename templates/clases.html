@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block titulo %}Clases - Clínicas Odontológicas{% endblock %}
+{% block contenido %}
+  <h2>{{ "Mis clases" if es_rol == "profesor" else "Clases" }}</h2>
+  <p class="tenue">Cada estudiante está en una clase a la vez: entra con un código QR que le da su profesor. El profesor de
+     esa clase aprueba sus pacientes, sus citas y sus tratamientos.</p>
+  <div class="tabla">
+    <table>
+      <thead><tr><th>Clase</th><th>Periodo</th>{% if es_rol == "facultad" %}<th>Profesor</th>{% endif %}<th class="num">Estudiantes</th><th></th></tr></thead>
+      <tbody>
+        {% for k in clases %}
+        <tr><td>{{ k.nombre }}</td><td>{{ k.periodo }}</td>{% if es_rol == "facultad" %}<td>{{ k.profesor }}</td>{% endif %}
+          <td class="num">{{ k.estudiantes }}</td>
+          <td class="acciones"><a class="btn chico" href="{{ url_for('clase', kid=k.id) }}">{{ "Estudiantes y códigos QR" if es_rol == "profesor" else "Ver" }}</a></td></tr>
+        {% else %}
+        <tr><td class="vacio" colspan="5"><b>Todavía no hay clases</b>{{ "Cree la primera con el formulario de abajo." if es_rol == "profesor" else "Las crea cada profesor desde su cuenta." }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if es_rol == "profesor" %}
+  <form method="post">
+    <fieldset>
+      <legend>Crear una clase</legend>
+      <div class="campo"><span>Nombre: *</span><input name="nombre" required maxlength="{{ nombre_maximo }}" placeholder="Ej.: Operatoria II, grupo A"></div>
+      <div class="campo"><span>Periodo: *</span><input name="periodo" required pattern="[0-9]{4}-(I|II|III)" value="{{ periodo }}" placeholder="2026-II"></div>
+      <div class="acciones"><button class="btn">Crear la clase</button></div>
+    </fieldset>
+  </form>
+  {% endif %}
+{% endblock %}

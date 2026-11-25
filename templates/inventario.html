@@ -2,14 +2,14 @@
 {% block titulo %}Inventario - Clínicas Odontológicas{% endblock %}
 {% block contenido %}
   <h2>Solicitudes de los estudiantes</h2>
-  {% set pendientes = solicitudes|selectattr('estado', 'equalto', 'Pendiente')|list %}
+  {% set pendientes = solicitudes|selectattr('estado', 'equalto', 'pendiente')|list %}
   {% if pendientes %}
   <div class="tabla">
     <table>
       <thead><tr><th>Pedida</th><th>Estudiante</th><th>Material</th><th class="num">Pide</th><th class="num">Hay</th><th>Para la cita del</th><th></th></tr></thead>
       <tbody>
         {% for s in pendientes %}
-        <tr><td class="fecha">{{ s.pedida }}</td><td>{{ nombre_de(s.estudiante) }}</td><td>{{ s.material }}</td>
+        <tr><td class="fecha">{{ s.pedida }}</td><td>{{ nombre_de(s.estudiante_id) }}</td><td>{{ s.material }}</td>
           <td class="num">{{ s.cantidad }} {{ s.unidad }}</td><td class="num {{ 'rojo' if s.hay < s.cantidad }}">{{ s.hay }}</td>
           <td class="fecha">{{ s.para|dmy }}</td>
           <td class="acciones">
@@ -29,8 +29,9 @@
   {% endif %}
 
   <h2>Inventario de materiales</h2>
-  <p class="tenue">Cuando un material llega a su mínimo, sale primero en la lista y la Facultad recibe el aviso en Inicio.
-     Cada entrada y salida queda en la bitácora.</p>
+  <p class="tenue">La cantidad sale de las entradas, salidas y ajustes, que no se editan ni se borran: un error se corrige
+     con un ajuste (negativo si faltan). Cuando un material queda por debajo de su mínimo, sale primero en la lista y la
+     Facultad recibe el aviso en Inicio.</p>
   <div class="tabla">
     <table>
       <thead><tr><th>Material</th><th class="num">Hay</th><th>Unidad</th><th class="num">Mínimo</th><th>Estado</th><th></th></tr></thead>
@@ -42,9 +43,10 @@
           <td class="acciones">
             <form method="post" class="en-linea">
               <input type="hidden" name="id" value="{{ m.id }}">
-              <input type="number" name="cantidad" min="1" step="1" value="1" aria-label="Cuántos de {{ m.nombre }}" style="width: 5em">
+              <input type="number" name="cantidad" step="1" value="1" aria-label="Cuántos de {{ m.nombre }}" style="width: 5em">
               <button class="btn chico" name="accion" value="entrada">Entrada</button>
               <button class="btn chico" name="accion" value="salida">Salida</button>
+              <button class="btn chico" name="accion" value="ajuste">Ajuste</button>
             </form>
           </td>
         </tr>
@@ -64,8 +66,24 @@
       <div class="campo"><span>Cuántos hay: *</span><input type="number" name="cantidad" min="0" step="1" value="0" required></div>
       <div class="campo"><span>Avisar con: *</span><input type="number" name="minimo" min="0" step="1" value="0" required
         aria-describedby="ayuda-minimo"></div>
-      <p class="tenue" id="ayuda-minimo">Cuando queden esa cantidad o menos, se avisa que se está acabando.</p>
+      <p class="tenue" id="ayuda-minimo">Cuando queden menos de esa cantidad, se avisa que se está acabando.</p>
       <div class="acciones"><button class="btn">Agregar</button></div>
     </fieldset>
   </form>
+
+  <h2>Últimos movimientos</h2>
+  <div class="tabla">
+    <table>
+      <thead><tr><th>Fecha y hora</th><th>Material</th><th>Movimiento</th><th class="num">Cantidad</th><th>Responsable</th></tr></thead>
+      <tbody>
+        {% for v in movimientos %}
+        <tr><td class="fecha">{{ v.cuando }}</td><td>{{ v.nombre }}</td>
+          <td>{{ tipos[v.tipo] }}{{ ' (solicitud Nº ' ~ v.solicitud_id ~ ')' if v.solicitud_id }}</td>
+          <td class="num">{{ v.cantidad }} {{ v.unidad }}</td><td>{{ nombre_de(v.responsable_id) }}</td></tr>
+        {% else %}
+        <tr><td class="vacio" colspan="5"><b>Todavía no hay movimientos</b>Aparecen aquí las entradas, salidas y ajustes.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 {% endblock %}

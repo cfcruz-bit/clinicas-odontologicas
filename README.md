@@ -21,11 +21,12 @@ los cobros y los materiales. Funciona en computadora, tableta y celular, sin ins
 
 | Para el estudiante | Para el profesor | Para la Facultad |
 |---|---|---|
-| Registra pacientes y llena la historia clínica | Aprueba o rechaza pacientes con observaciones | Crea y administra las cuentas, también por grupo con QR |
-| Toma el consentimiento firmado en la tableta | Revisa y aprueba los odontogramas | Asigna los turnos clínicos |
-| Llena el odontograma con foto de evidencia | Firma la hoja de control de recibos | Lleva el plano de las 50 clínicas y sus fallas |
-| Agenda citas sin choques de clínica ni de horario | Ve solo a los pacientes de sus estudiantes | Maneja el tarifario, las órdenes de cobro y el inventario |
-| Envía recordatorios por WhatsApp | Sigue el plan de tratamiento y el alta | Consulta la bitácora de todo lo que pasa en el sistema |
+| Entra a la clase de su profesor con un código QR | Crea sus clases y los códigos QR de sus estudiantes | Crea y administra las cuentas |
+| Registra pacientes y llena la historia clínica | Aprueba o rechaza pacientes con observaciones | Asigna los turnos clínicos |
+| Toma el consentimiento firmado en la tableta | Aprueba las citas y los tratamientos de sus estudiantes | Lleva el plano de las 50 clínicas y sus fallas |
+| Llena el odontograma con fotos y radiografías | Revisa y aprueba los odontogramas | Maneja el tarifario, los pagos y el inventario |
+| Agenda citas sin choques de clínica ni de horario | Genera órdenes de cobro y firma los recibos | Consulta la bitácora de todo lo que pasa en el sistema |
+| Envía recordatorios por WhatsApp | Ve solo a los estudiantes de sus clases | Ve todo lo que pasa en el sistema |
 
 Además: expediente en PDF, alertas por alergias y presión alta, radiografías, plan de tratamiento por fases,
 indicaciones después de la atención y bot de WhatsApp para que el paciente confirme su cita.
@@ -56,7 +57,36 @@ indicaciones después de la atención y bot de WhatsApp para que el paciente con
 | PDF | ReportLab |
 | Recordatorios | API de WhatsApp Business (Meta) |
 
-El diagrama de la base de datos está en [`diagrama-entidad-relacion.png`](diagrama-entidad-relacion.png).
+## Modelo de datos
+
+La base sigue el **modelo de datos v14**: 20 tablas, todas las relaciones 1:N salvo dos 1:1, sin muchos a muchos.
+El diagrama está en [`diagrama-entidad-relacion.png`](diagrama-entidad-relacion.png) (fuente:
+[`diagrama-entidad-relacion.drawio`](diagrama-entidad-relacion.drawio)) y el SQL en [`esquema.sql`](esquema.sql).
+
+Lo principal:
+
+- Las cuentas tienen un `id` fijo; el CIF es único pero se puede corregir. Los roles son estudiante, profesor y facultad.
+- Cada estudiante está en una clase a la vez y entra con un código QR de un solo uso que genera su profesor. El
+  profesor solo aprueba a los estudiantes de sus clases.
+- Las citas tienen inicio y fin, clínica obligatoria y horario de lunes a sábado de 07:00 a 16:00. Las que agenda el
+  estudiante esperan la aprobación de su profesor; las que agenda el profesor ya van aprobadas.
+- Un tratamiento realizado apunta a la cita en que se hizo: de ella salen quién lo hizo y cuándo.
+- Los pagos son recibos de una orden de cobro. El total, lo pagado y el saldo los calcula la vista `resumen_ordenes`.
+- La cantidad de cada material sale de sus movimientos de inventario (vista `existencias`), que no se editan.
+
+[`esquema.sql`](esquema.sql) es el modelo v14 con tres ajustes marcados `[ajuste]`:
+
+1. Una llave diferible entre cuentas y clases, para poder cargar respaldos.
+2. Las reglas de rol se revisan al crear la fila o cuando cambia la persona, y no al cargar un respaldo.
+3. La aprobación de una cita se revisa cuando se da.
+
+Al final tiene las **extensiones**, columnas y tablas que no están en el diagrama y que conservan funciones que el
+sistema ya tenía: el bloqueo de la cuenta, el consentimiento firmado, la razón de la consulta, el rechazo con su
+observación, la revisión del odontograma, el alta y la eliminación del paciente, el resto de la historia clínica,
+los recordatorios por WhatsApp, la foto de los recibos, los traspasos y los pedidos de contacto.
+
+Una base del modelo anterior se pasa al v14 con [`migrar_v14.py`](migrar_v14.py), siempre en una rama nueva de Neon.
+Mientras la base no esté migrada, el sistema no arranca.
 
 ## Correrlo en una computadora
 
@@ -86,7 +116,8 @@ fotos se guardan en la carpeta `archivos/`.
 
 | Comando | Qué hace |
 |---|---|
-| `flask --app prototipo crear-tablas` | Crea o actualiza las tablas (se corre solo en cada publicación) |
+| `flask --app prototipo crear-tablas` | En una base vacía crea las tablas del modelo v14 (se corre solo en cada publicación) |
+| `MIGRAR_DATABASE_URL=<rama> python migrar_v14.py` | Pasa una base del modelo anterior al v14 (una sola vez, en una rama nueva) |
 | `flask --app prototipo respaldar` | Guarda un respaldo de la base en el almacén |
 | `flask --app prototipo restaurar <archivo>` | Restaura un respaldo en una base vacía |
 | `flask --app prototipo recordar` | Envía los recordatorios de las citas de mañana |

@@ -39,75 +39,93 @@ from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 from werkzeug.security import check_password_hash as _revisar, generate_password_hash as _cifrar
 
-# Cuentas iniciales: dos por cada tipo y una de la Facultad. Se crean una sola vez en la base de datos
-CUENTAS_INICIALES = {"00000001": ("Dra. Grace Mendoza", "profesor"),
-                     "00000004": ("Dr. Gustavo Rivas", "profesor"),
-                     "00000002": ("Grace Alvarado", "estudiante"),
-                     "00000005": ("Gabriel Espinoza", "estudiante"),
-                     "00000007": ("Gina Saavedra", "admin")}
+# Cuentas iniciales: dos por cada tipo y una de la Facultad. Se crean una sola vez en la base de datos.
+# El modelo pide correo y, al estudiante, su año de la carrera; la Facultad los corrige en la ficha de la cuenta
+CUENTAS_INICIALES = {"00000001": ("Dra. Grace Mendoza", "profesor", None),
+                     "00000004": ("Dr. Gustavo Rivas", "profesor", None),
+                     "00000002": ("Grace Alvarado", "estudiante", 1),
+                     "00000005": ("Gabriel Espinoza", "estudiante", 1),
+                     "00000007": ("Gina Saavedra", "facultad", None)}
 CLAVE_INICIAL = os.environ.get("CLAVE_INICIAL", "uam2026")  # se guarda cifrada, nunca en texto plano
-# Dirección pública del sistema: es la que va en el QR de los grupos, para que abra desde el celular del
-# estudiante aunque la Facultad tenga el sistema abierto en otra dirección (por ejemplo, localhost)
+CORREO_PENDIENTE = "@correo-pendiente.uam"  # correo provisional de una cuenta que todavía no tiene el suyo
+# Dirección pública del sistema: es la que va en el QR de las clases, para que abra desde el celular del
+# estudiante aunque el profesor tenga el sistema abierto en otra dirección (por ejemplo, localhost)
 SITIO = os.environ.get("SITIO", "https://clinicas-odontologicas-uam.fly.dev").rstrip("/")
 # Enlace del formulario de Google donde estudiantes y profesores dejan sus observaciones para mejorar el
 # sistema. Si se deja vacío (o no es una dirección https), la pestaña Comentarios no aparece
 COMENTARIOS = os.environ.get("COMENTARIOS", "https://docs.google.com/forms/d/e/1FAIpQLSe1BhT__8TPsUv_Iowl4nalISPvR-"
                                             "0GqE3LUA0LYqvooZVDjw/viewform").strip()
 COMENTARIOS = COMENTARIOS if COMENTARIOS.startswith("https://") else ""
-ROLES = {"profesor": "Profesor", "estudiante": "Estudiante", "admin": "Facultad"}
+ROLES = {"profesor": "Profesor", "estudiante": "Estudiante", "facultad": "Facultad"}
 # Pestanas de cada rol: (nombre, endpoint). La bitacora la revisan el profesor y la Facultad
 MENUS = {"estudiante": [("Inicio", "menu"), ("Mis pacientes", "pacientes"), ("Mis citas", "citas"), ("Clínicas", "salas"),
                         ("Materiales", "materiales"), ("Hoja de control", "control"), ("Comentarios", "comentarios")],
-         # El profesor solo revisa: no registra pacientes, citas ni tratamientos
-         "profesor": [("Inicio", "menu"), ("Pacientes", "pacientes"), ("Citas", "citas"), ("Clínicas", "salas"),
-                      ("Hoja de control", "control"), ("Bitácora", "bitacora"), ("Comentarios", "comentarios")],
-         "admin": [("Inicio", "menu"), ("Pacientes", "pacientes"), ("Citas", "citas"), ("Clínicas", "salas"),
-                   ("Tarifario", "tarifario"), ("Inventario", "inventario"), ("Cuentas", "administrar_cuentas"),
-                   ("Hoja de control", "control"), ("Bitácora", "bitacora")]}
-QUE_HACE = {"estudiante": ["Registrar a sus pacientes y la razón por la que vienen",
-                           "Agendar sus citas con la razón de cada cita, confirmarlas, reprogramarlas o cancelarlas",
+         # El profesor supervisa: sus clases, las citas y tratamientos de sus estudiantes y los recibos
+         "profesor": [("Inicio", "menu"), ("Mis clases", "clases"), ("Pacientes", "pacientes"), ("Citas", "citas"),
+                      ("Clínicas", "salas"), ("Hoja de control", "control"), ("Bitácora", "bitacora"),
+                      ("Comentarios", "comentarios")],
+         "facultad": [("Inicio", "menu"), ("Pacientes", "pacientes"), ("Citas", "citas"), ("Clínicas", "salas"),
+                      ("Tarifario", "tarifario"), ("Inventario", "inventario"), ("Cuentas", "administrar_cuentas"),
+                      ("Clases", "clases"), ("Hoja de control", "control"), ("Bitácora", "bitacora")]}
+QUE_HACE = {"estudiante": ["Entrar a la clase de su profesor con el código QR que él le da",
+                           "Registrar a sus pacientes y la razón por la que vienen",
+                           "Agendar sus citas (las aprueba su profesor), confirmarlas, reprogramarlas o cancelarlas",
                            "Marcar si el paciente llegó a su cita o no se presentó",
-                           "Subir la foto presencial, llenar el odontograma y pedir la revisión del profesor",
+                           "Subir las fotos del paciente, llenar el odontograma y pedir la revisión del profesor",
                            "Llenar la historia clínica y anotar el plan de tratamiento por fases",
-                           "Pedir materiales a proveeduría y generar la orden de cobro para caja",
+                           "Pedir materiales a proveeduría",
                            "Recoger la firma del paciente en el consentimiento informado e imprimirlo",
                            "Subir la foto de cada recibo de pago y entregar impresa la hoja de control"],
-            "profesor": ["Aprobar a los pacientes que registra cada estudiante o rechazarlos con una observación",
+            "profesor": ["Crear sus clases y los códigos QR con los que entran sus estudiantes",
+                         "Aprobar a los pacientes que registra cada estudiante o rechazarlos con una observación",
+                         "Aprobar las citas que agendan sus estudiantes, o agendarlas él mismo (ya aprobadas)",
+                         "Aprobar los tratamientos que realizan sus estudiantes",
                          "Aprobar el odontograma o devolverlo con lo que hay que corregir",
-                         "Ver el historial de qué le hizo cada estudiante a cada paciente",
-                         "Firmar los recibos de pago de la hoja de control de cada estudiante",
-                         "Revisar la bitácora del sistema",
-                         "No registra pacientes, citas ni tratamientos"],
-            "admin": ["Crear, corregir y desactivar las cuentas",
-                      "Entregar los materiales que piden los estudiantes y cobrar las órdenes de cobro",
-                      "Administrar las clínicas, el tarifario y el inventario",
-                      "Registrar los abonos de los pacientes",
-                      "Cambiar un paciente de estudiante archivando el trabajo del anterior",
-                      "Revisar la bitácora del sistema"]}
+                         "Generar la orden de cobro de un paciente y firmar los recibos de pago",
+                         "Revisar la bitácora del sistema"],
+            "facultad": ["Crear, corregir y desactivar las cuentas, y poner a un estudiante en una clase",
+                         "Entregar los materiales que piden los estudiantes y llevar las entradas y salidas del inventario",
+                         "Administrar las clínicas, el tarifario y resolver las fallas reportadas",
+                         "Generar las órdenes de cobro y registrar los pagos de los pacientes",
+                         "Cambiar un paciente de estudiante con el resumen del trabajo del anterior",
+                         "Ver todo lo que pasa en el sistema y revisar la bitácora"]}
 
 # Odontograma: numeracion FDI de los 32 dientes permanentes, como se ven de frente al paciente
 ARRIBA = [*range(18, 10, -1), *range(21, 29)]
 ABAJO = [*range(48, 40, -1), *range(31, 39)]
 DIENTES = set(ARRIBA + ABAJO)
-ESTADOS = {"Sano": "#ffffff", "Caries": "#e57373", "Obturado": "#64b5f6", "Endodoncia": "#ba68c8",
-           "Corona": "#ffd54f", "Extracción indicada": "#ffb74d", "Extraído": "#ffffff"}  # estado -> color
+# Estado de cada diente (dientes.estado): valor guardado -> (como se muestra, color)
+ESTADOS = {"sano": ("Sano", "#ffffff"), "caries": ("Caries", "#e57373"), "obturado": ("Obturado", "#64b5f6"),
+           "endodoncia": ("Endodoncia", "#ba68c8"), "corona": ("Corona", "#ffd54f"),
+           "extraccion": ("Extracción indicada", "#ffb74d"), "ausente": ("Ausente", "#ffffff")}
+SUPERFICIES = {"oclusal": "Oclusal", "mesial": "Mesial", "distal": "Distal", "vestibular": "Vestibular",
+               "lingual": "Lingual"}
 # Ciclo de vida de una cita (RF11): de cada estado activo, a cuales puede pasar. Las demas ya no cambian
-ACTIVAS = ("Programada", "Confirmada")
-SIGUIENTE = {"Programada": ("Confirmada", "Atendida", "No se presentó", "Cancelada"),
-             "Confirmada": ("Atendida", "No se presentó", "Cancelada")}
-COLOR_CITA = {"Programada": "", "Confirmada": "verde", "Atendida": "verde", "Cancelada": "tenue", "No se presentó": "rojo"}
-FASES = ("Higiénica", "Periodoncia", "Operatoria", "Endodoncia", "Cirugía", "Prótesis", "Mantenimiento")
-TIPOS_FALLA = ("Necesita limpieza", "Necesita reparación", "Fuera de servicio")
+ESTADOS_CITA = {"programada": "Programada", "confirmada": "Confirmada", "atendida": "Atendida",
+                "cancelada": "Cancelada", "no_asistio": "No se presentó"}
+ACTIVAS = ("programada", "confirmada")
+SIGUIENTE = {"programada": ("confirmada", "atendida", "no_asistio", "cancelada"),
+             "confirmada": ("atendida", "no_asistio", "cancelada")}
+COLOR_CITA = {"programada": "", "confirmada": "verde", "atendida": "verde", "cancelada": "tenue", "no_asistio": "rojo"}
+# Horario de la clínica (lo exige la base): lunes a sábado de 07:00 a 16:00; una cita dura hasta 4 horas
+APERTURA, CIERRE = "07:00", "16:00"
+DURACIONES = (30, 45, 60, 90, 120, 180, 240)  # minutos que se pueden elegir para una cita
+FASES = {"urgencia": "Urgencia", "basica": "Básica", "rehabilitacion": "Rehabilitación", "mantenimiento": "Mantenimiento"}
+TIPOS_FALLA = {"equipo": "Equipo", "electricidad": "Electricidad", "agua": "Agua", "mobiliario": "Mobiliario",
+               "limpieza": "Limpieza", "otro": "Otro"}
 AREAS = ("Diagnóstico", "Periodoncia", "Operatoria", "Endodoncia", "Cirugía", "Prótesis", "Odontopediatría", "Otra")
-SEXOS = ("Femenino", "Masculino")
-TIPOS_FOTO = ("Presencial", "Radiografía")
-# Campos de la historia clinica (RF05): nombre de la columna -> como se muestra
-HISTORIA = {"nacimiento": "Fecha de nacimiento", "sexo": "Sexo", "direccion": "Dirección",
-            "emergencia_nombre": "Contacto de emergencia", "emergencia_telefono": "Teléfono de emergencia",
-            "antecedentes": "Antecedentes médicos", "alergias": "Alergias", "medicamentos": "Medicamentos que toma",
+SEXOS = {"F": "Femenino", "M": "Masculino"}
+TIPOS_FOTO = {"intraoral": "Intraoral", "extraoral": "Extraoral", "radiografia": "Radiografía"}
+METODOS_PAGO = {"efectivo": "Efectivo", "tarjeta": "Tarjeta", "transferencia": "Transferencia"}
+# Campos de la historia clinica (RF05) que van en la tabla historias: columna -> como se muestra.
+# La fecha de nacimiento y el sexo son datos del paciente (tabla pacientes) y se llenan en el mismo formulario
+HISTORIA = {"direccion": "Dirección", "emergencia_nombre": "Contacto de emergencia",
+            "emergencia_telefono": "Teléfono de emergencia", "antecedentes": "Antecedentes médicos",
+            "alergias": "Alergias", "medicamentos": "Medicamentos que toma",
             "antecedentes_odontologicos": "Antecedentes odontológicos", "presion": "Presión arterial",
             "examen_extraoral": "Examen extraoral", "examen_intraoral": "Examen intraoral",
             "diagnostico": "Diagnóstico"}
+DEL_PACIENTE = {"nacimiento": "Fecha de nacimiento", "sexo": "Sexo"}
 # Para marcarla completa (RF05) estos no pueden quedar vacios: si no hay alergias se escribe "Ninguna"
 HISTORIA_COMPLETA = ("nacimiento", "sexo", "emergencia_nombre", "emergencia_telefono", "antecedentes", "alergias",
                      "medicamentos", "presion", "examen_intraoral", "diagnostico")
@@ -115,165 +133,8 @@ IMAGEN_MAXIMA = 5 * 1024 * 1024  # RNF09: fotos JPG o PNG de hasta 5 MB
 REVISIONES = {"": "Sin pedir", "pedida": "Pedida, esperando al profesor", "aprobada": "Aprobada",
               "devuelta": "Devuelta para corregir"}
 
-TABLAS = """
-CREATE TABLE IF NOT EXISTS cuentas (
-    cif text PRIMARY KEY, nombre text NOT NULL, rol text NOT NULL, clave text NOT NULL);
-CREATE TABLE IF NOT EXISTS salas (
-    id serial PRIMARY KEY, nombre text NOT NULL UNIQUE, disponible boolean NOT NULL DEFAULT true);
-CREATE TABLE IF NOT EXISTS pacientes (
-    id serial PRIMARY KEY, nombre text NOT NULL, cedula text NOT NULL UNIQUE, telefono text NOT NULL DEFAULT '',
-    razon text NOT NULL DEFAULT '', estudiante text REFERENCES cuentas, aprobado boolean NOT NULL DEFAULT false,
-    firma text NOT NULL DEFAULT '', firma_fecha text);
-CREATE TABLE IF NOT EXISTS trabajo (
-    id serial PRIMARY KEY, paciente_id int NOT NULL REFERENCES pacientes ON DELETE CASCADE,
-    estudiante text REFERENCES cuentas, desde text NOT NULL, hasta text, resumen text NOT NULL DEFAULT '');
-CREATE TABLE IF NOT EXISTS citas (
-    id serial PRIMARY KEY, paciente_id int NOT NULL REFERENCES pacientes ON DELETE CASCADE,
-    fecha text NOT NULL, hora text NOT NULL, sala text NOT NULL DEFAULT '', razon text NOT NULL);
-CREATE TABLE IF NOT EXISTS bitacora (
-    id serial PRIMARY KEY, cuando timestamptz NOT NULL DEFAULT now(), cif text, nombre text, rol text, accion text);
-ALTER TABLE bitacora ADD COLUMN IF NOT EXISTS lugar text NOT NULL DEFAULT '';
--- La tabla salas guarda las clinicas (unidades dentales); en_sala es su sala: 1 pregrado, 2 posgrado
-ALTER TABLE salas ADD COLUMN IF NOT EXISTS en_sala int NOT NULL DEFAULT 1;
-ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS fallos int NOT NULL DEFAULT 0,
-                    ADD COLUMN IF NOT EXISTS bloqueada_hasta timestamptz,
-                    ADD COLUMN IF NOT EXISTS activa boolean NOT NULL DEFAULT true;
-CREATE TABLE IF NOT EXISTS reportes (
-    id serial PRIMARY KEY, sala_id int NOT NULL REFERENCES salas ON DELETE CASCADE, cif text REFERENCES cuentas,
-    motivo text NOT NULL, cuando timestamptz NOT NULL DEFAULT now(),
-    resuelto_por text REFERENCES cuentas, resuelto_cuando timestamptz);
--- Una clinica tiene a lo sumo una falla abierta: si ya la reportaron, la Facultad ya esta avisada
-CREATE UNIQUE INDEX IF NOT EXISTS una_falla_abierta ON reportes (sala_id) WHERE resuelto_cuando IS NULL;
--- Odontograma: solo se guardan los dientes anotados; el que no esta es sano
-ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS odonto_revision text NOT NULL DEFAULT '',
-                      ADD COLUMN IF NOT EXISTS odonto_revisor text REFERENCES cuentas,
-                      ADD COLUMN IF NOT EXISTS odonto_nota text NOT NULL DEFAULT '';
-CREATE TABLE IF NOT EXISTS dientes (
-    paciente_id int NOT NULL REFERENCES pacientes ON DELETE CASCADE, diente int NOT NULL, estado text NOT NULL,
-    nota text NOT NULL DEFAULT '', PRIMARY KEY (paciente_id, diente));
-CREATE TABLE IF NOT EXISTS fotos (
-    id serial PRIMARY KEY, paciente_id int NOT NULL REFERENCES pacientes ON DELETE CASCADE, cif text REFERENCES cuentas,
-    cuando timestamptz NOT NULL DEFAULT now(), url text NOT NULL);
--- Tratamientos y cobros: el precio se copia del tarifario al anotar, asi un cambio de precio no altera lo anotado
-CREATE TABLE IF NOT EXISTS tarifario (
-    id serial PRIMARY KEY, nombre text NOT NULL UNIQUE, precio numeric(10, 2) NOT NULL CHECK (precio >= 0),
-    activo boolean NOT NULL DEFAULT true);
-CREATE TABLE IF NOT EXISTS tratamientos (
-    id serial PRIMARY KEY, paciente_id int NOT NULL REFERENCES pacientes ON DELETE CASCADE,
-    procedimiento_id int NOT NULL REFERENCES tarifario, diente int, precio numeric(10, 2) NOT NULL,
-    estudiante text REFERENCES cuentas, anotado text NOT NULL, realizado text);
-CREATE TABLE IF NOT EXISTS abonos (
-    id serial PRIMARY KEY, paciente_id int NOT NULL REFERENCES pacientes ON DELETE CASCADE,
-    monto numeric(10, 2) NOT NULL CHECK (monto > 0), cif text REFERENCES cuentas,
-    cuando timestamptz NOT NULL DEFAULT now());
--- Alta del paciente (finalizado): la Facultad lo cierra y ya nadie mas cambia el expediente
-ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS finalizado text,
-                      ADD COLUMN IF NOT EXISTS finalizado_por text REFERENCES cuentas,
-                      ADD COLUMN IF NOT EXISTS finalizado_resumen text NOT NULL DEFAULT '';
-CREATE TABLE IF NOT EXISTS materiales (
-    id serial PRIMARY KEY, nombre text NOT NULL UNIQUE, unidad text NOT NULL DEFAULT '',
-    cantidad int NOT NULL CHECK (cantidad >= 0), minimo int NOT NULL DEFAULT 0 CHECK (minimo >= 0));
--- Hoja de control: el numero del expediente fisico y los recibos de pago de cada tratamiento con su foto,
--- para que el numero se lea bien y el profesor lo firme sin copiar a mano numero tras numero
-ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS expediente text NOT NULL DEFAULT '';
-CREATE TABLE IF NOT EXISTS recibos (
-    id serial PRIMARY KEY, tratamiento_id int NOT NULL REFERENCES tratamientos ON DELETE CASCADE,
-    numero text NOT NULL, fecha text NOT NULL, url text NOT NULL, estudiante text REFERENCES cuentas,
-    cuando timestamptz NOT NULL DEFAULT now(), firmado_por text REFERENCES cuentas, firmado text,
-    UNIQUE (tratamiento_id, numero));
--- Grupos de estudiantes: la Facultad crea un codigo (va en un QR) y cada estudiante crea su cuenta con el.
--- El codigo vence, tiene cupo y se puede cerrar; cada cuenta recuerda con que grupo se registro
-CREATE TABLE IF NOT EXISTS invitaciones (
-    id serial PRIMARY KEY, nombre text NOT NULL, codigo text NOT NULL UNIQUE, cupo int NOT NULL CHECK (cupo > 0),
-    vence timestamptz NOT NULL, cerrado boolean NOT NULL DEFAULT false,
-    cuando timestamptz NOT NULL DEFAULT now());
--- Quien creo cada grupo ya queda en la bitacora; con esta columna cuentas e invitaciones se apuntaban
--- la una a la otra (una referencia circular), asi que se quita
-ALTER TABLE invitaciones DROP COLUMN IF EXISTS creado_por;
-ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS invitacion_id int REFERENCES invitaciones;
--- Decision del profesor sobre el paciente: quien y cuando la tomo y, si lo rechazo, la observacion para el estudiante
-ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS rechazo text NOT NULL DEFAULT '',
-                      ADD COLUMN IF NOT EXISTS decision_por text REFERENCES cuentas,
-                      ADD COLUMN IF NOT EXISTS decision_cuando timestamptz;
--- La cita guarda su estado: una cita cancelada o a la que el paciente no llego queda como historial, no se borra
-ALTER TABLE citas ADD COLUMN IF NOT EXISTS estado text NOT NULL DEFAULT 'Programada'
-                      CHECK (estado IN ('Programada', 'Confirmada', 'Atendida', 'Cancelada', 'No se presentó')),
-                  ADD COLUMN IF NOT EXISTS motivo_cancelacion text NOT NULL DEFAULT '';
--- Las fotos ya no van dentro de la base: se guarda la direccion del archivo (ver mover_imagenes)
-ALTER TABLE fotos ADD COLUMN IF NOT EXISTS url text;
-ALTER TABLE recibos ADD COLUMN IF NOT EXISTS url text;
--- RF05: radiografias junto a las fotos presenciales
-ALTER TABLE fotos ADD COLUMN IF NOT EXISTS tipo text NOT NULL DEFAULT 'Presencial'
-                  CHECK (tipo IN ('Presencial', 'Radiografía'));
--- RF03 y RF05: historia clinica, una por paciente. Va en su propia tabla para no seguir ensanchando pacientes
-CREATE TABLE IF NOT EXISTS historias (
-    paciente_id int PRIMARY KEY REFERENCES pacientes ON DELETE CASCADE,
-    nacimiento text, sexo text NOT NULL DEFAULT '' CHECK (sexo IN ('', 'Femenino', 'Masculino')),
-    direccion text NOT NULL DEFAULT '', emergencia_nombre text NOT NULL DEFAULT '',
-    emergencia_telefono text NOT NULL DEFAULT '', antecedentes text NOT NULL DEFAULT '',
-    alergias text NOT NULL DEFAULT '', medicamentos text NOT NULL DEFAULT '',
-    antecedentes_odontologicos text NOT NULL DEFAULT '', presion text NOT NULL DEFAULT '',
-    examen_extraoral text NOT NULL DEFAULT '', examen_intraoral text NOT NULL DEFAULT '',
-    diagnostico text NOT NULL DEFAULT '', actualizado timestamptz, actualizado_por text REFERENCES cuentas);
--- RF05: mientras completa sea NULL la historia es un borrador
-ALTER TABLE historias ADD COLUMN IF NOT EXISTS completa timestamptz;
--- RF09: fase de cada tratamiento e indicaciones al terminar cada cita
-ALTER TABLE tratamientos ADD COLUMN IF NOT EXISTS fase text NOT NULL DEFAULT 'Operatoria'
-      CHECK (fase IN ('Higiénica', 'Periodoncia', 'Operatoria', 'Endodoncia', 'Cirugía', 'Prótesis', 'Mantenimiento'));
-ALTER TABLE citas ADD COLUMN IF NOT EXISTS indicaciones text NOT NULL DEFAULT '';
--- RF12: cuando se le envio al paciente el recordatorio automatico por WhatsApp (NULL: todavia no)
-ALTER TABLE citas ADD COLUMN IF NOT EXISTS recordada timestamptz;
--- RF14: que le pasa a la clinica
-ALTER TABLE reportes ADD COLUMN IF NOT EXISTS tipo text NOT NULL DEFAULT 'Necesita reparación'
-      CHECK (tipo IN ('Necesita limpieza', 'Necesita reparación', 'Fuera de servicio'));
--- RF15: codigo y area de cada procedimiento, y los precios que tuvo antes
-ALTER TABLE tarifario ADD COLUMN IF NOT EXISTS codigo text UNIQUE,
-                      ADD COLUMN IF NOT EXISTS area text NOT NULL DEFAULT '';
-CREATE TABLE IF NOT EXISTS precios_anteriores (
-    id serial PRIMARY KEY, procedimiento_id int NOT NULL REFERENCES tarifario ON DELETE CASCADE,
-    precio numeric(10, 2) NOT NULL, hasta timestamptz NOT NULL DEFAULT now(), cambiado_por text REFERENCES cuentas);
--- RF16: orden de cobro para caja; cada tratamiento entra en una sola orden
-CREATE TABLE IF NOT EXISTS ordenes (
-    id serial PRIMARY KEY, paciente_id int NOT NULL REFERENCES pacientes ON DELETE CASCADE,
-    total numeric(10, 2) NOT NULL CHECK (total > 0), creada timestamptz NOT NULL DEFAULT now(),
-    creada_por text REFERENCES cuentas, pagada timestamptz, cobrada_por text REFERENCES cuentas);
-ALTER TABLE tratamientos ADD COLUMN IF NOT EXISTS orden_id int REFERENCES ordenes ON DELETE SET NULL;
--- RF17: lo que piden los estudiantes a proveeduria
-CREATE TABLE IF NOT EXISTS solicitudes (
-    id serial PRIMARY KEY, material_id int NOT NULL REFERENCES materiales ON DELETE CASCADE,
-    cantidad int NOT NULL CHECK (cantidad > 0), estudiante text NOT NULL REFERENCES cuentas, para text NOT NULL,
-    estado text NOT NULL DEFAULT 'Pendiente' CHECK (estado IN ('Pendiente', 'Entregada', 'Rechazada')),
-    cuando timestamptz NOT NULL DEFAULT now(), atendida_por text REFERENCES cuentas, nota text NOT NULL DEFAULT '');
--- RNF07: un paciente eliminado no se borra: se marca y deja de verse; la Facultad lo puede restaurar
-ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS eliminado timestamptz,
-                      ADD COLUMN IF NOT EXISTS eliminado_por text REFERENCES cuentas,
-                      ADD COLUMN IF NOT EXISTS eliminado_motivo text NOT NULL DEFAULT '';
--- Indices para las llaves foraneas que mas se consultan
-CREATE INDEX IF NOT EXISTS citas_paciente ON citas (paciente_id);
-CREATE INDEX IF NOT EXISTS citas_fecha ON citas (fecha, hora);
-CREATE INDEX IF NOT EXISTS pacientes_estudiante ON pacientes (estudiante);
-CREATE INDEX IF NOT EXISTS tratamientos_paciente ON tratamientos (paciente_id);
-CREATE INDEX IF NOT EXISTS fotos_paciente ON fotos (paciente_id);
-CREATE INDEX IF NOT EXISTS abonos_paciente ON abonos (paciente_id);
-CREATE INDEX IF NOT EXISTS solicitudes_estado ON solicitudes (estado);
--- RF02: el correo y el año de la carrera de cada cuenta (el estudiante los escribe al registrarse)
-ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS correo text NOT NULL DEFAULT '',
-                    ADD COLUMN IF NOT EXISTS anio int CHECK (anio BETWEEN 1 AND 6);
--- RF06/RNF06: el profesor a cargo de cada estudiante. Es una relacion uno a muchos dentro de cuentas
--- (un profesor, muchos estudiantes); el profesor ve solo a los pacientes de sus estudiantes
-ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS profesor text REFERENCES cuentas ON DELETE SET NULL;
-CREATE INDEX IF NOT EXISTS cuentas_profesor ON cuentas (profesor);
--- RF12: pacientes que pidieron por WhatsApp que su estudiante les contacte (atendido NULL: pendiente)
-CREATE TABLE IF NOT EXISTS pedidos_contacto (
-    id serial PRIMARY KEY, paciente_id int NOT NULL REFERENCES pacientes ON DELETE CASCADE,
-    pedido timestamptz NOT NULL DEFAULT now(), atendido timestamptz, atendido_por text REFERENCES cuentas);
--- RF10: los turnos clinicos de cada estudiante (dia 0 = lunes ... 5 = sabado, horas HH:MM).
--- Si el estudiante tiene turnos, sus citas tienen que caer dentro de uno
-CREATE TABLE IF NOT EXISTS turnos (
-    id serial PRIMARY KEY, estudiante text NOT NULL REFERENCES cuentas ON DELETE CASCADE,
-    dia int NOT NULL CHECK (dia BETWEEN 0 AND 5), desde text NOT NULL, hasta text NOT NULL,
-    CHECK (desde < hasta), UNIQUE (estudiante, dia, desde));
-"""
+# El esquema de la base (modelo de datos v14 y sus extensiones) esta en esquema.sql
+ESQUEMA = (Path(__file__).parent / "esquema.sql").read_text(encoding="utf-8")
 
 app = Flask(__name__)
 # Sin SECRET_KEY las sesiones se pierden al reiniciar, pero nunca quedan firmadas con una clave conocida
@@ -294,10 +155,11 @@ MOTIVO_MAXIMO = 500  # caracteres del motivo de una clinica que no funciona
 RECIBO_MAXIMO = 40  # caracteres del numero de recibo
 FALLOS_MAXIMOS, MINUTOS_BLOQUEO = 5, 15  # tras 5 claves equivocadas seguidas la cuenta espera 15 min
 CLAVE_MINIMA = 8  # caracteres de la contraseña que la Facultad le pone a una cuenta
-CUPO_MAXIMO, DIAS_MAXIMO = 200, 30  # de un grupo: cuántos estudiantes se registran con su QR y cuánto dura
+CODIGOS_MAXIMO, DIAS_MAXIMO = 200, 30  # de una clase: cuántos códigos QR se generan a la vez y cuánto duran
 CIF_MAXIMO, NOMBRE_MAXIMO = 20, 80  # caracteres de lo que escribe el estudiante al registrarse
 FOTO_LADO = 1600  # pixeles del lado mas largo de la foto presencial guardada
-DIAS = ("Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado")  # turnos.dia: 0 a 5
+DIAS = {1: "Lunes", 2: "Martes", 3: "Miércoles", 4: "Jueves", 5: "Viernes", 6: "Sábado"}  # turnos.dia (ISO)
+PERIODO = re.compile(r"\d{4}-(I|II|III)")  # periodo de una clase, por ejemplo 2026-II
 ANIOS = range(1, 7)  # año de la carrera
 CORREO = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
 
@@ -337,7 +199,8 @@ def clave_correcta(cifrada, clave):
         return _revisar(cifrada, clave)
 
 def sql(consulta, *args):
-    return bd().execute(consulta, args)
+    # Sin argumentos no se buscan marcadores: asi un % escrito en la consulta (o en esquema.sql) es un % normal
+    return bd().execute(consulta, args or None)
 
 
 def crear_tablas():
@@ -347,20 +210,28 @@ def crear_tablas():
             # Fallar aqui detiene el despliegue y la version anterior sigue funcionando
             raise SystemExit("Falta configurar el almacenamiento de fotos: ALMACEN_BUCKET, ALMACEN_ENDPOINT,"
                              " ALMACEN_ID y ALMACEN_CLAVE (fly secrets set ...).")
-        sql(TABLAS)
-        mover_imagenes()
-        for cif, (nombre, rol) in CUENTAS_INICIALES.items():
-            sql("INSERT INTO cuentas VALUES (%s, %s, %s, %s) ON CONFLICT DO NOTHING",
-                cif, nombre, rol, cifrar(CLAVE_INICIAL))
-        # Las clínicas se completan una sola vez, hasta que existe la última. Una base que nació con 20
-        # (10 y 10) conserva las suyas con sus citas y reportes: de la 11 a la 20 pasan a pregrado
-        if not sql("SELECT 1 FROM salas WHERE nombre = %s", f"Clínica {PREGRADO + POSGRADO}").fetchone():
+        if modelo_anterior():
+            # Fallar aqui detiene el despliegue: la base se pasa al modelo nuevo a proposito, nunca sola
+            raise SystemExit("La base tiene el modelo de datos anterior. Páselo al modelo v14 en una rama nueva de"
+                             " Neon con `flask --app prototipo migrar-v14` y use esa rama.")
+        if not sql("SELECT to_regclass('clases') AS t").fetchone()["t"]:
+            with bd().transaction():  # el esquema entero o nada
+                sql(ESQUEMA)
+        for cif, (nombre, rol, anio) in CUENTAS_INICIALES.items():
+            sql("INSERT INTO cuentas (cif, nombre, correo, anio, rol, clave_hash) VALUES (%s, %s, %s, %s, %s, %s)"
+                " ON CONFLICT (cif) DO NOTHING", cif, nombre, cif + CORREO_PENDIENTE, anio, rol, cifrar(CLAVE_INICIAL))
+        # Las clínicas se crean una sola vez: 30 de pregrado y 20 de posgrado, como en el plano del edificio
+        if not sql("SELECT 1 FROM salas LIMIT 1").fetchone():
             with bd().transaction():
-                sql("UPDATE salas SET en_sala = 1 WHERE nombre = ANY(%s)",
-                    [f"Clínica {n}" for n in range(1, PREGRADO + 1)])
                 for n in range(1, PREGRADO + POSGRADO + 1):
-                    sql("INSERT INTO salas (nombre, disponible, en_sala) VALUES (%s, %s, %s)"
-                        " ON CONFLICT (nombre) DO NOTHING", f"Clínica {n}", n != 3, 1 if n <= PREGRADO else 2)
+                    sql("INSERT INTO salas (nombre, en_sala) VALUES (%s, %s)", f"Clínica {n}", 1 if n <= PREGRADO else 2)
+
+def modelo_anterior():
+    """True si la base es del modelo anterior al v14 (cuentas sin columna id)."""
+    return bool(sql("SELECT 1 FROM information_schema.tables t WHERE t.table_schema = current_schema()"
+                    " AND t.table_name = 'cuentas' AND NOT EXISTS (SELECT 1 FROM information_schema.columns c"
+                    " WHERE c.table_schema = t.table_schema AND c.table_name = 'cuentas' AND c.column_name = 'id')"
+                    ).fetchone())
 
 @app.cli.command("crear-tablas")
 def crear_tablas_cli():
@@ -373,12 +244,14 @@ def crear_tablas_cli():
 RESPALDOS_GUARDADOS = 30  # ponytail: arma el .zip en memoria; pasar a archivo temporal si la base pasa de ~100 MB
 
 def tablas_en_orden():
-    """Las tablas de la base, cada una despues de las que referencia, para poder cargarlas en ese orden."""
+    """Las tablas de la base, cada una despues de las que referencia, para poder cargarlas en ese orden.
+    Las llaves diferibles (cuentas.clase_id) se revisan al final de la carga y no cuentan para el orden."""
     from graphlib import TopologicalSorter
     orden = TopologicalSorter({t["tablename"]: set() for t in sql(
         "SELECT tablename FROM pg_tables WHERE schemaname = current_schema()")})
     for r in sql("SELECT conrelid::regclass::text AS hija, confrelid::regclass::text AS madre FROM pg_constraint"
-                 " WHERE contype = 'f' AND connamespace = current_schema()::regnamespace AND conrelid <> confrelid"):
+                 " WHERE contype = 'f' AND connamespace = current_schema()::regnamespace AND conrelid <> confrelid"
+                 " AND NOT condeferrable"):
         orden.add(r["hija"], r["madre"])
     return list(orden.static_order())
 
@@ -421,8 +294,11 @@ def restaurar(nombre):
         datos = s3().get_object(Bucket=ALMACEN["bucket"], Key=nombre)["Body"].read()
     else:
         datos = (CARPETA_LOCAL / nombre).read_bytes()
-    sql(TABLAS)  # las tablas de esta version del sistema, vacias
+    if not sql("SELECT to_regclass('clases') AS t").fetchone()["t"]:
+        sql(ESQUEMA)  # las tablas de esta version del sistema, vacias
     with zipfile.ZipFile(io.BytesIO(datos)) as z, bd().transaction(), bd().cursor() as cur:
+        # Los datos ya pasaron las reglas cuando se guardaron: las reglas automaticas no se repiten al cargarlos
+        cur.execute("SET LOCAL clinicas.restaurando = 'si'")
         orden = json.loads(z.read("orden.json"))
         cur.execute("TRUNCATE " + ", ".join(f'"{t}"' for t in orden) + " RESTART IDENTITY CASCADE")
         for t, cols in orden.items():
@@ -481,43 +357,67 @@ def error_de_paciente(form, pid=None):
     if telefono is None:
         return "El teléfono debe tener 8 dígitos."
     form["cedula"], form["telefono"] = cedula, telefono
-    otro = sql("SELECT eliminado FROM pacientes WHERE regexp_replace(upper(cedula), '[^0-9A-Z]', '', 'g') = %s"
+    otro = sql("SELECT eliminado_en FROM pacientes WHERE regexp_replace(upper(cedula), '[^0-9A-Z]', '', 'g') = %s"
                " AND id <> %s", sin_signos(cedula), pid or 0).fetchone()
-    if otro and otro["eliminado"]:
+    if form.get("expediente") and sql("SELECT 1 FROM pacientes WHERE expediente = %s AND id <> %s",
+                                      form["expediente"], pid or 0).fetchone():
+        return "Ese número de expediente ya es de otro paciente."
+    if otro and otro["eliminado_en"]:
         return "Esa cédula es de un paciente eliminado. Pida a la Facultad que lo restaure."
     if otro:
         return "Ya existe otro paciente con esa cédula." if pid else "Ya existe un paciente con esa cédula."
     return None
 
-def error_de_cita(fecha, hora, sala, paciente_id, estudiante, cita_id=None):
-    """Por qué no se puede agendar la cita; None si se puede. Fecha aaaa-mm-dd del calendario, hora HH:MM.
-    Ni la clínica, ni el paciente, ni el estudiante pueden tener otra cita a la misma hora (RF10); las canceladas
-    no cuentan, y al reprogramar tampoco la cita misma (cita_id)."""
+def rango_cita(fecha, hora, minutos):
+    """(inicio, fin) de una cita con fecha aaaa-mm-dd, hora HH:MM y duracion en minutos; None si no se entiende."""
     try:
-        cuando = datetime.strptime(f"{fecha} {hora}", "%Y-%m-%d %H:%M").replace(tzinfo=MANAGUA)
+        inicio = datetime.strptime(f"{fecha} {hora}", "%Y-%m-%d %H:%M").replace(tzinfo=MANAGUA)
     except ValueError:
-        return "Elija la fecha en el calendario y la hora de la cita."
-    if cuando < datetime.now(MANAGUA):
+        return None
+    return (inicio, inicio + timedelta(minutes=minutos)) if minutos in DURACIONES else None
+
+def error_de_cita(rango, sala_id, paciente_id, estudiante_id, cita_id=None):
+    """Por qué no se puede agendar la cita en ese rango (inicio, fin); None si se puede. Lo mismo que exige la
+    base (horario de la clínica, clínica y paciente sin dos citas a la vez), con un mensaje claro, y además que el
+    estudiante no tenga otra cita encimada y que caiga en sus turnos (RF10). Las citas canceladas o a las que el
+    paciente no llegó no cuentan, y al reprogramar tampoco la cita misma (cita_id)."""
+    if not rango:
+        return "Elija la fecha en el calendario, la hora y cuánto dura la cita."
+    inicio, fin = rango
+    if inicio < datetime.now(MANAGUA):
         return "No se pueden agendar citas en una fecha u hora que ya pasó."
-    if sala and sql("SELECT 1 FROM salas WHERE nombre = %s AND NOT disponible", sala).fetchone():
-        return "Esa clínica no está disponible."
-    otra = ("SELECT 1 FROM citas c JOIN pacientes p ON p.id = c.paciente_id WHERE c.fecha = %s AND c.hora = %s"
-            " AND c.estado <> 'Cancelada' AND p.eliminado IS NULL AND c.id <> %s AND ")
-    if sala and sql(otra + "c.sala = %s", fecha, hora, cita_id or 0, sala).fetchone():
-        return "Esa clínica ya está ocupada a esa hora."
-    if sql(otra + "c.paciente_id = %s", fecha, hora, cita_id or 0, paciente_id).fetchone():
+    if inicio.isoweekday() == 7 or inicio.strftime("%H:%M") < APERTURA or fin.strftime("%H:%M") > CIERRE             or fin.date() != inicio.date():
+        return f"La clínica atiende de lunes a sábado, de {APERTURA} a {CIERRE}: la cita tiene que caer en ese horario."
+    sala = sql("SELECT nombre, habilitada FROM salas WHERE id = %s", sala_id).fetchone()
+    if not sala:
+        return "Elija la clínica."
+    if not sala["habilitada"]:
+        return "Esa clínica no está habilitada."
+    otra = ("SELECT 1 FROM citas c WHERE c.estado IN ('programada', 'confirmada', 'atendida') AND c.id <> %s"
+            " AND tstzrange(c.inicio, c.fin) && tstzrange(%s, %s) AND ")
+    if sql(otra + "c.sala_id = %s", cita_id or 0, inicio, fin, sala_id).fetchone():
+        return f"La {sala['nombre']} ya está ocupada a esa hora."
+    if sql(otra + "c.paciente_id = %s", cita_id or 0, inicio, fin, paciente_id).fetchone():
         return "El paciente ya tiene otra cita a esa hora."
-    if estudiante and sql(otra + "p.estudiante = %s", fecha, hora, cita_id or 0, estudiante).fetchone():
-        return "Usted ya tiene otra cita a esa hora con otro paciente."
-    turnos = turnos_de(estudiante) if estudiante else []
-    if turnos and not any(t["dia"] == cuando.weekday() and t["desde"] <= hora < t["hasta"] for t in turnos):
-        return "Esa hora está fuera de sus turnos clínicos: " + ", ".join(
-            f"{DIAS[t['dia']]} de {t['desde']} a {t['hasta']}" for t in turnos) + "."
+    if sql(otra + "c.estudiante_id = %s", cita_id or 0, inicio, fin, estudiante_id).fetchone():
+        return "El estudiante ya tiene otra cita a esa hora con otro paciente."
+    turnos = turnos_de(estudiante_id)
+    if turnos and not any(t["dia"] == inicio.isoweekday() and t["desde"] <= inicio.time() and fin.time() <= t["hasta"]
+                          for t in turnos):
+        return "Esa hora está fuera de los turnos clínicos del estudiante: " + ", ".join(
+            f"{DIAS[t['dia']]} de {t['desde']:%H:%M} a {t['hasta']:%H:%M}" for t in turnos) + "."
     return None
 
-def turnos_de(estudiante):
+def turnos_de(estudiante_id):
     """RF10: los turnos clinicos del estudiante, por dia y hora."""
-    return sql("SELECT * FROM turnos WHERE estudiante = %s ORDER BY dia, desde", estudiante).fetchall()
+    return sql("SELECT * FROM turnos WHERE estudiante_id = %s ORDER BY dia, desde", estudiante_id).fetchall()
+
+# Las citas con su fecha, hora y clinica a la vista (la base guarda inicio y fin con su zona horaria)
+CITAS = ("SELECT c.*, to_char(c.inicio AT TIME ZONE 'America/Managua', 'YYYY-MM-DD') AS fecha,"
+         " to_char(c.inicio AT TIME ZONE 'America/Managua', 'HH24:MI') AS hora,"
+         " to_char(c.fin AT TIME ZONE 'America/Managua', 'HH24:MI') AS hora_fin,"
+         " (extract(epoch FROM c.fin - c.inicio) / 60)::int AS minutos, s.nombre AS sala"
+         " FROM citas c JOIN salas s ON s.id = c.sala_id")
 
 app.jinja_env.filters["dmy"] = dmy
 app.jinja_env.globals["GRUPOS"] = GRUPOS
@@ -573,7 +473,11 @@ def avisar_cita(p, fecha, hora, sala, que):
     except Exception as e:  # noqa: BLE001 - la cita no depende del aviso
         app.logger.warning("No se pudo avisar la cita por WhatsApp: %s", e)
         hecho = f"No se pudo avisar por WhatsApp a {p['nombre']} de su cita del {cuando}"
-    sql("INSERT INTO bitacora (nombre, rol, accion) VALUES ('Sistema', 'Sistema', %s)", hecho)
+    anotar_sistema(hecho)
+
+def anotar_sistema(accion):
+    """Bitacora de lo que hace el sistema solo (recordatorios y respuestas por WhatsApp): sin cuenta."""
+    sql("INSERT INTO bitacora (cif_registrado, accion) VALUES ('SISTEMA', %s)", accion)
 
 def responder_whatsapp(telefono, texto):
     """Respuesta de texto al paciente. Va dentro de las 24 h en que el paciente escribio, sin plantilla."""
@@ -597,20 +501,21 @@ def recordar():
         print(f"Fuera del horario de envío ({ahora:%H:%M}).")
         return
     manana = (ahora + timedelta(days=1)).date().isoformat()
-    citas = sql("SELECT c.*, p.nombre AS paciente, p.telefono FROM citas c JOIN pacientes p ON p.id = c.paciente_id"
-                " WHERE c.fecha = %s AND c.estado = 'Programada' AND c.recordada IS NULL AND p.telefono <> ''"
-                " AND p.eliminado IS NULL AND p.finalizado IS NULL ORDER BY c.hora", manana).fetchall()
+    # Solo las citas ya aprobadas por el profesor: una pendiente todavia puede no realizarse
+    citas = sql("SELECT * FROM (" + CITAS + ") c JOIN (SELECT id AS pid, nombre AS paciente, telefono FROM pacientes"
+                " WHERE coalesce(telefono, '') <> '' AND eliminado_en IS NULL AND finalizado_en IS NULL) p"
+                " ON p.pid = c.paciente_id WHERE c.fecha = %s AND c.estado = 'programada' AND c.aprobado_en IS NOT NULL"
+                " AND c.recordada_en IS NULL ORDER BY c.inicio", manana).fetchall()
     enviados = 0
     for c in citas:
         try:
-            enviar_whatsapp(c["telefono"], [c["paciente"], dmy(c["fecha"]), c["hora"], c["sala"] or "la clínica"],
+            enviar_whatsapp(c["telefono"], [c["paciente"], dmy(c["fecha"]), c["hora"], c["sala"]],
                             c["id"])
         except Exception as e:  # noqa: BLE001 - uno que falla no detiene a los demas; la proxima hora se reintenta
             print(f"No se pudo enviar el recordatorio de la cita {c['id']}: {e}")
             continue
-        sql("UPDATE citas SET recordada = now() WHERE id = %s", c["id"])
-        sql("INSERT INTO bitacora (nombre, rol, accion) VALUES ('Sistema', 'Sistema', %s)",
-            f"Recordatorio automático por WhatsApp a {c['paciente']} de su cita del {dmy(c['fecha'])} a las {c['hora']}")
+        sql("UPDATE citas SET recordada_en = now() WHERE id = %s", c["id"])
+        anotar_sistema(f"Recordatorio automático por WhatsApp a {c['paciente']} de su cita del {dmy(c['fecha'])} a las {c['hora']}")
         enviados += 1
     print(f"Recordatorios enviados: {enviados} de {len(citas)}.")
 
@@ -626,26 +531,27 @@ NO_REGISTRADO = ("Hola. Este número no está registrado en las Clínicas Odonto
                  " pídale a su estudiante que anote este número en su expediente.")
 
 def cuando_es(c, con_paciente=False):
-    texto = f"{dmy(c['fecha'])} a las {c['hora']}" + (f" en la {c['sala']}" if c["sala"] else "")
+    texto = f"{dmy(c['fecha'])} a las {c['hora']} en la {c['sala']}"
     return texto + (f" ({c['paciente']})" if con_paciente else "")
 
 def cita_por_whatsapp(cita_id, telefono, estados):
     """La cita, si es del paciente de ese telefono, esta en uno de esos estados y no ha pasado."""
-    return sql("SELECT c.*, p.nombre AS paciente FROM citas c JOIN pacientes p ON p.id = c.paciente_id"
+    return sql("SELECT c.*, p.nombre AS paciente FROM (" + CITAS + ") c JOIN pacientes p ON p.id = c.paciente_id"
                " WHERE c.id = %s AND '505' || p.telefono = %s AND c.estado = ANY(%s) AND c.fecha >= %s"
-               " AND p.eliminado IS NULL", cita_id, telefono, list(estados), hoy()).fetchone()
+               " AND p.eliminado_en IS NULL", cita_id, telefono, list(estados), hoy()).fetchone()
 
 def confirmar_por_whatsapp(c):
-    sql("UPDATE citas SET estado = 'Confirmada' WHERE id = %s", c["id"])
-    sql("INSERT INTO bitacora (nombre, rol, accion) VALUES ('Sistema', 'Sistema', %s)",
-        f"{c['paciente']} confirmó su cita del {cuando_es(c)} por WhatsApp")
+    if not c["aprobado_en"]:  # la base no deja confirmar una cita que el profesor todavia no aprueba
+        return (f"Su cita del {cuando_es(c)} todavía espera la aprobación del profesor. Cuando la apruebe se la"
+                " recordaremos por aquí.")
+    sql("UPDATE citas SET estado = 'confirmada' WHERE id = %s", c["id"])
+    anotar_sistema(f"{c['paciente']} confirmó su cita del {cuando_es(c)} por WhatsApp")
     return f"Gracias. Su cita del {cuando_es(c)} quedó confirmada."
 
 def cancelar_por_whatsapp(c):
-    sql("UPDATE citas SET estado = 'Cancelada', motivo_cancelacion = %s WHERE id = %s",
+    sql("UPDATE citas SET estado = 'cancelada', motivo_cancelacion = %s WHERE id = %s",
         "El paciente avisó por WhatsApp que no podrá asistir", c["id"])
-    sql("INSERT INTO bitacora (nombre, rol, accion) VALUES ('Sistema', 'Sistema', %s)",
-        f"{c['paciente']} avisó que no podrá asistir a su cita del {cuando_es(c)} por WhatsApp")
+    anotar_sistema(f"{c['paciente']} avisó que no podrá asistir a su cita del {cuando_es(c)} por WhatsApp")
     return f"Gracias por avisar. Su cita del {cuando_es(c)} quedó cancelada; su estudiante le contactará para darle otra."
 
 def preguntar_whatsapp(telefono, texto, botones):
@@ -663,13 +569,13 @@ def atender_whatsapp(m):
     accion, _, cita_id = boton.partition(":")
     if accion in ("asistira", "no_asistira", "cancelar") and cita_id.isdigit():
         # Los botones del recordatorio solo valen mientras la cita esta Programada; el bot tambien cancela confirmadas
-        c = cita_por_whatsapp(int(cita_id), de, ACTIVAS if accion == "cancelar" else ("Programada",))
+        c = cita_por_whatsapp(int(cita_id), de, ACTIVAS if accion == "cancelar" else ("programada",))
         if not c:
             return None
         return confirmar_por_whatsapp(c) if accion == "asistira" else cancelar_por_whatsapp(c)
     # Un mismo telefono puede ser de varios pacientes (una madre y sus hijos): se atienden todos juntos
-    suyos = sql("SELECT id, nombre, estudiante FROM pacientes WHERE telefono <> '' AND '505' || telefono = %s"
-                " AND eliminado IS NULL AND finalizado IS NULL ORDER BY id", de).fetchall()
+    suyos = sql("SELECT id, nombre, estudiante_id FROM pacientes WHERE telefono <> '' AND '505' || telefono = %s"
+                " AND eliminado_en IS NULL AND finalizado_en IS NULL ORDER BY id", de).fetchall()
     if not suyos:
         return NO_REGISTRADO
     varios = len(suyos) > 1
@@ -684,23 +590,22 @@ def atender_whatsapp(m):
     if opcion == "5":
         for p in suyos:  # uno pendiente por paciente: escribir 5 varias veces no lo repite
             if sql("INSERT INTO pedidos_contacto (paciente_id) SELECT %s WHERE NOT EXISTS (SELECT 1 FROM"
-                   " pedidos_contacto WHERE paciente_id = %s AND atendido IS NULL) RETURNING id",
+                   " pedidos_contacto WHERE paciente_id = %s AND atendido_en IS NULL) RETURNING id",
                    p["id"], p["id"]).fetchone():
-                sql("INSERT INTO bitacora (nombre, rol, accion) VALUES ('Sistema', 'Sistema', %s)",
-                    f"{p['nombre']} pidió por WhatsApp que su estudiante le contacte")
-        quienes = ", ".join(sorted({nombre_de(p["estudiante"]) for p in suyos}))
+                anotar_sistema(f"{p['nombre']} pidió por WhatsApp que su estudiante le contacte")
+        quienes = ", ".join(sorted({nombre_de(p["estudiante_id"]) for p in suyos}))
         return f"Listo. Le avisamos a su estudiante ({quienes}) para que le contacte."
-    proximas = sql("SELECT c.*, p.nombre AS paciente FROM citas c JOIN pacientes p ON p.id = c.paciente_id"
-                   " WHERE c.paciente_id = ANY(%s) AND c.estado = ANY(%s) AND c.fecha >= %s ORDER BY c.fecha, c.hora",
+    proximas = sql("SELECT c.*, p.nombre AS paciente FROM (" + CITAS + ") c JOIN pacientes p ON p.id = c.paciente_id"
+                   " WHERE c.paciente_id = ANY(%s) AND c.estado = ANY(%s) AND c.fecha >= %s ORDER BY c.inicio",
                    [p["id"] for p in suyos], list(ACTIVAS), hoy()).fetchall()
     if not proximas:
         return ("No tiene citas próximas. Si necesita una, responda 5 y su estudiante le contactará.\n" + MENU_BOT)
     if opcion == "1":
-        return "Sus próximas citas:\n" + "\n".join(f"- {cuando_es(c, varios)}: {c['estado'].lower()}"
+        return "Sus próximas citas:\n" + "\n".join(f"- {cuando_es(c, varios)}: {ESTADOS_CITA[c['estado']].lower()}"
                                                    for c in proximas[:5])
     c = proximas[0]
     if opcion == "2":
-        if c["estado"] == "Confirmada":
+        if c["estado"] == "confirmada":
             return f"Su cita del {cuando_es(c, varios)} ya está confirmada. ¡Le esperamos!"
         return confirmar_por_whatsapp(c)
     # Opcion 3: antes de cancelar se pregunta, con botones
@@ -739,10 +644,10 @@ def whatsapp_respuestas():
 @app.route("/contactos/<int:kid>", methods=["POST"])
 def contacto_atendido(kid):
     """RF12: el estudiante marca que ya contacto al paciente que lo pidio por WhatsApp."""
-    cif = quien()[0]
-    fila = sql("UPDATE pedidos_contacto k SET atendido = now(), atendido_por = %s FROM pacientes p WHERE k.id = %s"
-               " AND p.id = k.paciente_id AND p.estudiante = %s AND k.atendido IS NULL RETURNING p.nombre",
-               cif, kid, cif).fetchone()
+    yo = quien()[0]
+    fila = sql("UPDATE pedidos_contacto k SET atendido_en = now(), atendido_por_id = %s FROM pacientes p WHERE k.id = %s"
+               " AND p.id = k.paciente_id AND p.estudiante_id = %s AND k.atendido_en IS NULL RETURNING p.nombre",
+               yo, kid, yo).fetchone()
     if fila:
         anotar(f"Contactó a {fila['nombre']}, que lo pidió por WhatsApp")
     return redirect(url_for("menu"))
@@ -832,34 +737,21 @@ def borrar_archivos(urls):
         except Exception:  # noqa: BLE001 - un archivo que no se pudo borrar no detiene la operacion
             app.logger.warning("No se pudo borrar el archivo %s", url)
 
-def mover_imagenes():
-    """Las bases de versiones anteriores guardaban las fotos dentro (bytea). Las sube al almacenamiento, deja su
-    direccion en url y, cuando ya no queda ninguna adentro, quita la columna vieja. Si se corta a la mitad,
-    la proxima vez sigue donde quedo."""
-    for tabla, vieja in (("fotos", "imagen"), ("recibos", "foto")):
-        if sql("SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema()"
-               " AND table_name = %s AND column_name = %s", tabla, vieja).fetchone():
-            sql(f"ALTER TABLE {tabla} ALTER COLUMN {vieja} DROP NOT NULL")
-            for fila in sql(f"SELECT id, {vieja} AS datos FROM {tabla} WHERE url IS NULL").fetchall():
-                sql(f"UPDATE {tabla} SET url = %s, {vieja} = NULL WHERE id = %s",
-                    guardar_archivo(tabla, bytes(fila["datos"])), fila["id"])
-            sql(f"ALTER TABLE {tabla} DROP COLUMN {vieja}")
-        sql(f"ALTER TABLE {tabla} ALTER COLUMN url SET NOT NULL")
-
-
 def cuentas():
-    """CIF -> (nombre, rol). Se lee una vez por peticion."""
-    # ponytail: trae todas las cuentas cada vez; filtrar por CIF si llegan a ser miles
+    """id de la cuenta -> su fila (id, cif, nombre, rol, activa, clase_id). Se lee una vez por peticion."""
+    # ponytail: trae todas las cuentas cada vez; filtrar por id si llegan a ser miles
     if "cuentas" not in g:
-        filas = sql("SELECT cif, nombre, rol, activa FROM cuentas").fetchall()
-        g.cuentas = {f["cif"]: (f["nombre"], f["rol"]) for f in filas}
-        g.inactivas = {f["cif"] for f in filas if not f["activa"]}  # siguen con nombre en el historial
+        g.cuentas = {f["id"]: f for f in sql("SELECT id, cif, nombre, rol, activa, clase_id FROM cuentas").fetchall()}
     return g.cuentas
 
+def por_cif(cif):
+    """La cuenta con ese CIF; None si no existe."""
+    return next((c for c in cuentas().values() if c["cif"] == cif), None)
+
 def quien():
-    """CIF, rol y nombre de quien entro; None si no hay sesion o si la Facultad desactivo la cuenta."""
-    cif = session.get("cif")
-    return (cif, *cuentas()[cif]) if cif in cuentas() and cif not in g.inactivas else None
+    """(id, nombre, rol) de quien entro; None si no hay sesion o si la Facultad desactivo la cuenta."""
+    c = cuentas().get(session.get("cuenta"))
+    return (c["id"], c["nombre"], c["rol"]) if c and c["activa"] else None
 
 def ip_del_usuario():
     # En Fly la IP real llega en Fly-Client-IP; fuera de Fly ese encabezado lo podria inventar cualquiera
@@ -882,60 +774,62 @@ def lugar_de(ip):
     session["lugar"] = [ip, lugar]
     return lugar
 
-def anotar(accion, cif=None):
+def anotar(accion, cuenta_id=None):
     """Bitacora: deja constancia de lo que acaba de hacer el usuario (o la cuenta indicada) y desde qué
-    lugar aproximado. La IP solo se usa para saber el lugar; no se guarda."""
-    cif, nombre, rol = (cif, *cuentas()[cif]) if cif else quien()
-    sql("INSERT INTO bitacora (cif, nombre, rol, accion, lugar) VALUES (%s, %s, %s, %s, %s)",
-        cif, nombre, ROLES[rol], accion, lugar_de(ip_del_usuario()))
+    lugar aproximado. Guarda tambien el CIF tal como era, por si la cuenta cambia despues. La IP solo se usa
+    para saber el lugar; no se guarda."""
+    cid = cuenta_id or quien()[0]
+    sql("INSERT INTO bitacora (cuenta_id, cif_registrado, accion, lugar) VALUES (%s, %s, %s, %s)",
+        cid, cuentas()[cid]["cif"], accion, lugar_de(ip_del_usuario()))
 
 def comun():
     """Datos que necesita la plantilla base en todas las paginas."""
-    cif, nombre, rol = quien()
-    avisos = {}
-    if rol == "admin":  # la Facultad ve en la pestana cuantas clinicas fallan y cuantos materiales se acaban
-        avisos = sql("SELECT (SELECT count(*) FROM reportes WHERE resuelto_cuando IS NULL) AS salas,"
-                     " (SELECT count(*) FROM materiales WHERE cantidad <= minimo) AS inventario,"
-                     " (SELECT count(*) FROM solicitudes WHERE estado = 'Pendiente') AS solicitudes").fetchone()
-    elif rol == "profesor":  # y el profesor, cuantos recibos esperan su firma y cuantos pacientes su decision
-        avisos = sql("SELECT (SELECT count(*) FROM recibos WHERE firmado IS NULL AND " + de_mi_grupo("recibos.estudiante")
-                     + ") AS control, (SELECT count(*) FROM pacientes WHERE NOT aprobado AND rechazo = ''"
-                     " AND finalizado IS NULL AND eliminado IS NULL AND " + de_mi_grupo("pacientes.estudiante")
-                     + ") AS pacientes", cif, cif).fetchone()
+    yo, nombre, rol = quien()
+    if rol == "facultad":  # la Facultad ve en la pestana cuantas clinicas fallan y cuantos materiales se acaban
+        avisos = sql("SELECT (SELECT count(*) FROM reportes WHERE resuelto_en IS NULL) AS salas,"
+                     " (SELECT count(*) FROM existencias WHERE reponer) AS inventario,"
+                     " (SELECT count(*) FROM solicitudes WHERE estado = 'pendiente') AS solicitudes").fetchone()
+    elif rol == "profesor":  # y el profesor, lo que espera su firma o su aprobacion, solo de sus estudiantes
+        avisos = sql("SELECT (SELECT count(*) FROM recibos WHERE firmado_por_id IS NULL AND anulado_en IS NULL"
+                     " AND es_profesor_de(%s, estudiante_id)) AS control,"
+                     " (SELECT count(*) FROM pacientes WHERE aprobado_en IS NULL AND rechazo = ''"
+                     " AND finalizado_en IS NULL AND eliminado_en IS NULL AND es_profesor_de(%s, estudiante_id)) AS pacientes,"
+                     " (SELECT count(*) FROM citas WHERE aprobado_en IS NULL AND estado = 'programada' AND inicio > now()"
+                     " AND es_profesor_de(%s, estudiante_id)) AS citas", yo, yo, yo).fetchone()
     else:  # y el estudiante, cuantos de sus pacientes rechazo el profesor (RF04: el aviso al estudiante)
         # y cuantos pacientes pidieron por WhatsApp que les contacte (RF12)
         avisos = sql("SELECT count(*) AS pacientes, (SELECT count(*) FROM pedidos_contacto k JOIN pacientes p ON"
-                     " p.id = k.paciente_id WHERE k.atendido IS NULL AND p.estudiante = %s AND p.eliminado IS NULL)"
-                     " AS menu FROM pacientes WHERE estudiante = %s AND rechazo <> ''"
-                     " AND finalizado IS NULL AND eliminado IS NULL", cif, cif).fetchone()
+                     " p.id = k.paciente_id WHERE k.atendido_en IS NULL AND p.estudiante_id = %s AND p.eliminado_en IS NULL)"
+                     " AS menu FROM pacientes WHERE estudiante_id = %s AND rechazo <> ''"
+                     " AND finalizado_en IS NULL AND eliminado_en IS NULL", yo, yo).fetchone()
     pestanas = [(f"{t} ({avisos[e]})" if avisos.get(e) else t, e) for t, e in MENUS[rol]
                 if e != "comentarios" or COMENTARIOS]
-    return {"cif": cif, "nombre": nombre, "rol": ROLES[rol], "es_rol": rol, "pestanas": pestanas,
-            "fallas": avisos.get("salas", 0), "bajos": avisos.get("inventario", 0),
+    return {"yo": yo, "cif": cuentas()[yo]["cif"], "nombre": nombre, "rol": ROLES[rol], "es_rol": rol,
+            "pestanas": pestanas, "fallas": avisos.get("salas", 0), "bajos": avisos.get("inventario", 0),
             "solicitudes_pendientes": avisos.get("solicitudes", 0)}
 
 def visibles(alias="pacientes"):
     """Condicion SQL (y sus argumentos) de los pacientes que el usuario puede ver. El estudiante, los suyos;
-    el profesor, los de sus estudiantes (RF06/RNF06), y los de estudiantes que todavia no tienen profesor
-    asignado, para que nadie quede sin revisar; la Facultad, todos."""
-    cif, _, rol = quien()
+    el profesor, los de los estudiantes de sus clases (RF06/RNF06); la Facultad, todos."""
+    yo, _, rol = quien()
     if rol == "estudiante":
-        return f"{alias}.estudiante = %s", [cif]
+        return f"{alias}.estudiante_id = %s", [yo]
     if rol == "profesor":
-        return de_mi_grupo(f"{alias}.estudiante"), [cif]
+        return f"es_profesor_de(%s, {alias}.estudiante_id)", [yo]
     return "true", []
 
-def de_mi_grupo(columna):
-    """Condicion SQL: el estudiante de `columna` no esta a cargo de otro profesor (argumento: el profesor)."""
-    return f"NOT EXISTS (SELECT 1 FROM cuentas e WHERE e.cif = {columna} AND e.profesor <> %s)"
+def es_profesor_de(profesor_id, estudiante_id):
+    """True si el estudiante esta en una clase de ese profesor (la misma regla de la base)."""
+    return bool(sql("SELECT es_profesor_de(%s, %s) AS si", profesor_id, estudiante_id).fetchone()["si"])
 
 def paciente(pid):
     """El paciente, solo si el usuario puede verlo: cada estudiante ve unicamente los suyos.
-    Si la Facultad le dio de alta, solo ella puede cambiar algo (por ejemplo, un abono)."""
-    cif, _, rol = quien()
-    condicion, args = visibles()
-    p = sql("SELECT * FROM pacientes WHERE id = %s AND eliminado IS NULL AND " + condicion, pid, *args).fetchone()
-    if p and p["finalizado"] and rol != "admin" and request.method == "POST":
+    Si la Facultad le dio de alta, solo ella puede cambiar algo."""
+    _, _, rol = quien()
+    condicion, args = visibles("p")
+    p = sql("SELECT p.*, p.aprobado_en IS NOT NULL AS aprobado FROM pacientes p WHERE p.id = %s"
+            " AND p.eliminado_en IS NULL AND " + condicion, pid, *args).fetchone()
+    if p and p["finalizado_en"] and rol != "facultad" and request.method == "POST":
         flash(f"{p['nombre']} ya recibió el alta: su expediente ya no se puede cambiar.", "error")
         return None
     return p
@@ -943,27 +837,26 @@ def paciente(pid):
 def mis_pacientes(buscar=""):
     """Los pacientes que el usuario puede ver; con `buscar`, solo los que coinciden en parte con el nombre, la
     cédula (con o sin guiones) o el número de expediente (RF06). Trae cuántas veces no llegó a una cita."""
-    # La firma solo importa para saber si ya firmo; no hace falta traer la imagen
-    condicion, args = visibles()
+    condicion, args = visibles("p")
     texto = "%" + re.sub(r"([\\%_])", r"\\\1", buscar.strip()) + "%"
     cedula = "%" + sin_signos(buscar) + "%" if sin_signos(buscar) else ""
-    return sql("SELECT id, nombre, cedula, telefono, expediente, razon, estudiante, aprobado, rechazo,"
-               " firma <> '' AS firma, finalizado, (SELECT count(*) FROM citas c WHERE c.paciente_id = pacientes.id"
-               " AND c.estado = 'No se presentó') AS inasistencias"
-               " FROM pacientes WHERE eliminado IS NULL AND " + condicion +
-               " AND (%s = '' OR nombre ILIKE %s OR expediente ILIKE %s"
-               " OR regexp_replace(upper(cedula), '[^0-9A-Z]', '', 'g') LIKE %s) ORDER BY id",
+    return sql("SELECT p.id, p.nombre, p.cedula, p.telefono, p.expediente, p.razon, p.estudiante_id,"
+               " p.aprobado_en IS NOT NULL AS aprobado, p.rechazo, p.firma <> '' AS firma, p.finalizado_en,"
+               " (SELECT count(*) FROM citas c WHERE c.paciente_id = p.id AND c.estado = 'no_asistio') AS inasistencias"
+               " FROM pacientes p WHERE p.eliminado_en IS NULL AND " + condicion +
+               " AND (%s = '' OR p.nombre ILIKE %s OR p.expediente ILIKE %s"
+               " OR regexp_replace(upper(p.cedula), '[^0-9A-Z]', '', 'g') LIKE %s) ORDER BY p.id",
                *args, buscar.strip(), texto, texto, cedula).fetchall()
 
-def nombre_de(cif):
-    return cuentas()[cif][0] if cif in cuentas() else "sin asignar"
+def nombre_de(cuenta_id):
+    return cuentas()[cuenta_id]["nombre"] if cuenta_id in cuentas() else "sin asignar"
 
 def todas_las_salas():
     """Las clinicas, ordenadas por sala y por su número (así salen en su lugar del plano), y si tienen una
-    falla sin solucionar, su motivo y quién la reportó."""
-    return sql("SELECT s.*, r.id AS reporte_id, r.motivo, r.tipo, r.cif AS reporto,"
-               " to_char(r.cuando AT TIME ZONE 'America/Managua', 'DD/MM/YYYY HH24:MI') AS reportada"
-               " FROM salas s LEFT JOIN reportes r ON r.sala_id = s.id AND r.resuelto_cuando IS NULL"
+    falla sin solucionar, qué es y quién la reportó."""
+    return sql("SELECT s.*, r.id AS reporte_id, r.descripcion AS motivo, r.tipo, r.reportado_por_id AS reporto,"
+               " to_char(r.creado_en AT TIME ZONE 'America/Managua', 'DD/MM/YYYY HH24:MI') AS reportada"
+               " FROM salas s LEFT JOIN reportes r ON r.sala_id = s.id AND r.resuelto_en IS NULL"
                " ORDER BY s.en_sala, substring(s.nombre FROM '[0-9]+')::numeric NULLS LAST, s.id").fetchall()
 
 
@@ -985,66 +878,83 @@ def entrar():
         if not clave:
             datos["error_clave"] = "Escriba su contraseña."
         if cif and clave:
-            cuenta = sql("SELECT clave, activa, ceil(extract(epoch FROM bloqueada_hasta - now()) / 60) AS espera "
-                         "FROM cuentas WHERE cif = %s", cif).fetchone()
+            cuenta = sql("SELECT id, clave_hash, activa, ceil(extract(epoch FROM bloqueada_hasta - now()) / 60) AS espera"
+                         " FROM cuentas WHERE cif = %s", cif).fetchone()
             if cuenta and cuenta["espera"] and cuenta["espera"] > 0:
                 # Mientras esta bloqueada ni se mira la clave: asi no se puede seguir probando
                 datos["aviso"] = f"Cuenta bloqueada por intentos fallidos. Intente de nuevo en {cuenta['espera']:.0f} min."
-            elif cuenta and (correcta := clave_correcta(cuenta["clave"], clave)) and not cuenta["activa"]:
+            elif cuenta and (correcta := clave_correcta(cuenta["clave_hash"], clave)) and not cuenta["activa"]:
                 datos["aviso"] = "Esta cuenta está desactivada. Consulte con la Facultad."
             elif cuenta and correcta:
-                sql("UPDATE cuentas SET fallos = 0 WHERE cif = %s", cif)
+                sql("UPDATE cuentas SET fallos = 0 WHERE id = %s", cuenta["id"])
                 session.permanent = True  # cuenta los 15 min desde la ultima pagina que se abrio
-                session["cif"] = cif
+                session["cuenta"] = cuenta["id"]
                 anotar("Entró al sistema")
-                return redirect(url_for("menu"))
+                destino = session.pop("codigo_clase", None)  # venia de escanear el QR de una clase
+                return redirect(url_for("registro", codigo=destino) if destino else url_for("menu"))
             else:
                 datos["aviso"] = "CIF o contraseña incorrectos."
-                if cuenta and sql("UPDATE cuentas SET fallos = fallos + 1 WHERE cif = %s RETURNING fallos",
-                                  cif).fetchone()["fallos"] >= FALLOS_MAXIMOS:
+                if cuenta and sql("UPDATE cuentas SET fallos = fallos + 1 WHERE id = %s RETURNING fallos",
+                                  cuenta["id"]).fetchone()["fallos"] >= FALLOS_MAXIMOS:
                     sql("UPDATE cuentas SET fallos = 0, bloqueada_hasta = now() + %s * interval '1 minute' "
-                        "WHERE cif = %s", MINUTOS_BLOQUEO, cif)
-                    anotar(f"Cuenta bloqueada {MINUTOS_BLOQUEO} min por {FALLOS_MAXIMOS} contraseñas equivocadas", cif)
+                        "WHERE id = %s", MINUTOS_BLOQUEO, cuenta["id"])
+                    anotar(f"Cuenta bloqueada {MINUTOS_BLOQUEO} min por {FALLOS_MAXIMOS} contraseñas equivocadas",
+                           cuenta["id"])
                     datos["aviso"] = (f"Demasiados intentos fallidos. La cuenta queda bloqueada "
                                       f"{MINUTOS_BLOQUEO} min.")
     return render_template("entrar.html", **datos)
 
 
+def citas_de(condicion, *args, orden="c.inicio"):
+    """Citas (con fecha, hora y clinica a la vista) y el nombre de su paciente, de los pacientes que se ven."""
+    return sql("SELECT c.*, p.nombre AS paciente, p.telefono, p.estudiante_id AS a_cargo FROM (" + CITAS + ") c"
+               " JOIN pacientes p ON p.id = c.paciente_id WHERE p.eliminado_en IS NULL AND " + condicion
+               + " ORDER BY " + orden, *args).fetchall()
+
+def clase_de(cuenta_id):
+    """La clase actual del estudiante con el nombre de su profesor; None si todavia no esta en ninguna."""
+    return sql("SELECT k.*, p.nombre AS profesor FROM cuentas e JOIN clases k ON k.id = e.clase_id"
+               " JOIN cuentas p ON p.id = k.profesor_id WHERE e.id = %s", cuenta_id).fetchone()
+
+
 @app.route("/menu")
 def menu():
-    # Al profesor le aparecen los odontogramas que esperan su revision
-    cif, _, rol = quien()
-    condicion, args = visibles()
-    revisar = sql("SELECT id, nombre, estudiante FROM pacientes WHERE odonto_revision = 'pedida'"
-                  " AND eliminado IS NULL AND " + condicion + " ORDER BY id", *args).fetchall() if rol == "profesor" else []
-    rechazados = sql("SELECT id, nombre, rechazo, decision_por FROM pacientes WHERE estudiante = %s AND rechazo <> ''"
-                     " AND finalizado IS NULL AND eliminado IS NULL ORDER BY id", cif).fetchall() if rol == "estudiante" else []
-    # RF13: la jornada de hoy segun el rol. El estudiante ve sus citas; el profesor y la Facultad, todas
-    de_quien, args_agenda = visibles("p")
-    agenda = ("SELECT c.*, p.nombre AS paciente, p.telefono, p.estudiante FROM citas c JOIN pacientes p ON p.id = c.paciente_id"
-              " WHERE p.eliminado IS NULL AND c.fecha = %s AND c.estado <> 'Cancelada' AND " + de_quien + " ORDER BY c.hora")
-    manana = (datetime.now(MANAGUA) + timedelta(days=1)).date().isoformat()
-    por_aprobar = sql("SELECT id, nombre, estudiante FROM pacientes WHERE NOT aprobado AND rechazo = ''"
-                      " AND finalizado IS NULL AND eliminado IS NULL AND " + condicion + " ORDER BY id",
+    yo, _, rol = quien()
+    condicion, args = visibles("p")
+    # Al profesor le aparecen los odontogramas, pacientes y citas que esperan su revision
+    revisar = sql("SELECT p.id, p.nombre, p.estudiante_id FROM pacientes p WHERE p.odonto_revision = 'pedida'"
+                  " AND p.eliminado_en IS NULL AND " + condicion + " ORDER BY p.id", *args).fetchall() if rol == "profesor" else []
+    rechazados = sql("SELECT id, nombre, rechazo, rechazado_por_id FROM pacientes WHERE estudiante_id = %s"
+                     " AND rechazo <> '' AND finalizado_en IS NULL AND eliminado_en IS NULL ORDER BY id",
+                     yo).fetchall() if rol == "estudiante" else []
+    por_aprobar = sql("SELECT p.id, p.nombre, p.estudiante_id FROM pacientes p WHERE p.aprobado_en IS NULL AND p.rechazo = ''"
+                      " AND p.finalizado_en IS NULL AND p.eliminado_en IS NULL AND " + condicion + " ORDER BY p.id",
                       *args).fetchall() if rol == "profesor" else []
-    clinicas = sql("SELECT count(*) FILTER (WHERE disponible) AS disponibles, count(*) FILTER (WHERE NOT disponible)"
+    citas_por_aprobar = citas_de("c.aprobado_en IS NULL AND c.estado = 'programada' AND c.inicio > now() AND "
+                                 + condicion, *args) if rol == "profesor" else []
+    # RF13: la jornada de hoy segun el rol. El estudiante ve sus citas; el profesor y la Facultad, las que ven
+    manana = (datetime.now(MANAGUA) + timedelta(days=1)).date().isoformat()
+    citas_hoy = citas_de("c.fecha = %s AND c.estado <> 'cancelada' AND " + condicion, hoy(), *args)
+    clinicas = sql("SELECT count(*) FILTER (WHERE habilitada) AS disponibles, count(*) FILTER (WHERE NOT habilitada)"
                    " AS no_disponibles FROM salas").fetchone()
     return render_template("menu.html", **comun(), que_hace=QUE_HACE[rol], revisar=revisar, rechazados=rechazados,
-                           nombre_de=nombre_de, citas_hoy=sql(agenda, hoy(), *args_agenda).fetchall(),
-                           turnos=turnos_de(cif) if rol == "estudiante" else [], dias=DIAS,
+                           nombre_de=nombre_de, citas_hoy=citas_hoy, estados_cita=ESTADOS_CITA,
+                           turnos=turnos_de(yo) if rol == "estudiante" else [], dias=DIAS,
+                           clase=clase_de(yo) if rol == "estudiante" else None,
                            # RF12: las citas de manana que el paciente todavia no confirma, para recordarselas
-                           sin_confirmar=[c for c in sql(agenda, manana, *args_agenda).fetchall() if c["estado"] == "Programada"]
-                           if rol == "estudiante" else [], por_aprobar=por_aprobar, clinicas=clinicas,
+                           sin_confirmar=citas_de("c.fecha = %s AND c.estado = 'programada' AND c.aprobado_en IS NOT NULL"
+                                                  " AND " + condicion, manana, *args) if rol == "estudiante" else [],
+                           por_aprobar=por_aprobar, citas_por_aprobar=citas_por_aprobar, clinicas=clinicas,
                            # RF12: los pacientes que pidieron por WhatsApp que el estudiante les contacte
-                           contactar=sql("SELECT k.id, k.pedido, p.id AS paciente_id, p.nombre, p.telefono FROM"
+                           contactar=sql("SELECT k.id, k.pedido_en, p.id AS paciente_id, p.nombre, p.telefono FROM"
                                          " pedidos_contacto k JOIN pacientes p ON p.id = k.paciente_id WHERE"
-                                         " k.atendido IS NULL AND p.estudiante = %s AND p.eliminado IS NULL"
-                                         " ORDER BY k.pedido", cif).fetchall() if rol == "estudiante" else [])
+                                         " k.atendido_en IS NULL AND p.estudiante_id = %s AND p.eliminado_en IS NULL"
+                                         " ORDER BY k.pedido_en", yo).fetchall() if rol == "estudiante" else [])
 
 
 @app.route("/pacientes", methods=["GET", "POST"])
 def pacientes():
-    cif, _, rol = quien()
+    yo, _, rol = quien()
     form = {}
     if request.method == "POST":
         accion = request.form.get("accion")
@@ -1055,21 +965,19 @@ def pacientes():
                 flash(error, "error")
             else:
                 with bd().transaction():
-                    pid = sql("INSERT INTO pacientes (nombre, cedula, telefono, expediente, estudiante)"
-                              " VALUES (%s, %s, %s, %s, %s) RETURNING id", form["nombre"], form["cedula"],
-                              form["telefono"], form["expediente"], cif).fetchone()["id"]
-                    sql("INSERT INTO trabajo (paciente_id, estudiante, desde) VALUES (%s, %s, %s)", pid, cif, hoy())
+                    pid = sql("SELECT nextval(pg_get_serial_sequence('pacientes', 'id')) AS id").fetchone()["id"]
                     # RF03: si no trae numero de expediente fisico, se le da uno correlativo
-                    sql("UPDATE pacientes SET expediente = 'EXP-' || lpad(id::text, 5, '0') WHERE id = %s"
-                        " AND expediente = ''", pid)
-                    sql("INSERT INTO historias (paciente_id, nacimiento, sexo, direccion, emergencia_nombre,"
-                        " emergencia_telefono, actualizado, actualizado_por) VALUES (%s, %s, %s, %s, %s, %s, now(), %s)",
-                        pid, form["nacimiento"] or None, form["sexo"], form["direccion"], form["emergencia_nombre"],
-                        form["emergencia_telefono"], cif)
+                    sql("INSERT INTO pacientes (id, cedula, expediente, nombre, nacimiento, sexo, telefono, estudiante_id)"
+                        " VALUES (%s, %s, %s, %s, %s, %s, %s, %s)", pid, form["cedula"],
+                        form["expediente"] or f"EXP-{pid:05d}", form["nombre"], form["nacimiento"] or None,
+                        form["sexo"] or None, form["telefono"], yo)
+                    sql("INSERT INTO historias (paciente_id, direccion, emergencia_nombre, emergencia_telefono,"
+                        " actualizada_por_id) VALUES (%s, %s, %s, %s, %s)", pid, form["direccion"],
+                        form["emergencia_nombre"], form["emergencia_telefono"], yo)
                     anotar(f"Registró al paciente {form['nombre']} ({form['cedula']})")
                 # Paso siguiente: la razon por la que esta el paciente
                 return redirect(url_for("razon", pid=pid))
-        elif accion in ("aprobar", "rechazar") and rol == "profesor":  # el profesor solo revisa
+        elif accion in ("aprobar", "rechazar") and rol == "profesor":  # solo de los estudiantes de sus clases
             p = paciente(request.form.get("id", type=int))
             observacion = request.form.get("observacion", "").strip()
             if not p:
@@ -1078,29 +986,52 @@ def pacientes():
                 flash("Para rechazar al paciente escriba la observación para el estudiante.", "error")
             elif accion == "rechazar" and len(observacion) > MOTIVO_MAXIMO:
                 flash(f"La observación puede tener hasta {MOTIVO_MAXIMO} caracteres.", "error")
+            elif accion == "rechazar":
+                sql("UPDATE pacientes SET aprobado_por_id = NULL, aprobado_en = NULL, rechazo = %s,"
+                    " rechazado_por_id = %s, rechazado_en = now() WHERE id = %s", observacion, yo, p["id"])
+                anotar(f"Rechazó a {p['nombre']}: {observacion}")
+                flash(f"{p['nombre']} rechazado. El estudiante verá la observación.", "ok")
             else:
-                # Aprobar, rechazar o quitar la aprobación: queda quién lo decidió y cuándo (RF04)
-                aprobado = accion == "aprobar" and request.form.get("aprobado") == "1"
-                sql("UPDATE pacientes SET aprobado = %s, rechazo = %s, decision_por = %s, decision_cuando = now()"
-                    " WHERE id = %s", aprobado, observacion if accion == "rechazar" else "", cif, p["id"])
-                if accion == "rechazar":
-                    anotar(f"Rechazó a {p['nombre']}: {observacion}")
-                    flash(f"{p['nombre']} rechazado. El estudiante verá la observación.", "ok")
-                else:
-                    anotar(("Aprobó" if aprobado else "Retiró la aprobación de") + f" a {p['nombre']}")
-                    flash("Paciente aprobado." if aprobado else "Aprobación retirada.", "ok")
-        elif accion == "restaurar" and rol == "admin":
-            r = sql("UPDATE pacientes SET eliminado = NULL, eliminado_por = NULL, eliminado_motivo = '' WHERE id = %s"
-                    " AND eliminado IS NOT NULL RETURNING nombre", request.form.get("id", type=int)).fetchone()
+                # Aprobar o quitar la aprobación: queda quién lo decidió y cuándo (RF04)
+                aprobado = request.form.get("aprobado") == "1"
+                sql("UPDATE pacientes SET aprobado_por_id = %s, aprobado_en = CASE WHEN %s THEN now() END, rechazo = '',"
+                    " rechazado_por_id = NULL, rechazado_en = NULL WHERE id = %s",
+                    yo if aprobado else None, aprobado, p["id"])
+                anotar(("Aprobó" if aprobado else "Retiró la aprobación de") + f" a {p['nombre']}")
+                flash("Paciente aprobado." if aprobado else "Aprobación retirada.", "ok")
+        elif accion == "restaurar" and rol == "facultad":
+            r = sql("UPDATE pacientes SET eliminado_en = NULL, eliminado_por_id = NULL, eliminado_motivo = ''"
+                    " WHERE id = %s AND eliminado_en IS NOT NULL RETURNING nombre", request.form.get("id", type=int)).fetchone()
             if r:
                 anotar(f"Restauró al paciente {r['nombre']}")
                 flash(f"{r['nombre']} restaurado con todo su expediente.", "ok")
     buscar = request.args.get("buscar", "").strip()
-    eliminados = sql("SELECT id, nombre, cedula, eliminado_motivo, eliminado_por, to_char(eliminado AT TIME ZONE"
-                     " 'America/Managua', 'DD/MM/YYYY') AS cuando FROM pacientes WHERE eliminado IS NOT NULL"
-                     " ORDER BY eliminado DESC").fetchall() if rol == "admin" else []
+    eliminados = sql("SELECT id, nombre, cedula, eliminado_motivo, eliminado_por_id, to_char(eliminado_en AT TIME ZONE"
+                     " 'America/Managua', 'DD/MM/YYYY') AS cuando FROM pacientes WHERE eliminado_en IS NOT NULL"
+                     " ORDER BY eliminado_en DESC").fetchall() if rol == "facultad" else []
     return render_template("pacientes.html", **comun(), pacientes=mis_pacientes(buscar), buscar=buscar, form=form,
-                           nombre_de=nombre_de, sexos=SEXOS, eliminados=eliminados)
+                           nombre_de=nombre_de, sexos=SEXOS, eliminados=eliminados,
+                           sin_clase=rol == "estudiante" and not clase_de(yo))
+
+
+def crear_cita(p, rango, sala_id, razon):
+    """Agenda la cita del paciente (ya revisada con error_de_cita). Si la agenda el estudiante queda esperando la
+    aprobacion de su profesor; si la agenda el profesor, la base la deja aprobada. Devuelve la cita."""
+    yo = quien()[0]
+    c = sql("INSERT INTO citas (paciente_id, sala_id, estudiante_id, creado_por_id, inicio, fin, razon)"
+            " VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id", p["id"], sala_id, p["estudiante_id"], yo,
+            rango[0], rango[1], razon).fetchone()
+    c = sql(CITAS + " WHERE c.id = %s", c["id"]).fetchone()
+    anotar(f"Agendó cita de {p['nombre']} el {dmy(c['fecha'])} a las {c['hora']}"
+           + ("" if c["aprobado_en"] else " (espera la aprobación del profesor)"))
+    if c["aprobado_en"]:  # al paciente se le avisa cuando la cita ya esta aprobada
+        avisar_cita(p, c["fecha"], c["hora"], c["sala"], "agendada")
+    return c
+
+def datos_de_cita(form):
+    """(rango, sala_id) de lo que se escribio en el formulario de una cita."""
+    minutos = form.get("minutos", type=int) or 60
+    return rango_cita(form.get("fecha", "").strip(), form.get("hora", "").strip(), minutos), form.get("sala", type=int)
 
 
 @app.route("/pacientes/<int:pid>/razon", methods=["GET", "POST"])
@@ -1111,9 +1042,10 @@ def razon(pid):
         return redirect(url_for("pacientes"))
     if request.method == "POST":
         razon = request.form.get("razon", "").strip()
-        fecha, hora, sala = (request.form.get(c, "").strip() for c in ("fecha", "hora", "sala"))
+        rango, sala_id = datos_de_cita(request.form)
         # La primera cita es opcional, pero si se empieza a llenar se valida igual que en Citas
-        error = (fecha or hora) and error_de_cita(fecha, hora, sala, pid, p["estudiante"])
+        con_cita = bool(request.form.get("fecha") or request.form.get("hora"))
+        error = con_cita and error_de_cita(rango, sala_id, pid, p["estudiante_id"])
         p["razon"] = razon  # si hay error, el formulario vuelve con lo que se escribio
         if not razon:
             flash("Escriba la razón por la que viene el paciente.", "error")
@@ -1122,15 +1054,14 @@ def razon(pid):
         else:
             sql("UPDATE pacientes SET razon = %s WHERE id = %s", razon, pid)
             anotar(f"Anotó la razón de {p['nombre']}: {razon}")
-            if fecha:
-                sql("INSERT INTO citas (paciente_id, fecha, hora, sala, razon) VALUES (%s, %s, %s, %s, %s)",
-                    pid, fecha, hora, sala, request.form.get("razon_cita", "").strip() or razon)
-                anotar(f"Agendó cita de {p['nombre']} el {dmy(fecha)} a las {hora}")
-                flash("Razón guardada y cita agendada.", "ok")
+            if con_cita:
+                crear_cita(p, rango, sala_id, request.form.get("razon_cita", "").strip() or razon)
+                flash("Razón guardada y cita agendada; espera la aprobación del profesor.", "ok")
             else:
                 flash("Razón de la consulta guardada.", "ok")
             return redirect(url_for("expediente", pid=pid))
-    return render_template("razon.html", **comun(), p=p, hoy=hoy(), salas=todas_las_salas())
+    return render_template("razon.html", **comun(), p=p, hoy=hoy(), salas=todas_las_salas(), duraciones=DURACIONES,
+                           apertura=APERTURA, cierre=CIERRE)
 
 
 @app.route("/pacientes/<int:pid>/editar", methods=["GET", "POST"])
@@ -1141,6 +1072,7 @@ def editar(pid):
         return redirect(url_for("pacientes"))
     if request.method == "POST":
         form = {c: request.form.get(c, "").strip() for c in ("nombre", "cedula", "telefono", "expediente")}
+        form["expediente"] = form["expediente"] or p["expediente"]  # el expediente nunca queda vacio
         p.update(form)  # si hay error, el formulario vuelve con lo que se escribio
         if error := error_de_paciente(form, pid):
             flash(error, "error")
@@ -1153,21 +1085,38 @@ def editar(pid):
     return render_template("editar.html", **comun(), p=p)
 
 
+def trabajo_de(p):
+    """Quién tuvo a cargo al paciente y desde cuándo, con el resumen que dejó al pasarlo a otro estudiante."""
+    periodos, desde = [], p["creado_en"]
+    for t in sql("SELECT * FROM traspasos WHERE paciente_id = %s ORDER BY id", p["id"]).fetchall():
+        periodos.append({"estudiante_id": t["de_id"], "desde": desde, "hasta": t["creado_en"], "resumen": t["resumen"]})
+        desde = t["creado_en"]
+    periodos.append({"estudiante_id": p["estudiante_id"], "desde": desde, "hasta": None, "resumen": ""})
+    return periodos
+
+
 @app.route("/pacientes/<int:pid>")
 def expediente(pid):
     p = paciente(pid)
     if not p:
         return redirect(url_for("pacientes"))
-    p["trabajo"] = sql("SELECT * FROM trabajo WHERE paciente_id = %s ORDER BY id", pid).fetchall()
-    citas = sql("SELECT * FROM citas WHERE paciente_id = %s", pid).fetchall()
+    p["trabajo"] = trabajo_de(p)
+    citas = sql(CITAS + " WHERE c.paciente_id = %s ORDER BY c.inicio", pid).fetchall()
     h = historia_de(pid)
     return render_template("expediente.html", **comun(), p=p, nombre_de=nombre_de, revisiones=REVISIONES, citas=citas,
-                           color_cita=COLOR_CITA, inasistencias=sum(c["estado"] == "No se presentó" for c in citas),
+                           color_cita=COLOR_CITA, estados_cita=ESTADOS_CITA,
+                           inasistencias=sum(c["estado"] == "no_asistio" for c in citas),
                            h=h, alertas=alertas_de(h), avance=avance_de(pid))
 
 
 def historia_de(pid):
-    return sql("SELECT * FROM historias WHERE paciente_id = %s", pid).fetchone() or {c: "" for c in HISTORIA}
+    """La historia clinica con la fecha de nacimiento y el sexo del paciente, lista para el formulario."""
+    h = sql("SELECT h.*, p.nacimiento, p.sexo FROM pacientes p LEFT JOIN historias h ON h.paciente_id = p.id"
+            " WHERE p.id = %s", pid).fetchone() or {}
+    h = {c: ("" if v is None else v) for c, v in h.items()}
+    h["nacimiento"] = h["nacimiento"].isoformat() if h.get("nacimiento") else ""
+    h["completa"] = bool(h.get("completa"))
+    return h
 
 def presion_alta(texto):
     """'150/95' -> True. Presion alta: 140 o mas de sistolica, o 90 o mas de diastolica."""
@@ -1202,9 +1151,9 @@ def error_de_historia(form):
     return None
 
 def avance_de(pid):
-    """Cuanto del plan esta realizado (RF09): realizados, planificados y porcentaje."""
-    a = sql("SELECT count(*) FILTER (WHERE realizado IS NOT NULL) AS hechos, count(*) AS total FROM tratamientos"
-            " WHERE paciente_id = %s", pid).fetchone()
+    """Cuanto del plan esta realizado (RF09): un tratamiento esta realizado si tiene la cita en que se hizo."""
+    a = sql("SELECT count(cita_id) AS hechos, count(*) AS total FROM tratamientos WHERE paciente_id = %s",
+            pid).fetchone()
     a["porcentaje"] = round(100 * a["hechos"] / a["total"]) if a["total"] else 0
     return a
 
@@ -1216,25 +1165,29 @@ def historia(pid):
     p = paciente(pid)
     if not p:
         return redirect(url_for("pacientes"))
-    cif, _, rol = quien()
+    yo, _, rol = quien()
     h = historia_de(pid)
+    campos = {**DEL_PACIENTE, **HISTORIA}
     if request.method == "POST" and rol == "estudiante":
-        form = {c: request.form.get(c, "").strip() for c in HISTORIA}
+        form = {c: request.form.get(c, "").strip() for c in campos}
         if error := error_de_historia(form):
             flash(error, "error")
             h = {**h, **form}
         else:
-            cambiados = [HISTORIA[c] for c in HISTORIA if (str(h.get(c) or "")) != form[c]]
+            cambiados = [campos[c] for c in campos if (str(h.get(c) or "")) != form[c]]
             # Se guarda siempre, para no perder lo escrito; completa solo si se pide y no falta nada
-            faltan = [HISTORIA[c] for c in HISTORIA_COMPLETA if not form[c]]
+            faltan = [campos[c] for c in HISTORIA_COMPLETA if not form[c]]
             completa = request.form.get("accion") == "completa" and not faltan
-            form["nacimiento"] = form["nacimiento"] or None
             columnas = list(HISTORIA)
-            sql("INSERT INTO historias (paciente_id, " + ", ".join(columnas) + ", actualizado, actualizado_por, completa)"
-                " VALUES (%s, " + ", ".join(["%s"] * len(columnas)) + ", now(), %s, %s) ON CONFLICT (paciente_id) DO UPDATE SET "
-                + ", ".join(f"{c} = excluded.{c}" for c in columnas)
-                + ", actualizado = now(), actualizado_por = excluded.actualizado_por, completa = excluded.completa",
-                pid, *[form[c] for c in columnas], cif, datetime.now(MANAGUA) if completa else None)
+            with bd().transaction():
+                sql("UPDATE pacientes SET nacimiento = %s, sexo = %s WHERE id = %s",
+                    form["nacimiento"] or None, form["sexo"] or None, pid)
+                sql("INSERT INTO historias (paciente_id, " + ", ".join(columnas) + ", completa, actualizada_en,"
+                    " actualizada_por_id) VALUES (%s, " + ", ".join(["%s"] * len(columnas)) + ", %s, now(), %s)"
+                    " ON CONFLICT (paciente_id) DO UPDATE SET " + ", ".join(f"{c} = excluded.{c}" for c in columnas)
+                    + ", completa = excluded.completa, actualizada_en = now(),"
+                    " actualizada_por_id = excluded.actualizada_por_id",
+                    pid, *[form[c] for c in columnas], completa, yo)
             if cambiados:
                 anotar(f"Actualizó la historia clínica de {p['nombre']}: " + ", ".join(cambiados).lower())
             if completa and not h.get("completa"):
@@ -1249,32 +1202,31 @@ def historia(pid):
             else:
                 flash("Borrador guardado. Puede seguir llenándolo en la próxima cita.", "ok")
             return redirect(url_for("historia", pid=pid))
-    return render_template("historia.html", **comun(), p=p, h=h, campos=HISTORIA, sexos=SEXOS, alertas=alertas_de(h),
-                           hoy=hoy(), nombre_de=nombre_de, puede=rol == "estudiante" and not p["finalizado"],
-                           obligatorios=[HISTORIA[c] for c in HISTORIA_COMPLETA])
+    return render_template("historia.html", **comun(), p=p, h=h, campos=campos, sexos=SEXOS, alertas=alertas_de(h),
+                           hoy=hoy(), nombre_de=nombre_de, puede=rol == "estudiante" and not p["finalizado_en"],
+                           obligatorios=[campos[c] for c in HISTORIA_COMPLETA])
 
 
 @app.route("/pacientes/<int:pid>/traspaso", methods=["GET", "POST"])
 def traspaso(pid):
-    """Cambiar de estudiante: el trabajo del anterior se archiva con el resumen de lo que le hizo."""
+    """Cambiar de estudiante: queda el resumen de lo que trabajó el anterior."""
     p = paciente(pid)
-    if not p or quien()[2] != "admin" or p["finalizado"]:  # un paciente finalizado ya no cambia de estudiante
+    if not p or quien()[2] != "facultad" or p["finalizado_en"]:  # un paciente con alta ya no cambia de estudiante
         return redirect(url_for("pacientes"))
-    estudiantes = [(c, n) for c, (n, r) in cuentas().items() if r == "estudiante" and c not in g.inactivas]
+    estudiantes = [(c["id"], c["nombre"]) for c in cuentas().values() if c["rol"] == "estudiante" and c["activa"]]
     if request.method == "POST":
-        nuevo = request.form.get("estudiante", "")
+        nuevo = request.form.get("estudiante", type=int)
         resumen = request.form.get("resumen", "").strip()
-        if nuevo not in dict(estudiantes) or nuevo == p["estudiante"]:
+        if nuevo not in dict(estudiantes) or nuevo == p["estudiante_id"]:
             flash("Elija el estudiante que recibe al paciente.", "error")
         elif not resumen:
             flash("Escriba qué se le hizo al paciente y qué trabajó el estudiante anterior.", "error")
         else:
             with bd().transaction():
-                sql("UPDATE trabajo SET hasta = %s, resumen = %s WHERE paciente_id = %s AND hasta IS NULL",
-                    hoy(), resumen, pid)
-                sql("INSERT INTO trabajo (paciente_id, estudiante, desde) VALUES (%s, %s, %s)", pid, nuevo, hoy())
-                sql("UPDATE pacientes SET estudiante = %s WHERE id = %s", nuevo, pid)
-                anotar(f"Pasó a {p['nombre']} de {nombre_de(p['estudiante'])} a {nombre_de(nuevo)}")
+                sql("INSERT INTO traspasos (paciente_id, de_id, a_id, resumen, hecho_por_id) VALUES (%s, %s, %s, %s, %s)",
+                    pid, p["estudiante_id"], nuevo, resumen, quien()[0])
+                sql("UPDATE pacientes SET estudiante_id = %s WHERE id = %s", nuevo, pid)
+                anotar(f"Pasó a {p['nombre']} de {nombre_de(p['estudiante_id'])} a {nombre_de(nuevo)}")
             flash(f"{p['nombre']} pasó a {nombre_de(nuevo)}. El trabajo anterior quedó archivado.", "ok")
             return redirect(url_for("expediente", pid=pid))
     return render_template("traspaso.html", **comun(), p=p, estudiantes=estudiantes, nombre_de=nombre_de)
@@ -1284,23 +1236,23 @@ def traspaso(pid):
 def cerrar(pid):
     """Solo la Facultad: da de alta al paciente, anula el alta o elimina al paciente."""
     p = paciente(pid)
-    cif, _, rol = quien()
-    if not p or rol != "admin":
+    yo, _, rol = quien()
+    if not p or rol != "facultad":
         return redirect(url_for("pacientes"))
     if request.method == "POST":
         accion, texto = request.form.get("accion"), request.form.get("texto", "").strip()
-        if accion == "finalizar" and not p["finalizado"]:
+        if accion == "finalizar" and not p["finalizado_en"]:
             if not texto:
                 flash("Escriba cómo terminó el tratamiento del paciente.", "error")
             else:
-                sql("UPDATE pacientes SET finalizado = %s, finalizado_por = %s, finalizado_resumen = %s WHERE id = %s",
-                    hoy(), cif, texto, pid)
+                sql("UPDATE pacientes SET finalizado_en = now(), finalizado_por_id = %s, finalizado_resumen = %s"
+                    " WHERE id = %s", yo, texto, pid)
                 anotar(f"Dio de alta a {p['nombre']}: {texto}")
                 flash(f"{p['nombre']} recibió el alta. Su expediente ya no se puede cambiar.", "ok")
                 return redirect(url_for("expediente", pid=pid))
-        elif accion == "reabrir" and p["finalizado"]:
-            sql("UPDATE pacientes SET finalizado = NULL, finalizado_por = NULL, finalizado_resumen = '' WHERE id = %s",
-                pid)
+        elif accion == "reabrir" and p["finalizado_en"]:
+            sql("UPDATE pacientes SET finalizado_en = NULL, finalizado_por_id = NULL, finalizado_resumen = ''"
+                " WHERE id = %s", pid)
             anotar(f"Anuló el alta de {p['nombre']}")
             flash(f"Se anuló el alta de {p['nombre']}.", "ok")
             return redirect(url_for("expediente", pid=pid))
@@ -1308,19 +1260,23 @@ def cerrar(pid):
             # Se pide la cedula para que no se borre a nadie por un clic equivocado
             if sin_signos(request.form.get("cedula")) != sin_signos(p["cedula"]) or not texto:
                 flash("Para eliminarlo escriba la cédula del paciente y el motivo.", "error")
-            elif any(r["firmado"] for r in recibos_de(paciente_id=pid)):
+            elif any(r["firmado_por_id"] for r in recibos_de(paciente_id=pid)):
                 flash(f"{p['nombre']} tiene recibos de pago firmados por el docente: no se puede eliminar."
                       " Si terminó su tratamiento, dele de alta.", "error")
             else:
-                # RNF07: no se borra nada; deja de verse y la Facultad lo puede restaurar desde Pacientes
-                sql("UPDATE pacientes SET eliminado = now(), eliminado_por = %s, eliminado_motivo = %s WHERE id = %s",
-                    cif, texto, pid)
-                anotar(f"Eliminó al paciente {p['nombre']} ({p['cedula']}): {texto}")
+                # RNF07: no se borra nada; deja de verse y la Facultad lo puede restaurar desde Pacientes.
+                # Sus citas que vienen se cancelan para que la clínica quede libre a esa hora
+                with bd().transaction():
+                    sql("UPDATE citas SET estado = 'cancelada', motivo_cancelacion = 'Se eliminó al paciente'"
+                        " WHERE paciente_id = %s AND estado IN ('programada', 'confirmada') AND inicio > now()", pid)
+                    sql("UPDATE pacientes SET eliminado_en = now(), eliminado_por_id = %s, eliminado_motivo = %s"
+                        " WHERE id = %s", yo, texto, pid)
+                    anotar(f"Eliminó al paciente {p['nombre']} ({p['cedula']}): {texto}")
                 flash(f"{p['nombre']} fue eliminado. Su expediente se conserva y se puede restaurar.", "ok")
                 return redirect(url_for("pacientes"))
         return redirect(url_for("cerrar", pid=pid))
     return render_template("cerrar.html", **comun(), p=p, nombre_de=nombre_de, cuenta=cuenta_de(pid),
-                           pendientes=[t for t in plan_de(pid) if not t["realizado"]])
+                           pendientes=[t for t in plan_de(pid) if not t["cita_id"]])
 
 
 @app.route("/pacientes/<int:pid>/consentimiento", methods=["GET", "POST"])
@@ -1334,7 +1290,7 @@ def consentimiento(pid):
         if not firma.startswith("data:image/png;base64,"):
             flash("Falta la firma del paciente: dibújela con el dedo o el mouse.", "error")
         else:
-            sql("UPDATE pacientes SET firma = %s, firma_fecha = %s WHERE id = %s", firma, hoy(), pid)
+            sql("UPDATE pacientes SET firma = %s, firmado_en = now() WHERE id = %s", firma, pid)
             anotar(f"Recogió la firma del consentimiento informado de {p['nombre']}")
             flash("Consentimiento informado firmado. Ya se puede imprimir.", "ok")
         return redirect(url_for("consentimiento", pid=pid))
@@ -1343,109 +1299,138 @@ def consentimiento(pid):
 
 @app.route("/citas", methods=["GET", "POST"])
 def citas():
-    cif, _, rol = quien()
+    """Las citas de los pacientes que se ven. El estudiante agenda las de sus pacientes y quedan esperando a su
+    profesor; el profesor las aprueba (o las rechaza) y también puede agendarlas él, ya aprobadas. La Facultad las ve."""
+    yo, _, rol = quien()
     accion = request.form.get("accion")
-    if request.method == "POST" and rol == "estudiante" and accion in ("cancelar", "estado", "reprogramar"):
-        cita = sql("SELECT * FROM citas WHERE id = %s", request.form.get("id", type=int)).fetchone()
+    if request.method == "POST" and accion in ("cancelar", "estado", "reprogramar", "aprobar", "rechazar"):
+        cita = sql(CITAS + " WHERE c.id = %s", request.form.get("id", type=int)).fetchone()
         p = cita and paciente(cita["paciente_id"])
-        if p:
+        if p and rol == "estudiante" and accion in ("cancelar", "estado", "reprogramar"):
             cambiar_cita(cita, p, accion)
+        elif p and rol == "profesor" and accion in ("aprobar", "rechazar"):
+            decidir_cita(cita, p, accion)
         return redirect(url_for("citas"))
-    if request.method == "POST" and rol == "estudiante":
+    if request.method == "POST" and rol in ("estudiante", "profesor"):
         p = paciente(request.form.get("paciente_id", type=int))
-        f = {c: request.form.get(c, "").strip() for c in ("fecha", "hora", "sala", "razon")}
-        if not (p and f["fecha"] and f["hora"] and f["razon"]):
-            flash("Elige paciente, fecha, hora y la razón de la cita.", "error")
-        elif error := error_de_cita(f["fecha"], f["hora"], f["sala"], p["id"], p["estudiante"]):
+        rango, sala_id = datos_de_cita(request.form)
+        razon = request.form.get("razon", "").strip()
+        if not (p and razon):
+            flash("Elija el paciente, la fecha, la hora, la clínica y la razón de la cita.", "error")
+        elif rol == "profesor" and not es_profesor_de(yo, p["estudiante_id"]):
+            flash("Solo puede agendar citas de los estudiantes de sus clases.", "error")
+        elif error := error_de_cita(rango, sala_id, p["id"], p["estudiante_id"]):
             flash(error, "error")
         else:
-            sql("INSERT INTO citas (paciente_id, fecha, hora, sala, razon) VALUES (%s, %s, %s, %s, %s)",
-                p["id"], f["fecha"], f["hora"], f["sala"], f["razon"])
-            anotar(f"Agendó cita de {p['nombre']} el {dmy(f['fecha'])} a las {f['hora']}")
-            avisar_cita(p, f["fecha"], f["hora"], f["sala"], "agendada")
-            flash("Cita agendada.", "ok")
+            c = crear_cita(p, rango, sala_id, razon)
+            flash("Cita agendada." if c["aprobado_en"] else "Cita agendada; espera la aprobación de su profesor.", "ok")
         return redirect(url_for("citas"))
-    mios = {p["id"]: p for p in mis_pacientes()}
-    return render_template("citas.html", **comun(), hoy=hoy(), salas=todas_las_salas(), pacientes=list(mios.values()),
-                           citas=sql("SELECT * FROM citas WHERE paciente_id = ANY(%s)", list(mios)).fetchall(),
-                           mios=mios, nombre_de=nombre_de, activas=ACTIVAS, color_cita=COLOR_CITA)
+    condicion, args = visibles("p")
+    return render_template("citas.html", **comun(), hoy=hoy(), salas=todas_las_salas(), pacientes=mis_pacientes(),
+                           citas=citas_de(condicion, *args, orden="c.inicio DESC"), nombre_de=nombre_de,
+                           activas=ACTIVAS, color_cita=COLOR_CITA, estados_cita=ESTADOS_CITA, siguiente=SIGUIENTE,
+                           duraciones=DURACIONES, apertura=APERTURA, cierre=CIERRE)
+
+
+def decidir_cita(cita, p, accion):
+    """El profesor aprueba la cita que agendó su estudiante (la base revisa que sea de sus clases) o la rechaza,
+    que la deja cancelada con el motivo."""
+    if cita["aprobado_en"] or cita["estado"] != "programada":
+        flash("Esa cita ya no espera aprobación.", "error")
+    elif accion == "aprobar":
+        sql("UPDATE citas SET aprobado_por_id = %s WHERE id = %s", quien()[0], cita["id"])
+        anotar(f"Aprobó la cita de {p['nombre']} del {dmy(cita['fecha'])} a las {cita['hora']}")
+        avisar_cita(p, cita["fecha"], cita["hora"], cita["sala"], "agendada")
+        flash("Cita aprobada.", "ok")
+    elif not (motivo := request.form.get("motivo", "").strip()[:MOTIVO_MAXIMO]):
+        flash("Escriba por qué rechaza la cita.", "error")
+    else:
+        sql("UPDATE citas SET estado = 'cancelada', motivo_cancelacion = %s WHERE id = %s",
+            "Rechazada por el profesor: " + motivo, cita["id"])
+        anotar(f"Rechazó la cita de {p['nombre']} del {dmy(cita['fecha'])}: {motivo}")
+        flash("Cita rechazada; el estudiante verá el motivo.", "ok")
 
 
 def cambiar_cita(cita, p, accion):
     """El estudiante a cargo confirma, marca como atendida o como no se presentó, reprograma o cancela una cita
     (RF11). Nada se borra: la cita queda en el historial del paciente con su estado."""
     cuando = f"{dmy(cita['fecha'])} a las {cita['hora']}"
-    nuevo = "Cancelada" if accion == "cancelar" else request.form.get("estado", "")
+    nuevo = "cancelada" if accion == "cancelar" else request.form.get("estado", "")
     if cita["estado"] not in ACTIVAS:
-        flash(f"Esa cita ya está {cita['estado'].lower()}: ya no se cambia.", "error")
+        flash(f"Esa cita ya está {ESTADOS_CITA[cita['estado']].lower()}: ya no se cambia.", "error")
     elif accion == "reprogramar":
-        f = {c: request.form.get(c, "").strip() for c in ("fecha", "hora", "sala")}
+        rango, sala_id = datos_de_cita(request.form)
         if cita["fecha"] < hoy():
             flash("Esa cita ya pasó: márquela como atendida o como que no se presentó.", "error")
-        elif error := error_de_cita(f["fecha"], f["hora"], f["sala"], p["id"], p["estudiante"], cita["id"]):
+        elif error := error_de_cita(rango, sala_id, p["id"], cita["estudiante_id"], cita["id"]):
             flash(error, "error")
         else:
-            sql("UPDATE citas SET fecha = %s, hora = %s, sala = %s, estado = 'Programada', recordada = NULL"
-                " WHERE id = %s",
-                f["fecha"], f["hora"], f["sala"], cita["id"])
-            anotar(f"Reprogramó la cita de {p['nombre']} del {cuando} al {dmy(f['fecha'])} a las {f['hora']}")
-            avisar_cita(p, f["fecha"], f["hora"], f["sala"], "reprogramada")
-            flash("Cita reprogramada.", "ok")
+            # La cita cambia de hora: vuelve a esperar la aprobación del profesor
+            sql("UPDATE citas SET inicio = %s, fin = %s, sala_id = %s, estado = 'programada', recordada_en = NULL,"
+                " aprobado_por_id = NULL, aprobado_en = NULL WHERE id = %s", rango[0], rango[1], sala_id, cita["id"])
+            anotar(f"Reprogramó la cita de {p['nombre']} del {cuando} al {rango[0]:%d/%m/%Y} a las {rango[0]:%H:%M}")
+            flash("Cita reprogramada; espera otra vez la aprobación del profesor.", "ok")
     elif nuevo not in SIGUIENTE[cita["estado"]]:
         flash("Elija qué pasó con la cita.", "error")
-    elif nuevo in ("Confirmada", "Cancelada") and cita["fecha"] < hoy():
+    elif nuevo in ("confirmada", "atendida") and not cita["aprobado_en"]:
+        flash("Esa cita todavía no la aprueba el profesor: no se puede confirmar ni atender.", "error")
+    elif nuevo in ("confirmada", "cancelada") and cita["fecha"] < hoy():
         # Las citas pasadas no se cancelan ni se confirman: son historial
         flash("Esa cita ya pasó: márquela como atendida o como que no se presentó.", "error")
-    elif nuevo in ("Atendida", "No se presentó") and cita["fecha"] > hoy():
+    elif nuevo in ("atendida", "no_asistio") and cita["fecha"] > hoy():
         flash("Una cita se marca como atendida o como que no se presentó el día de la cita o después.", "error")
-    elif nuevo == "Cancelada" and not request.form.get("motivo", "").strip():
+    elif nuevo == "cancelada" and not request.form.get("motivo", "").strip():
         flash("Escriba el motivo de la cancelación.", "error")
+    elif nuevo in ("cancelada", "no_asistio") and sql("SELECT 1 FROM tratamientos WHERE cita_id = %s",
+                                                      cita["id"]).fetchone():
+        flash("En esa cita ya se anotaron tratamientos realizados: no se puede cancelar.", "error")
     else:
-        motivo = request.form.get("motivo", "").strip()[:MOTIVO_MAXIMO] if nuevo == "Cancelada" else ""
-        indicaciones = request.form.get("indicaciones", "").strip()[:MOTIVO_MAXIMO] if nuevo == "Atendida" else ""
+        motivo = request.form.get("motivo", "").strip()[:MOTIVO_MAXIMO] if nuevo == "cancelada" else ""
+        indicaciones = request.form.get("indicaciones", "").strip()[:MOTIVO_MAXIMO] if nuevo == "atendida" else ""
         sql("UPDATE citas SET estado = %s, motivo_cancelacion = %s, indicaciones = %s WHERE id = %s",
             nuevo, motivo, indicaciones, cita["id"])
-        anotar(f"Cita de {p['nombre']} del {cuando}: {nuevo.lower()}" + (f" ({motivo})" if motivo else ""))
-        flash(f"Cita {nuevo.lower()}.", "ok")
+        anotar(f"Cita de {p['nombre']} del {cuando}: {ESTADOS_CITA[nuevo].lower()}" + (f" ({motivo})" if motivo else ""))
+        flash(f"Cita {ESTADOS_CITA[nuevo].lower()}.", "ok")
 
 
 @app.route("/salas", methods=["GET", "POST"])
 def salas():
-    """Plano de las clínicas, acomodadas como en las salas reales, con un check si están disponibles o una X si no.
+    """Plano de las clínicas, acomodadas como en las salas reales, con un check si están habilitadas o una X si no.
     El estudiante reporta las clínicas que no funcionan y la Facultad las marca como solucionadas."""
-    cif, _, rol = quien()
+    yo, _, rol = quien()
     if request.method == "POST":
         accion = request.form.get("accion")
+        r = s = None
         if rol == "estudiante" and accion == "reportar":
             s = sql("SELECT id, nombre FROM salas WHERE id = %s", request.form.get("sala", type=int)).fetchone()
-            motivo, tipo = request.form.get("motivo", "").strip(), request.form.get("tipo", "Necesita reparación")
+            motivo, tipo = request.form.get("motivo", "").strip(), request.form.get("tipo", "equipo")
             if not s or not motivo or tipo not in TIPOS_FALLA:
                 flash("Elija la clínica y escriba qué es lo que no funciona.", "error")
             elif len(motivo) > MOTIVO_MAXIMO:
                 flash(f"El motivo puede tener hasta {MOTIVO_MAXIMO} caracteres.", "error")
             else:
                 with bd().transaction():
-                    nuevo = sql("INSERT INTO reportes (sala_id, cif, motivo, tipo) VALUES (%s, %s, %s, %s)"
-                                " ON CONFLICT (sala_id) WHERE resuelto_cuando IS NULL DO NOTHING RETURNING id",
-                                s["id"], cif, motivo, tipo).fetchone()
+                    nuevo = sql("INSERT INTO reportes (sala_id, tipo, descripcion, reportado_por_id) VALUES (%s, %s, %s, %s)"
+                                " ON CONFLICT (sala_id) WHERE resuelto_en IS NULL DO NOTHING RETURNING id",
+                                s["id"], tipo, motivo, yo).fetchone()
                     if nuevo:
-                        sql("UPDATE salas SET disponible = false WHERE id = %s", s["id"])
-                        anotar(f"Reportó {s['nombre']} ({tipo.lower()}): {motivo}")
+                        sql("UPDATE salas SET habilitada = false WHERE id = %s", s["id"])
+                        anotar(f"Reportó {s['nombre']} ({TIPOS_FALLA[tipo].lower()}): {motivo}")
                 if nuevo:
                     flash(f"{s['nombre']} quedó como no funcional. La Facultad fue notificada.", "ok")
                 else:
                     flash(f"{s['nombre']} ya tiene una falla reportada; la Facultad ya está avisada.", "error")
-        elif rol == "admin" and accion == "resolver":
+        elif rol == "facultad" and accion == "resolver":
             with bd().transaction():
-                r = sql("UPDATE reportes SET resuelto_por = %s, resuelto_cuando = now()"
-                        " WHERE id = %s AND resuelto_cuando IS NULL RETURNING sala_id, motivo",
-                        cif, request.form.get("reporte", type=int)).fetchone()
+                r = sql("UPDATE reportes SET resuelto_por_id = %s, resuelto_en = now()"
+                        " WHERE id = %s AND resuelto_en IS NULL RETURNING sala_id, descripcion",
+                        yo, request.form.get("reporte", type=int)).fetchone()
                 if r:
-                    s = sql("UPDATE salas SET disponible = true WHERE id = %s RETURNING nombre", r["sala_id"]).fetchone()
-                    anotar(f"Solucionó la falla de {s['nombre']}: {r['motivo']}")
+                    s = sql("UPDATE salas SET habilitada = true WHERE id = %s RETURNING nombre", r["sala_id"]).fetchone()
+                    anotar(f"Solucionó la falla de {s['nombre']}: {r['descripcion']}")
             if r:
-                flash(f"{s['nombre']} quedó solucionada y disponible otra vez.", "ok")
-        elif rol == "admin" and accion == "agregar":
+                flash(f"{s['nombre']} quedó solucionada y habilitada otra vez.", "ok")
+        elif rol == "facultad" and accion == "agregar":
             nombre, en_sala = request.form.get("nombre", "").strip(), request.form.get("en_sala", type=int)
             if not nombre or en_sala not in GRUPOS:
                 flash("Escriba el nombre de la clínica y elija si es de pregrado o de posgrado.", "error")
@@ -1455,29 +1440,30 @@ def salas():
                 sql("INSERT INTO salas (nombre, en_sala) VALUES (%s, %s)", nombre, en_sala)
                 anotar(f"Agregó {nombre} en {GRUPOS[en_sala]}")
                 flash(f"{nombre} agregada.", "ok")
-        elif rol == "admin":
-            s = sql("UPDATE salas SET disponible = NOT disponible WHERE id = %s RETURNING nombre, disponible",
+        elif rol == "facultad":
+            s = sql("UPDATE salas SET habilitada = NOT habilitada WHERE id = %s RETURNING nombre, habilitada",
                     request.form.get("sala", type=int)).fetchone()
             if s:
-                anotar(f"Marcó {s['nombre']} como " + ("disponible" if s["disponible"] else "no disponible"))
+                anotar(f"Marcó {s['nombre']} como " + ("habilitada" if s["habilitada"] else "no habilitada"))
         return redirect(url_for("salas"))
-    historial = sql("SELECT s.nombre, r.tipo, r.motivo, r.cif, r.resuelto_por,"
-                    " to_char(r.cuando AT TIME ZONE 'America/Managua', 'DD/MM/YYYY HH24:MI') AS cuando,"
-                    " to_char(r.resuelto_cuando AT TIME ZONE 'America/Managua', 'DD/MM/YYYY HH24:MI') AS resuelto"
-                    " FROM reportes r JOIN salas s ON s.id = r.sala_id WHERE r.resuelto_cuando IS NOT NULL"
-                    " ORDER BY r.resuelto_cuando DESC LIMIT 100").fetchall() if rol != "estudiante" else []
+    historial = sql("SELECT s.nombre, r.tipo, r.descripcion AS motivo, r.reportado_por_id AS reporto,"
+                    " r.resuelto_por_id AS resuelto_por,"
+                    " to_char(r.creado_en AT TIME ZONE 'America/Managua', 'DD/MM/YYYY HH24:MI') AS cuando,"
+                    " to_char(r.resuelto_en AT TIME ZONE 'America/Managua', 'DD/MM/YYYY HH24:MI') AS resuelto"
+                    " FROM reportes r JOIN salas s ON s.id = r.sala_id WHERE r.resuelto_en IS NOT NULL"
+                    " ORDER BY r.resuelto_en DESC LIMIT 100").fetchall() if rol != "estudiante" else []
     return render_template("salas.html", **comun(), salas=todas_las_salas(), nombre_de=nombre_de,
                            motivo_maximo=MOTIVO_MAXIMO, tipos_falla=TIPOS_FALLA, historial=historial)
 
 
 @app.route("/pacientes/<int:pid>/odontograma", methods=["GET", "POST"])
 def odontograma(pid):
-    """Foto presencial y odontograma digital. El estudiante a cargo los llena y pide la revisión;
+    """Fotos del paciente y odontograma digital. El estudiante a cargo los llena y pide la revisión;
     el profesor lo aprueba o lo devuelve con lo que hay que corregir."""
     p = paciente(pid)
     if not p:
         return redirect(url_for("pacientes"))
-    cif, _, rol = quien()
+    yo, _, rol = quien()
     if request.method == "POST":
         accion = request.form.get("accion")
         if rol == "estudiante" and accion in ("diente", "foto"):
@@ -1487,19 +1473,20 @@ def odontograma(pid):
                 if d not in DIENTES or estado not in ESTADOS:
                     flash("Elija el diente y su estado.", "error")
                     return redirect(url_for("odontograma", pid=pid))
-                que = f"el diente {d}: {estado}" + (f" ({nota})" if nota else "")
-                guardar = ("INSERT INTO dientes VALUES (%s, %s, %s, %s) ON CONFLICT (paciente_id, diente)"
-                           " DO UPDATE SET estado = excluded.estado, nota = excluded.nota", pid, d, estado, nota)
+                que = f"el diente {d}: {ESTADOS[estado][0]}" + (f" ({nota})" if nota else "")
+                guardar = ("INSERT INTO dientes (paciente_id, diente, estado, nota) VALUES (%s, %s, %s, %s)"
+                           " ON CONFLICT (paciente_id, diente) DO UPDATE SET estado = excluded.estado,"
+                           " nota = excluded.nota", pid, d, estado, nota)
             else:
                 imagen = foto_jpeg(request.files.get("foto"))
                 if not imagen:
                     flash("Elija una foto JPG o PNG de hasta 5 MB, o tómela con la cámara.", "error")
                     return redirect(url_for("odontograma", pid=pid))
-                tipo = request.form.get("tipo", "Presencial")
-                tipo = tipo if tipo in TIPOS_FOTO else "Presencial"
-                que = "una foto presencial" if tipo == "Presencial" else "una radiografía"
-                guardar = ("INSERT INTO fotos (paciente_id, cif, url, tipo) VALUES (%s, %s, %s, %s)", pid, cif,
-                           guardar_archivo("fotos", imagen), tipo)
+                tipo = request.form.get("tipo", "intraoral")
+                tipo = tipo if tipo in TIPOS_FOTO else "intraoral"
+                que = f"una foto {TIPOS_FOTO[tipo].lower()}" if tipo != "radiografia" else "una radiografía"
+                guardar = ("INSERT INTO fotos (paciente_id, tipo, url, descripcion) VALUES (%s, %s, %s, %s)", pid, tipo,
+                           guardar_archivo("fotos", imagen), request.form.get("descripcion", "").strip() or None)
             with bd().transaction():
                 sql(*guardar)
                 # Si ya estaba aprobado y se cambia, el profesor lo tiene que volver a revisar
@@ -1507,8 +1494,8 @@ def odontograma(pid):
                 anotar(f"Anotó en el odontograma de {p['nombre']} {que}")
             flash("Foto guardada." if accion == "foto" else "Diente guardado.", "ok")
         elif rol == "estudiante" and accion == "pedir":
-            if not sql("SELECT 1 FROM fotos WHERE paciente_id = %s AND tipo = 'Presencial'", pid).fetchone():
-                flash("Antes de pedir la revisión suba la foto presencial del paciente.", "error")
+            if not sql("SELECT 1 FROM fotos WHERE paciente_id = %s AND tipo <> 'radiografia'", pid).fetchone():
+                flash("Antes de pedir la revisión suba una foto del paciente (intraoral o extraoral).", "error")
             elif sql("UPDATE pacientes SET odonto_revision = 'pedida' WHERE id = %s"
                      " AND odonto_revision IN ('', 'devuelta') RETURNING id", pid).fetchone():
                 anotar(f"Pidió la revisión del odontograma de {p['nombre']}")
@@ -1517,9 +1504,9 @@ def odontograma(pid):
             nota = request.form.get("nota", "").strip()
             if accion == "devolver" and not nota:
                 flash("Escriba qué tiene que corregir el estudiante.", "error")
-            elif sql("UPDATE pacientes SET odonto_revision = %s, odonto_revisor = %s, odonto_nota = %s"
+            elif sql("UPDATE pacientes SET odonto_revision = %s, odonto_revisor_id = %s, odonto_nota = %s"
                      " WHERE id = %s AND odonto_revision = 'pedida' RETURNING id",
-                     "aprobada" if accion == "aprobar" else "devuelta", cif, nota, pid).fetchone():
+                     "aprobada" if accion == "aprobar" else "devuelta", yo, nota, pid).fetchone():
                 anotar(("Aprobó el odontograma de " if accion == "aprobar" else "Devolvió el odontograma de ")
                        + p["nombre"] + (f": {nota}" if nota else ""))
                 flash("Odontograma aprobado." if accion == "aprobar" else "Odontograma devuelto al estudiante.", "ok")
@@ -1527,12 +1514,11 @@ def odontograma(pid):
     elegido = request.args.get("diente", type=int)
     return render_template(
         "odontograma.html", **comun(), p=p, nombre_de=nombre_de, arriba=ARRIBA, abajo=ABAJO, estados=ESTADOS,
-        revisiones=REVISIONES,
-        elegido=elegido if rol == "estudiante" and not p["finalizado"] and elegido in DIENTES else None,
+        revisiones=REVISIONES, tipos_foto=TIPOS_FOTO,
+        elegido=elegido if rol == "estudiante" and not p["finalizado_en"] and elegido in DIENTES else None,
         dientes={f["diente"]: f for f in sql("SELECT * FROM dientes WHERE paciente_id = %s", pid)},
-        tipos_foto=TIPOS_FOTO,
-        fotos=sql("SELECT id, cif, tipo, to_char(cuando AT TIME ZONE 'America/Managua', 'DD/MM/YYYY HH24:MI') AS cuando"
-                  " FROM fotos WHERE paciente_id = %s ORDER BY id DESC", pid).fetchall())
+        fotos=sql("SELECT id, tipo, descripcion, to_char(creado_en AT TIME ZONE 'America/Managua', 'DD/MM/YYYY HH24:MI')"
+                  " AS cuando FROM fotos WHERE paciente_id = %s ORDER BY id DESC", pid).fetchall())
 
 
 @app.route("/pacientes/<int:pid>/fotos/<int:fid>.jpg")
@@ -1545,51 +1531,93 @@ def foto(pid, fid):
 
 
 def plan_de(pid):
-    return sql("SELECT t.*, a.nombre FROM tratamientos t JOIN tarifario a ON a.id = t.procedimiento_id"
+    """El plan de tratamiento por fases. Un tratamiento esta realizado si tiene la cita en que se hizo: de ella
+    salen quién lo hizo y cuándo."""
+    return sql("SELECT t.*, a.nombre, a.codigo, c.estudiante_id AS realizado_por,"
+               " to_char(c.inicio AT TIME ZONE 'America/Managua', 'YYYY-MM-DD') AS realizado"
+               " FROM tratamientos t JOIN tarifario a ON a.id = t.tarifario_id LEFT JOIN citas c ON c.id = t.cita_id"
                " WHERE t.paciente_id = %s ORDER BY array_position(%s::text[], t.fase), t.id", pid, list(FASES)).fetchall()
 
 def cuenta_de(pid):
-    """Lo que cuesta el plan, lo realizado (lo que se cobra), lo abonado y el saldo pendiente."""
-    c = sql("SELECT coalesce(sum(precio), 0) AS plan,"
-            " coalesce(sum(precio) FILTER (WHERE realizado IS NOT NULL), 0) AS realizado,"
-            " (SELECT coalesce(sum(monto), 0) FROM abonos WHERE paciente_id = %s) AS abonado"
-            " FROM tratamientos WHERE paciente_id = %s", pid, pid).fetchone()
+    """Lo que cuesta el plan, lo realizado (lo que se cobra), lo pagado en recibos y el saldo pendiente."""
+    c = sql("SELECT coalesce(sum(precio - descuento_monto), 0) AS plan,"
+            " coalesce(sum(precio - descuento_monto) FILTER (WHERE cita_id IS NOT NULL), 0) AS realizado,"
+            " (SELECT coalesce(sum(pagado), 0) FROM resumen_ordenes WHERE paciente_id = %s AND anulado_en IS NULL)"
+            " AS abonado FROM tratamientos WHERE paciente_id = %s", pid, pid).fetchone()
     c["saldo"] = c["realizado"] - c["abonado"]
     return c
 
 
+def registrar_pago(orden, p, m):
+    """La Facultad registra un pago (recibo) de la orden; la base no deja pagar más que el saldo. Devuelve True si
+    quedó guardado."""
+    numero = request.form.get("numero", "").strip()
+    metodo = request.form.get("metodo", "efectivo")
+    referencia = request.form.get("referencia", "").strip() or None
+    if m is None or m <= 0:
+        flash("Escriba el monto del pago.", "error")
+    elif m > orden["saldo"]:
+        flash(f"El pago pasa el saldo de la orden ({cordobas(orden['saldo'])}).", "error")
+    elif not numero or len(numero) > RECIBO_MAXIMO:
+        flash(f"Escriba el número del recibo (hasta {RECIBO_MAXIMO} caracteres).", "error")
+    elif metodo not in METODOS_PAGO or (metodo != "efectivo" and not referencia):
+        flash("Elija cómo pagó y, si no fue en efectivo, el número de la transferencia o del voucher.", "error")
+    elif sql("SELECT 1 FROM recibos WHERE numero = %s", numero).fetchone():
+        flash("Ya hay un recibo con ese número.", "error")
+    else:
+        sql("INSERT INTO recibos (orden_id, numero, monto, metodo_pago, referencia, estudiante_id)"
+            " VALUES (%s, %s, %s, %s, %s, %s)", orden["id"], numero, m, metodo, referencia, p["estudiante_id"])
+        anotar(f"Registró el pago {numero} de {cordobas(m)} de la orden Nº {orden['id']} de {p['nombre']}")
+        flash(f"Pago de {cordobas(m)} registrado.", "ok")
+        return True
+    return False
+
+
 @app.route("/pacientes/<int:pid>/tratamientos", methods=["GET", "POST"])
 def tratamientos(pid):
-    """Plan de tratamiento con los precios del tarifario y los abonos del paciente.
-    El estudiante a cargo anota y marca lo realizado; la Facultad registra los abonos."""
+    """Plan de tratamiento con los precios del tarifario, las órdenes de cobro y los pagos del paciente.
+    El estudiante a cargo anota y marca lo realizado (en qué cita); el profesor lo aprueba; el profesor o la
+    Facultad generan la orden de cobro y la Facultad registra los pagos."""
     p = paciente(pid)
     if not p:
         return redirect(url_for("pacientes"))
-    cif, _, rol = quien()
+    yo, _, rol = quien()
     if request.method == "POST":
         accion = request.form.get("accion")
         if rol == "estudiante" and accion == "anotar":
             proc = sql("SELECT * FROM tarifario WHERE id = %s AND activo",
                        request.form.get("procedimiento", type=int)).fetchone()
             diente = request.form.get("diente", type=int)  # opcional: hay procedimientos de toda la boca
-            fase = request.form.get("fase", "Operatoria")
+            superficie = request.form.get("superficie", "") or None
+            fase = request.form.get("fase", "basica")
             if not proc or (diente is not None and diente not in DIENTES) or fase not in FASES:
                 flash("Elija el procedimiento del tarifario y la fase.", "error")
+            elif superficie and (superficie not in SUPERFICIES or diente is None):
+                flash("La cara del diente se elige junto con el diente.", "error")
             else:
-                sql("INSERT INTO tratamientos (paciente_id, procedimiento_id, diente, precio, estudiante, anotado, fase)"
-                    " VALUES (%s, %s, %s, %s, %s, %s, %s)", pid, proc["id"], diente, proc["precio"], cif, hoy(), fase)
-                anotar(f"Anotó en el plan de {p['nombre']}: {proc['nombre']}" + (f" del {diente}" if diente else ""))
+                with bd().transaction():
+                    if diente is not None:  # el tratamiento apunta al diente del odontograma: si no esta, esta sano
+                        sql("INSERT INTO dientes (paciente_id, diente, estado) VALUES (%s, %s, 'sano')"
+                            " ON CONFLICT DO NOTHING", pid, diente)
+                    sql("INSERT INTO tratamientos (paciente_id, tarifario_id, diente, superficie, precio, fase)"
+                        " VALUES (%s, %s, %s, %s, %s, %s)", pid, proc["id"], diente, superficie, proc["precio"], fase)
+                    anotar(f"Anotó en el plan de {p['nombre']}: {proc['nombre']}" + (f" del {diente}" if diente else ""))
                 flash("Tratamiento anotado en el plan.", "ok")
         elif rol == "estudiante" and accion in ("realizado", "quitar"):
-            t = sql("SELECT t.id, t.orden_id, a.nombre FROM tratamientos t JOIN tarifario a ON a.id = t.procedimiento_id"
-                    " WHERE t.id = %s AND t.paciente_id = %s AND t.realizado IS NULL",
+            t = sql("SELECT t.id, t.orden_id, a.nombre FROM tratamientos t JOIN tarifario a ON a.id = t.tarifario_id"
+                    " WHERE t.id = %s AND t.paciente_id = %s AND t.cita_id IS NULL",
                     request.form.get("id", type=int), pid).fetchone()
+            cita = accion == "realizado" and sql(
+                CITAS + " WHERE c.id = %s AND c.paciente_id = %s AND c.estado IN ('confirmada', 'atendida')"
+                " AND c.inicio <= now()", request.form.get("cita", type=int), pid).fetchone()
             if t and accion == "realizado" and not p["firma"]:
                 flash("Falta la firma del consentimiento informado: sin ella no se realiza ningún tratamiento.", "error")
+            elif t and accion == "realizado" and not cita:
+                flash("Elija la cita (confirmada o atendida, que ya pasó) en que se realizó.", "error")
             elif t and accion == "realizado":
-                # queda a nombre de quien lo realizó: a ese estudiante le toca subir el recibo de pago
-                sql("UPDATE tratamientos SET realizado = %s, estudiante = %s WHERE id = %s", hoy(), cif, t["id"])
-                anotar(f"Realizó a {p['nombre']}: {t['nombre']}")
+                # la cita dice quién lo hizo y cuándo: a ese estudiante le toca subir el recibo de pago
+                sql("UPDATE tratamientos SET cita_id = %s WHERE id = %s", cita["id"], t["id"])
+                anotar(f"Realizó a {p['nombre']}: {t['nombre']} (cita del {dmy(cita['fecha'])})")
                 flash(f"{t['nombre']} quedó como realizado.", "ok")
             elif t and t["orden_id"]:
                 flash(f"{t['nombre']} ya está en la orden de cobro Nº {t['orden_id']}: no se quita.", "error")
@@ -1597,99 +1625,116 @@ def tratamientos(pid):
                 sql("DELETE FROM tratamientos WHERE id = %s", t["id"])
                 anotar(f"Quitó del plan de {p['nombre']}: {t['nombre']}")
                 flash(f"{t['nombre']} quitado del plan.", "ok")
-        elif rol in ("estudiante", "admin") and accion == "orden":
-            # RF16: la orden lleva todo lo del plan que todavia no esta en otra orden, con su precio
+        elif rol == "profesor" and accion == "aprobar_tratamiento":
+            t = sql("UPDATE tratamientos t SET aprobado_por_id = %s FROM tarifario a WHERE t.id = %s AND t.paciente_id = %s"
+                    " AND t.aprobado_por_id IS NULL AND a.id = t.tarifario_id RETURNING a.nombre",
+                    yo, request.form.get("id", type=int), pid).fetchone()
+            if t:
+                anotar(f"Aprobó el tratamiento {t['nombre']} de {p['nombre']}")
+                flash(f"{t['nombre']} aprobado.", "ok")
+        elif rol in ("profesor", "facultad") and accion == "orden":
+            # RF16: la orden lleva todo lo del plan que todavia no esta en otra orden; el total lo calcula la base
             with bd().transaction():
-                total = sql("SELECT coalesce(sum(precio), 0) AS total FROM tratamientos WHERE paciente_id = %s"
-                            " AND orden_id IS NULL", pid).fetchone()["total"]
-                orden = total > 0 and sql("INSERT INTO ordenes (paciente_id, total, creada_por) VALUES (%s, %s, %s)"
-                                          " RETURNING id", pid, total, cif).fetchone()["id"]
+                hay = sql("SELECT 1 FROM tratamientos WHERE paciente_id = %s AND orden_id IS NULL", pid).fetchone()
+                orden = hay and sql("INSERT INTO ordenes (paciente_id, creado_por_id) VALUES (%s, %s) RETURNING id",
+                                    pid, yo).fetchone()["id"]
                 if orden:
                     sql("UPDATE tratamientos SET orden_id = %s WHERE paciente_id = %s AND orden_id IS NULL", orden, pid)
+                    total = sql("SELECT total FROM resumen_ordenes WHERE id = %s", orden).fetchone()["total"]
                     anotar(f"Generó la orden de cobro Nº {orden} de {p['nombre']} por {cordobas(total)}")
             if not orden:
                 flash("No hay tratamientos sin orden de cobro.", "error")
                 return redirect(url_for("tratamientos", pid=pid))
             return redirect(url_for("orden", oid=orden))
-        elif rol == "admin" and accion == "abono":
-            m = monto(request.form.get("monto"))
-            if m is None or m <= 0:
-                flash("Escriba el monto del abono.", "error")
+        elif rol == "facultad" and accion == "pago":
+            o = sql("SELECT * FROM resumen_ordenes WHERE id = %s AND paciente_id = %s AND anulado_en IS NULL",
+                    request.form.get("orden", type=int), pid).fetchone()
+            if not o:
+                flash("Elija la orden de cobro que se paga.", "error")
             else:
-                sql("INSERT INTO abonos (paciente_id, monto, cif) VALUES (%s, %s, %s)", pid, m, cif)
-                anotar(f"Registró un abono de {cordobas(m)} de {p['nombre']}")
-                flash(f"Abono de {cordobas(m)} registrado.", "ok")
+                registrar_pago(o, p, monto(request.form.get("monto")))
         return redirect(url_for("tratamientos", pid=pid))
+    ordenes = sql("SELECT *, to_char(creado_en AT TIME ZONE 'America/Managua', 'DD/MM/YYYY') AS creada"
+                  " FROM resumen_ordenes WHERE paciente_id = %s ORDER BY id", pid).fetchall()
     return render_template(
         "tratamientos.html", **comun(), p=p, nombre_de=nombre_de, plan=plan_de(pid), cuenta=cuenta_de(pid),
-        fases=FASES, avance=avance_de(pid), ordenes=sql(
-            "SELECT id, total, pagada, to_char(creada AT TIME ZONE 'America/Managua', 'DD/MM/YYYY') AS creada"
-            " FROM ordenes WHERE paciente_id = %s ORDER BY id", pid).fetchall(),
+        fases=FASES, superficies=SUPERFICIES, metodos=METODOS_PAGO, avance=avance_de(pid), ordenes=ordenes,
+        por_pagar=[o for o in ordenes if o["estado"] in ("pendiente", "abonada")],
         sin_orden=sql("SELECT count(*) AS n FROM tratamientos WHERE paciente_id = %s AND orden_id IS NULL",
                       pid).fetchone()["n"],
-        recibos=recibos_de(paciente_id=pid),
-        dientes=ARRIBA + ABAJO,
-        tarifario=sql("SELECT * FROM tarifario WHERE activo ORDER BY nombre").fetchall(),
-        abonos=sql("SELECT monto, cif, to_char(cuando AT TIME ZONE 'America/Managua', 'DD/MM/YYYY HH24:MI') AS cuando"
-                   " FROM abonos WHERE paciente_id = %s ORDER BY id", pid).fetchall())
+        recibos=recibos_de(paciente_id=pid), dientes=ARRIBA + ABAJO,
+        citas_hechas=sql(CITAS + " WHERE c.paciente_id = %s AND c.estado IN ('confirmada', 'atendida')"
+                         " AND c.inicio <= now() ORDER BY c.inicio DESC", pid).fetchall(),
+        tarifario=sql("SELECT * FROM tarifario WHERE activo ORDER BY nombre").fetchall())
 
 
 @app.route("/ordenes/<int:oid>", methods=["GET", "POST"])
 def orden(oid):
     """Orden de cobro para caja (RF16): numero, tratamientos con su precio y total. Se imprime o se muestra en
-    pantalla; la Facultad la marca como pagada y eso registra el abono del paciente."""
-    o = sql("SELECT * FROM ordenes WHERE id = %s", oid).fetchone()
+    pantalla; la Facultad registra los pagos (recibos) o la anula si se hizo por error."""
+    o = sql("SELECT * FROM resumen_ordenes WHERE id = %s", oid).fetchone()
     p = o and paciente(o["paciente_id"])
     if not p:
         return redirect(url_for("pacientes"))
-    cif, _, rol = quien()
-    if request.method == "POST" and rol == "admin" and not o["pagada"]:
-        with bd().transaction():
-            sql("UPDATE ordenes SET pagada = now(), cobrada_por = %s WHERE id = %s", cif, oid)
-            sql("INSERT INTO abonos (paciente_id, monto, cif) VALUES (%s, %s, %s)", p["id"], o["total"], cif)
-            anotar(f"Cobró la orden Nº {oid} de {p['nombre']}: {cordobas(o['total'])}")
-        flash(f"Orden Nº {oid} pagada; el abono quedó registrado.", "ok")
+    _, _, rol = quien()
+    if request.method == "POST" and rol == "facultad" and not o["anulado_en"]:
+        if request.form.get("accion") == "anular":
+            if o["pagado"] > 0:
+                flash("La orden ya tiene pagos: anule primero sus recibos.", "error")
+            else:
+                with bd().transaction():  # sus tratamientos quedan libres para otra orden
+                    sql("UPDATE tratamientos SET orden_id = NULL WHERE orden_id = %s", oid)
+                    sql("UPDATE ordenes SET anulado_en = now() WHERE id = %s", oid)
+                    anotar(f"Anuló la orden de cobro Nº {oid} de {p['nombre']}")
+                flash(f"Orden Nº {oid} anulada; sus tratamientos pueden ir en otra orden.", "ok")
+        else:  # cobrar: un pago por lo que falta, o por el monto que se escriba
+            registrar_pago(o, p, monto(request.form.get("monto")) if request.form.get("monto") else o["saldo"])
         return redirect(url_for("orden", oid=oid))
-    o["pagada_texto"] = o["pagada"] and o["pagada"].astimezone(MANAGUA).strftime("%d/%m/%Y %H:%M")
-    o["creada_texto"] = o["creada"].astimezone(MANAGUA).strftime("%d/%m/%Y %H:%M")
-    return render_template("orden.html", **comun(), o=o, p=p, nombre_de=nombre_de, lineas=sql(
-        "SELECT t.*, a.nombre, a.codigo FROM tratamientos t JOIN tarifario a ON a.id = t.procedimiento_id"
-        " WHERE t.orden_id = %s ORDER BY t.id", oid).fetchall())
+    o["creada_texto"] = o["creado_en"].astimezone(MANAGUA).strftime("%d/%m/%Y %H:%M")
+    return render_template("orden.html", **comun(), o=o, p=p, nombre_de=nombre_de, metodos=METODOS_PAGO,
+                           recibos=sql("SELECT *, to_char(pagado_en AT TIME ZONE 'America/Managua', 'DD/MM/YYYY HH24:MI')"
+                                       " AS cuando FROM recibos WHERE orden_id = %s ORDER BY id", oid).fetchall(),
+                           creo=nombre_de(sql("SELECT creado_por_id FROM ordenes WHERE id = %s",
+                                              oid).fetchone()["creado_por_id"]),
+                           lineas=sql("SELECT t.*, a.nombre, a.codigo FROM tratamientos t JOIN tarifario a"
+                                      " ON a.id = t.tarifario_id WHERE t.orden_id = %s ORDER BY t.id", oid).fetchall())
 
 
 @app.route("/tarifario", methods=["GET", "POST"])
 def tarifario():
-    """Los procedimientos y su precio. Lo lleva la Facultad; un procedimiento desactivado ya no se anota."""
-    if quien()[2] != "admin":
+    """Los procedimientos y su precio. Lo lleva la Facultad; un procedimiento desactivado ya no se anota.
+    Cada cambio de precio guarda el anterior con el periodo en que estuvo vigente."""
+    if quien()[2] != "facultad":
         return redirect(url_for("menu"))
     if request.method == "POST":
         accion, precio = request.form.get("accion"), monto(request.form.get("precio"))
         if accion == "agregar":
             nombre = request.form.get("nombre", "").strip()
-            codigo = request.form.get("codigo", "").strip().upper() or None
+            codigo = request.form.get("codigo", "").strip().upper()
             area = request.form.get("area", "")
-            if not nombre or precio is None or precio <= 0:
-                flash("Escriba el procedimiento y su precio, que tiene que ser mayor que cero.", "error")
+            if not nombre or not codigo or precio is None or precio <= 0:
+                flash("Escriba el código, el procedimiento y su precio, que tiene que ser mayor que cero.", "error")
             elif area not in ("", *AREAS):
                 flash("Elija el área clínica de la lista.", "error")
             elif sql("SELECT 1 FROM tarifario WHERE lower(nombre) = lower(%s)", nombre).fetchone():
                 flash("Ese procedimiento ya está en el tarifario.", "error")
-            elif codigo and sql("SELECT 1 FROM tarifario WHERE codigo = %s", codigo).fetchone():
+            elif sql("SELECT 1 FROM tarifario WHERE codigo = %s", codigo).fetchone():
                 flash("Ese código ya es de otro procedimiento.", "error")
             else:
-                sql("INSERT INTO tarifario (nombre, precio, codigo, area) VALUES (%s, %s, %s, %s)",
-                    nombre, precio, codigo, area)
-                anotar(f"Agregó al tarifario {nombre} a {cordobas(precio)}")
+                sql("INSERT INTO tarifario (codigo, nombre, precio, area) VALUES (%s, %s, %s, %s)",
+                    codigo, nombre, precio, area)
+                anotar(f"Agregó al tarifario {codigo} {nombre} a {cordobas(precio)}")
                 flash(f"{nombre} agregado al tarifario.", "ok")
         elif accion == "precio":
-            antes = sql("SELECT precio FROM tarifario WHERE id = %s", request.form.get("id", type=int)).fetchone()
+            tid = request.form.get("id", type=int)
+            antes = sql("SELECT precio FROM tarifario WHERE id = %s", tid).fetchone()
             fila = None
             if precio is not None and precio > 0 and antes and antes["precio"] != precio:
-                with bd().transaction():  # el precio anterior queda en el historial
-                    sql("INSERT INTO precios_anteriores (procedimiento_id, precio, cambiado_por) VALUES (%s, %s, %s)",
-                        request.form.get("id", type=int), antes["precio"], quien()[0])
-                    fila = sql("UPDATE tarifario SET precio = %s WHERE id = %s RETURNING nombre",
-                               precio, request.form.get("id", type=int)).fetchone()
+                with bd().transaction():  # el precio anterior queda en el historial, desde el cambio anterior
+                    sql("INSERT INTO precios_anteriores (tarifario_id, precio, vigente_desde, vigente_hasta)"
+                        " SELECT %s, %s, coalesce(max(vigente_hasta), '-infinity'), now() FROM precios_anteriores"
+                        " WHERE tarifario_id = %s", tid, antes["precio"], tid)
+                    fila = sql("UPDATE tarifario SET precio = %s WHERE id = %s RETURNING nombre", precio, tid).fetchone()
             if fila:
                 anotar(f"Cambió el precio de {fila['nombre']} a {cordobas(precio)}")
                 flash(f"Precio de {fila['nombre']} cambiado. Lo ya anotado conserva su precio.", "ok")
@@ -1702,17 +1747,34 @@ def tarifario():
                 anotar(("Activó" if fila["activo"] else "Desactivó") + f" en el tarifario {fila['nombre']}")
         return redirect(url_for("tarifario"))
     anteriores = {}
-    for a in sql("SELECT procedimiento_id, precio, cambiado_por, to_char(hasta AT TIME ZONE 'America/Managua',"
-                 " 'DD/MM/YYYY') AS hasta FROM precios_anteriores ORDER BY id DESC").fetchall():
-        anteriores.setdefault(a["procedimiento_id"], []).append(a)
+    for a in sql("SELECT tarifario_id, precio, CASE WHEN vigente_desde = '-infinity' THEN NULL ELSE"
+                 " to_char(vigente_desde AT TIME ZONE 'America/Managua', 'DD/MM/YYYY') END AS desde,"
+                 " to_char(vigente_hasta AT TIME ZONE 'America/Managua', 'DD/MM/YYYY') AS hasta"
+                 " FROM precios_anteriores ORDER BY vigente_hasta DESC").fetchall():
+        anteriores.setdefault(a["tarifario_id"], []).append(a)
     return render_template("tarifario.html", **comun(), areas=AREAS, anteriores=anteriores, nombre_de=nombre_de,
                            procedimientos=sql("SELECT * FROM tarifario ORDER BY area, nombre").fetchall())
 
 
+ESTADO_SOLICITUD = {"pendiente": "Pendiente", "aprobada": "Entregada", "rechazada": "Rechazada"}
+TIPOS_MOVIMIENTO = {"entrada": "Entrada", "salida": "Salida", "ajuste": "Ajuste"}
+
+def existencias():
+    """Los materiales con la cantidad en bodega, que la base calcula de los movimientos (vista existencias)."""
+    return sql("SELECT e.*, m.activo, e.reponer AS bajo FROM existencias e JOIN materiales m ON m.id = e.id"
+               " ORDER BY e.reponer DESC, e.nombre").fetchall()
+
+def hay_de(material_id):
+    fila = sql("SELECT cantidad FROM existencias WHERE id = %s", material_id).fetchone()
+    return fila["cantidad"] if fila else None
+
+
 @app.route("/inventario", methods=["GET", "POST"])
 def inventario():
-    """Materiales de la clínica. La Facultad anota lo que entra y lo que sale y ve lo que se está acabando."""
-    if quien()[2] != "admin":
+    """Materiales de la clínica. La Facultad anota lo que entra, lo que sale y los ajustes; la cantidad en bodega
+    sale de esos movimientos, que no se editan ni se borran."""
+    yo, _, rol = quien()
+    if rol != "facultad":
         return redirect(url_for("menu"))
     if request.method == "POST":
         accion = request.form.get("accion")
@@ -1725,43 +1787,50 @@ def inventario():
             elif sql("SELECT 1 FROM materiales WHERE lower(nombre) = lower(%s)", nombre).fetchone():
                 flash("Ese material ya está en el inventario.", "error")
             else:
-                sql("INSERT INTO materiales (nombre, unidad, cantidad, minimo) VALUES (%s, %s, %s, %s)",
-                    nombre, unidad, cantidad, minimo)
-                anotar(f"Agregó al inventario {nombre}: {cantidad} {unidad}".rstrip())
+                with bd().transaction():
+                    mid = sql("INSERT INTO materiales (nombre, unidad, minimo) VALUES (%s, %s, %s) RETURNING id",
+                              nombre, unidad or "unidad", minimo).fetchone()["id"]
+                    if cantidad:  # lo que ya hay entra como el primer movimiento
+                        sql("INSERT INTO movimientos_inventario (material_id, tipo, cantidad, responsable_id)"
+                            " VALUES (%s, 'entrada', %s, %s)", mid, cantidad, yo)
+                    anotar(f"Agregó al inventario {nombre}: {cantidad} {unidad}".rstrip())
                 flash(f"{nombre} agregado al inventario.", "ok")
-        elif accion in ("entrada", "salida"):
-            if not cantidad or cantidad < 1:
-                flash("Escriba cuántas unidades entran o salen.", "error")
+        elif accion in TIPOS_MOVIMIENTO:
+            mid = request.form.get("id", type=int)
+            hay = hay_de(mid)
+            if hay is None or not cantidad or (accion != "ajuste" and cantidad < 1):
+                flash("Escriba cuántas unidades entran o salen (en un ajuste, negativo si faltan).", "error")
+            elif (accion == "salida" and cantidad > hay) or (accion == "ajuste" and hay + cantidad < 0):
+                flash(f"No hay tantas unidades en el inventario (hay {hay}).", "error")
             else:
-                cambio = cantidad if accion == "entrada" else -cantidad
-                # No sale lo que no hay: la cantidad nunca queda en negativo
-                fila = sql("UPDATE materiales SET cantidad = cantidad + %s WHERE id = %s AND cantidad + %s >= 0"
-                           " RETURNING nombre, unidad, cantidad", cambio, request.form.get("id", type=int),
-                           cambio).fetchone()
-                if fila:
-                    anotar(f"{'Entrada' if cambio > 0 else 'Salida'} de {cantidad} {fila['unidad']} de"
-                           f" {fila['nombre']}; quedan {fila['cantidad']}")
-                    flash(f"{fila['nombre']}: quedan {fila['cantidad']} {fila['unidad']}.", "ok")
-                else:
-                    flash("No hay tantas unidades en el inventario.", "error")
+                m = sql("SELECT nombre, unidad FROM materiales WHERE id = %s", mid).fetchone()
+                sql("INSERT INTO movimientos_inventario (material_id, tipo, cantidad, responsable_id)"
+                    " VALUES (%s, %s, %s, %s)", mid, accion, cantidad, yo)
+                quedan = hay_de(mid)
+                anotar(f"{TIPOS_MOVIMIENTO[accion]} de {cantidad} {m['unidad']} de {m['nombre']}; quedan {quedan}")
+                flash(f"{m['nombre']}: quedan {quedan} {m['unidad']}.", "ok")
         elif accion in ("entregar", "rechazar"):
             atender_solicitud(request.form.get("id", type=int), accion)
         return redirect(url_for("inventario"))
-    return render_template("inventario.html", **comun(), nombre_de=nombre_de, solicitudes=solicitudes_de(), materiales=sql(
-        "SELECT *, cantidad <= minimo AS bajo FROM materiales ORDER BY cantidad <= minimo DESC, nombre").fetchall())
+    return render_template("inventario.html", **comun(), nombre_de=nombre_de, solicitudes=solicitudes_de(),
+                           materiales=existencias(), estado_solicitud=ESTADO_SOLICITUD, tipos=TIPOS_MOVIMIENTO,
+                           movimientos=sql("SELECT v.*, m.nombre, m.unidad, to_char(v.creado_en AT TIME ZONE"
+                                           " 'America/Managua', 'DD/MM/YYYY HH24:MI') AS cuando FROM movimientos_inventario v"
+                                           " JOIN materiales m ON m.id = v.material_id ORDER BY v.id DESC LIMIT 50").fetchall())
 
 
-def solicitudes_de(estudiante=None):
-    return sql("SELECT s.*, m.nombre AS material, m.unidad, m.cantidad AS hay,"
-               " to_char(s.cuando AT TIME ZONE 'America/Managua', 'DD/MM/YYYY HH24:MI') AS pedida FROM solicitudes s"
-               " JOIN materiales m ON m.id = s.material_id WHERE (%s::text IS NULL OR s.estudiante = %s)"
-               " ORDER BY s.estado <> 'Pendiente', s.id DESC LIMIT 200", estudiante, estudiante).fetchall()
+def solicitudes_de(estudiante_id=None):
+    return sql("SELECT s.*, m.nombre AS material, m.unidad, e.cantidad AS hay,"
+               " to_char(s.creado_en AT TIME ZONE 'America/Managua', 'DD/MM/YYYY HH24:MI') AS pedida FROM solicitudes s"
+               " JOIN materiales m ON m.id = s.material_id JOIN existencias e ON e.id = s.material_id"
+               " WHERE (%s::int IS NULL OR s.estudiante_id = %s)"
+               " ORDER BY s.estado <> 'pendiente', s.id DESC LIMIT 200", estudiante_id, estudiante_id).fetchall()
 
 def atender_solicitud(sid, accion):
-    """La Facultad entrega lo pedido (se descuenta del inventario) o lo rechaza con una nota."""
-    cif = quien()[0]
+    """La Facultad entrega lo pedido (se aprueba y sale de la bodega en un movimiento) o lo rechaza con una nota."""
+    yo = quien()[0]
     s = sql("SELECT s.*, m.nombre, m.unidad FROM solicitudes s JOIN materiales m ON m.id = s.material_id"
-            " WHERE s.id = %s AND s.estado = 'Pendiente'", sid).fetchone()
+            " WHERE s.id = %s AND s.estado = 'pendiente'", sid).fetchone()
     if not s:
         return
     if accion == "rechazar":
@@ -1769,31 +1838,33 @@ def atender_solicitud(sid, accion):
         if not nota:
             flash("Escriba por qué se rechaza la solicitud.", "error")
             return
-        sql("UPDATE solicitudes SET estado = 'Rechazada', atendida_por = %s, nota = %s WHERE id = %s", cif, nota, sid)
-        anotar(f"Rechazó la solicitud de {s['cantidad']} {s['unidad']} de {s['nombre']} de {nombre_de(s['estudiante'])}: {nota}")
+        sql("UPDATE solicitudes SET estado = 'rechazada', atendida_por_id = %s, nota = %s WHERE id = %s", yo, nota, sid)
+        anotar(f"Rechazó la solicitud de {s['cantidad']} {s['unidad']} de {s['nombre']} de"
+               f" {nombre_de(s['estudiante_id'])}: {nota}")
         flash("Solicitud rechazada.", "ok")
         return
-    with bd().transaction():
-        quedan = sql("UPDATE materiales SET cantidad = cantidad - %s WHERE id = %s AND cantidad >= %s RETURNING cantidad",
-                     s["cantidad"], s["material_id"], s["cantidad"]).fetchone()
-        if quedan:
-            sql("UPDATE solicitudes SET estado = 'Entregada', atendida_por = %s WHERE id = %s", cif, sid)
-            anotar(f"Entregó {s['cantidad']} {s['unidad']} de {s['nombre']} a {nombre_de(s['estudiante'])};"
-                   f" quedan {quedan['cantidad']}")
-    if quedan:
-        flash(f"Entregado. Quedan {quedan['cantidad']} {s['unidad']} de {s['nombre']}.", "ok")
-    else:
+    if s["cantidad"] > hay_de(s["material_id"]):
         flash(f"No hay suficiente {s['nombre']} para entregar lo pedido.", "error")
+        return
+    with bd().transaction():
+        sql("UPDATE solicitudes SET estado = 'aprobada', atendida_por_id = %s WHERE id = %s", yo, sid)
+        sql("INSERT INTO movimientos_inventario (material_id, solicitud_id, tipo, cantidad, responsable_id)"
+            " VALUES (%s, %s, 'salida', %s, %s)", s["material_id"], sid, s["cantidad"], yo)
+        quedan = hay_de(s["material_id"])
+        anotar(f"Entregó {s['cantidad']} {s['unidad']} de {s['nombre']} a {nombre_de(s['estudiante_id'])};"
+               f" quedan {quedan}")
+    flash(f"Entregado. Quedan {quedan} {s['unidad']} de {s['nombre']}.", "ok")
 
 
 @app.route("/materiales", methods=["GET", "POST"])
 def materiales():
     """El estudiante ve que materiales hay y pide lo que necesita para su cita (RF17)."""
-    cif, _, rol = quien()
+    yo, _, rol = quien()
     if rol != "estudiante":
-        return redirect(url_for("inventario" if rol == "admin" else "menu"))
+        return redirect(url_for("inventario" if rol == "facultad" else "menu"))
     if request.method == "POST":
-        m = sql("SELECT id, nombre, unidad FROM materiales WHERE id = %s", request.form.get("material", type=int)).fetchone()
+        m = sql("SELECT id, nombre, unidad FROM materiales WHERE id = %s AND activo",
+                request.form.get("material", type=int)).fetchone()
         cantidad, para = request.form.get("cantidad", type=int), request.form.get("para", "").strip()
         try:
             para_ok = datetime.strptime(para, "%Y-%m-%d").date().isoformat() >= hoy()
@@ -1804,157 +1875,148 @@ def materiales():
         elif not para_ok:
             flash("Elija en el calendario la fecha de la cita para la que lo necesita (hoy o después).", "error")
         else:
-            sql("INSERT INTO solicitudes (material_id, cantidad, estudiante, para) VALUES (%s, %s, %s, %s)",
-                m["id"], cantidad, cif, para)
+            sql("INSERT INTO solicitudes (material_id, cantidad, estudiante_id, para) VALUES (%s, %s, %s, %s)",
+                m["id"], cantidad, yo, para)
             anotar(f"Pidió {cantidad} {m['unidad']} de {m['nombre']} para el {dmy(para)}")
             flash("Solicitud enviada a proveeduría.", "ok")
         return redirect(url_for("materiales"))
-    return render_template("materiales.html", **comun(), hoy=hoy(), solicitudes=solicitudes_de(cif), nombre_de=nombre_de,
-                           materiales=sql("SELECT *, cantidad <= minimo AS bajo FROM materiales ORDER BY nombre").fetchall())
+    return render_template("materiales.html", **comun(), hoy=hoy(), solicitudes=solicitudes_de(yo), nombre_de=nombre_de,
+                           estado_solicitud=ESTADO_SOLICITUD,
+                           materiales=[m for m in existencias() if m["activo"]])
+
+
+def error_de_cuenta(f, anio, cid=None):
+    """Por qué no se puede guardar la cuenta; None si se puede. El modelo pide correo único y, al estudiante, su
+    año de la carrera."""
+    if not f["nombre"] or len(f["nombre"]) > NOMBRE_MAXIMO or f["rol"] not in ROLES:
+        return "Escriba el nombre y elija el rol."
+    if not CORREO.fullmatch(f["correo"]) or len(f["correo"]) > 120:
+        return "Escriba un correo válido."
+    if sql("SELECT 1 FROM cuentas WHERE lower(correo) = lower(%s) AND id <> %s", f["correo"], cid or 0).fetchone():
+        return "Ese correo ya es de otra cuenta."
+    if f["rol"] == "estudiante" and anio not in ANIOS:
+        return "Elija el año de la carrera del estudiante."
+    return None
 
 
 @app.route("/cuentas", methods=["GET", "POST"])
 def administrar_cuentas():
     """La Facultad crea las cuentas, les pone contraseña y las desactiva. La contraseña se guarda cifrada."""
     yo, _, rol = quien()
-    if rol != "admin":
+    if rol != "facultad":
         return redirect(url_for("menu"))
     if request.method == "POST":
         accion, cif, clave = (request.form.get("accion"), request.form.get("cif", "").strip(),
                               request.form.get("clave", ""))
+        c = por_cif(cif)
         if accion == "crear":
-            nombre, rol_nuevo = request.form.get("nombre", "").strip(), request.form.get("rol")
-            correo, anio = request.form.get("correo", "").strip(), request.form.get("anio", type=int)
-            if not cif.isalnum() or not nombre or rol_nuevo not in ROLES:
-                flash("Escriba el CIF (solo números y letras), el nombre y el rol.", "error")
-            elif correo and not CORREO.fullmatch(correo):
-                flash("Ese correo no es válido.", "error")
+            f = {k: request.form.get(k, "").strip() for k in ("nombre", "rol", "correo")}
+            anio = request.form.get("anio", type=int)
+            if not cif.isalnum() or len(cif) > CIF_MAXIMO:
+                flash("Escriba el CIF (solo números y letras).", "error")
+            elif error := error_de_cuenta(f, anio):
+                flash(error, "error")
             elif len(clave) < CLAVE_MINIMA:
                 flash(f"La contraseña debe tener al menos {CLAVE_MINIMA} caracteres.", "error")
-            elif cif in cuentas():
+            elif c:
                 flash("Ya existe una cuenta con ese CIF.", "error")
             else:
-                sql("INSERT INTO cuentas (cif, nombre, rol, clave, correo, anio) VALUES (%s, %s, %s, %s, %s, %s)",
-                    cif, nombre, rol_nuevo, cifrar(clave), correo,
-                    anio if rol_nuevo == "estudiante" and anio in ANIOS else None)
-                anotar(f"Creó la cuenta de {nombre} ({cif}, {ROLES[rol_nuevo]})")
-                flash(f"Cuenta de {nombre} creada. Dele la contraseña en privado.", "ok")
-        elif accion == "grupo":
-            nombre = request.form.get("nombre", "").strip()
-            cupo, dias = request.form.get("cupo", type=int), request.form.get("dias", type=int)
-            if (not nombre or len(nombre) > NOMBRE_MAXIMO or not cupo or not dias
-                    or not 1 <= cupo <= CUPO_MAXIMO or not 1 <= dias <= DIAS_MAXIMO):
-                flash(f"Escriba el nombre del grupo, cuántos estudiantes son (hasta {CUPO_MAXIMO}) y cuántos días"
-                      f" queda abierto el registro (hasta {DIAS_MAXIMO}).", "error")
-            else:
-                gid = sql("INSERT INTO invitaciones (nombre, codigo, cupo, vence)"
-                          " VALUES (%s, %s, %s, now() + %s * interval '1 day') RETURNING id",
-                          nombre, secrets.token_urlsafe(12), cupo, dias).fetchone()["id"]
-                anotar(f"Creó el grupo de estudiantes {nombre} (cupo {cupo}, registro abierto {dias} días)")
-                return redirect(url_for("grupo", gid=gid))
-        elif accion == "clave":
+                sql("INSERT INTO cuentas (cif, nombre, correo, anio, rol, clave_hash) VALUES (%s, %s, %s, %s, %s, %s)",
+                    cif, f["nombre"], f["correo"], anio if f["rol"] == "estudiante" else None, f["rol"], cifrar(clave))
+                anotar(f"Creó la cuenta de {f['nombre']} ({cif}, {ROLES[f['rol']]})")
+                flash(f"Cuenta de {f['nombre']} creada. Dele la contraseña en privado.", "ok")
+        elif accion == "clave" and c:
             if len(clave) < CLAVE_MINIMA:
                 flash(f"La contraseña debe tener al menos {CLAVE_MINIMA} caracteres.", "error")
-            elif sql("UPDATE cuentas SET clave = %s, fallos = 0, bloqueada_hasta = NULL WHERE cif = %s RETURNING cif",
-                     cifrar(clave), cif).fetchone():
-                anotar(f"Le puso una contraseña nueva a {nombre_de(cif)} ({cif})")
-                flash(f"Contraseña de {nombre_de(cif)} cambiada; si estaba bloqueada, ya puede entrar.", "ok")
-        elif accion == "editar":
-            nombre, rol_nuevo = request.form.get("nombre", "").strip(), request.form.get("rol")
-            if not nombre or rol_nuevo not in ROLES:
-                flash("Escriba el nombre y elija el rol.", "error")
-            elif cif == yo and rol_nuevo != rol:
-                flash("No puede cambiar el rol de su propia cuenta.", "error")
-            elif fila := sql("UPDATE cuentas SET nombre = %s, rol = %s WHERE cif = %s RETURNING cif",
-                             nombre, rol_nuevo, cif).fetchone():
-                anotar(f"Corrigió la cuenta {fila['cif']}: {nombre}, {ROLES[rol_nuevo]}")
-                flash(f"Cuenta de {nombre} guardada.", "ok")
-        elif accion == "activa":
-            if cif == yo:
+            else:
+                sql("UPDATE cuentas SET clave_hash = %s, fallos = 0, bloqueada_hasta = NULL WHERE id = %s",
+                    cifrar(clave), c["id"])
+                anotar(f"Le puso una contraseña nueva a {c['nombre']} ({cif})")
+                flash(f"Contraseña de {c['nombre']} cambiada; si estaba bloqueada, ya puede entrar.", "ok")
+        elif accion == "activa" and c:
+            if c["id"] == yo:
                 flash("No puede desactivar su propia cuenta.", "error")
-            elif fila := sql("UPDATE cuentas SET activa = NOT activa WHERE cif = %s RETURNING nombre, activa",
-                             cif).fetchone():
+            else:
+                fila = sql("UPDATE cuentas SET activa = NOT activa WHERE id = %s RETURNING nombre, activa", c["id"]).fetchone()
                 anotar(("Activó" if fila["activa"] else "Desactivó") + f" la cuenta de {fila['nombre']} ({cif})")
                 flash(f"Cuenta de {fila['nombre']} " + ("activada." if fila["activa"] else "desactivada."), "ok")
         return redirect(url_for("administrar_cuentas", **request.args))
     filtro = {"rol": request.args.get("rol", ""), "estado": request.args.get("estado", "")}
     return render_template("cuentas.html", **comun(), roles=ROLES, clave_minima=CLAVE_MINIMA, filtro=filtro,
-                           anios=ANIOS, nombre_de=nombre_de,
-                           cupo_maximo=CUPO_MAXIMO, dias_maximo=DIAS_MAXIMO,
-                           grupos=sql(INVITACIONES + " ORDER BY i.id DESC").fetchall(), lista=sql(
-        "SELECT cif, nombre, rol, activa, correo, anio, profesor, CASE WHEN bloqueada_hasta > now() THEN"
-        " to_char(bloqueada_hasta AT TIME ZONE 'America/Managua', 'HH24:MI') END AS bloqueada"
-        " FROM cuentas WHERE (%s = '' OR rol = %s) AND (%s = '' OR activa = (%s = 'activas'))"
-        " ORDER BY activa DESC, rol, nombre", filtro["rol"], filtro["rol"], filtro["estado"], filtro["estado"]).fetchall())
+                           anios=ANIOS, nombre_de=nombre_de, correo_pendiente=CORREO_PENDIENTE, lista=sql(
+        "SELECT c.id, c.cif, c.nombre, c.rol, c.activa, c.correo, c.anio, k.nombre AS clase,"
+        " CASE WHEN c.bloqueada_hasta > now() THEN"
+        " to_char(c.bloqueada_hasta AT TIME ZONE 'America/Managua', 'HH24:MI') END AS bloqueada"
+        " FROM cuentas c LEFT JOIN clases k ON k.id = c.clase_id WHERE (%s = '' OR c.rol = %s)"
+        " AND (%s = '' OR c.activa = (%s = 'activas')) ORDER BY c.activa DESC, c.rol, c.nombre",
+        filtro["rol"], filtro["rol"], filtro["estado"], filtro["estado"]).fetchall())
+
+
+CLASES = ("SELECT k.*, p.nombre AS profesor, (SELECT count(*) FROM cuentas e WHERE e.clase_id = k.id) AS estudiantes"
+          " FROM clases k JOIN cuentas p ON p.id = k.profesor_id")
 
 
 @app.route("/cuentas/<cif>", methods=["GET", "POST"])
 def cuenta(cif):
-    """Ficha de una cuenta para la Facultad: nombre, rol, correo y año (RF02); el profesor a cargo del estudiante
-    (RF06) y sus turnos clínicos (RF10)."""
+    """Ficha de una cuenta para la Facultad: nombre, rol, correo y año (RF02); la clase del estudiante (RF06) y
+    sus turnos clínicos (RF10)."""
     yo, _, rol = quien()
-    if rol != "admin":
+    if rol != "facultad":
         return redirect(url_for("menu"))
     c = sql("SELECT * FROM cuentas WHERE cif = %s", cif).fetchone()
     if not c:
         return redirect(url_for("administrar_cuentas"))
-    profesores = {p["cif"]: p["nombre"] for p in sql(
-        "SELECT cif, nombre FROM cuentas WHERE rol = 'profesor' AND activa ORDER BY nombre").fetchall()}
+    clases = sql(CLASES + " ORDER BY k.periodo DESC, k.nombre").fetchall()
     if request.method == "POST":
         accion = request.form.get("accion")
         if accion == "datos":
-            f = {k: request.form.get(k, "").strip() for k in ("nombre", "rol", "correo", "profesor")}
-            anio = request.form.get("anio", type=int)
-            if not f["nombre"] or len(f["nombre"]) > NOMBRE_MAXIMO or f["rol"] not in ROLES:
-                flash("Escriba el nombre y elija el rol.", "error")
-            elif cif == yo and f["rol"] != rol:
+            f = {k: request.form.get(k, "").strip() for k in ("nombre", "rol", "correo")}
+            anio, clase = request.form.get("anio", type=int), request.form.get("clase", type=int)
+            if error := error_de_cuenta(f, anio, c["id"]):
+                flash(error, "error")
+            elif c["id"] == yo and f["rol"] != rol:
                 flash("No puede cambiar el rol de su propia cuenta.", "error")
-            elif f["correo"] and not CORREO.fullmatch(f["correo"]):
-                flash("Ese correo no es válido.", "error")
-            elif f["profesor"] and f["profesor"] not in profesores:
-                flash("Elija un profesor de la lista.", "error")
+            elif clase and clase not in {k["id"] for k in clases}:
+                flash("Elija una clase de la lista.", "error")
             else:
                 estudiante = f["rol"] == "estudiante"
-                sql("UPDATE cuentas SET nombre = %s, rol = %s, correo = %s, anio = %s, profesor = %s WHERE cif = %s",
-                    f["nombre"], f["rol"], f["correo"], anio if estudiante and anio in ANIOS else None,
-                    (f["profesor"] or None) if estudiante else None, cif)
-                if not estudiante:
-                    sql("DELETE FROM turnos WHERE estudiante = %s", cif)
-                anotar(f"Corrigió la cuenta {cif}: {f['nombre']}, {ROLES[f['rol']]}"
-                       + (f", profesor {profesores[f['profesor']]}" if estudiante and f["profesor"] else ""))
+                with bd().transaction():
+                    sql("UPDATE cuentas SET nombre = %s, rol = %s, correo = %s, anio = %s, clase_id = %s WHERE id = %s",
+                        f["nombre"], f["rol"], f["correo"], anio if estudiante else None,
+                        clase if estudiante else None, c["id"])
+                    if not estudiante:
+                        sql("DELETE FROM turnos WHERE estudiante_id = %s", c["id"])
+                    nueva = next((k for k in clases if k["id"] == clase), None)
+                    anotar(f"Corrigió la cuenta {cif}: {f['nombre']}, {ROLES[f['rol']]}"
+                           + (f", clase {nueva['nombre']} ({nueva['profesor']})" if estudiante and nueva else ""))
                 flash(f"Cuenta de {f['nombre']} guardada.", "ok")
         elif accion == "turno" and c["rol"] == "estudiante":
             dia = request.form.get("dia", type=int)
             desde, hasta = request.form.get("desde", ""), request.form.get("hasta", "")
             horas = all(re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", h) for h in (desde, hasta))
-            if dia not in range(len(DIAS)) or not horas or desde >= hasta:
+            if dia not in DIAS or not horas or desde >= hasta:
                 flash("Elija el día y las horas del turno; la hora de inicio va antes de la de fin.", "error")
-            elif sql("SELECT 1 FROM turnos WHERE estudiante = %s AND dia = %s AND desde < %s AND %s < hasta",
-                     cif, dia, hasta, desde).fetchone():
+            elif desde < APERTURA or hasta > CIERRE:
+                flash(f"El turno tiene que estar dentro del horario de la clínica, de {APERTURA} a {CIERRE}.", "error")
+            elif sql("SELECT 1 FROM turnos WHERE estudiante_id = %s AND dia = %s AND desde < %s AND %s < hasta",
+                     c["id"], dia, hasta, desde).fetchone():
                 flash("Ese turno se cruza con otro que ya tiene ese día.", "error")
             else:
-                sql("INSERT INTO turnos (estudiante, dia, desde, hasta) VALUES (%s, %s, %s, %s)", cif, dia, desde, hasta)
+                sql("INSERT INTO turnos (estudiante_id, dia, desde, hasta) VALUES (%s, %s, %s, %s)", c["id"], dia, desde, hasta)
                 anotar(f"Asignó a {c['nombre']} el turno del {DIAS[dia].lower()} de {desde} a {hasta}")
                 flash("Turno agregado.", "ok")
         elif accion == "quitar_turno":
-            t = sql("DELETE FROM turnos WHERE id = %s AND estudiante = %s RETURNING dia, desde, hasta",
-                    request.form.get("id", type=int), cif).fetchone()
+            t = sql("DELETE FROM turnos WHERE id = %s AND estudiante_id = %s RETURNING dia, desde, hasta",
+                    request.form.get("id", type=int), c["id"]).fetchone()
             if t:
-                anotar(f"Quitó a {c['nombre']} el turno del {DIAS[t['dia']].lower()} de {t['desde']} a {t['hasta']}")
+                anotar(f"Quitó a {c['nombre']} el turno del {DIAS[t['dia']].lower()} de {t['desde']:%H:%M} a {t['hasta']:%H:%M}")
                 flash("Turno quitado.", "ok")
         return redirect(url_for("cuenta", cif=cif))
-    return render_template("cuenta.html", **comun(), c=c, roles=ROLES, anios=ANIOS, dias=DIAS, profesores=profesores,
-                           turnos=turnos_de(cif), nombre_maximo=NOMBRE_MAXIMO, grupo=c["invitacion_id"] and sql(
-                               "SELECT nombre FROM invitaciones WHERE id = %s", c["invitacion_id"]).fetchone(),
-                           estudiantes=sql("SELECT cif, nombre FROM cuentas WHERE profesor = %s ORDER BY nombre",
-                                           cif).fetchall() if c["rol"] == "profesor" else [])
+    return render_template("cuenta.html", **comun(), c=c, roles=ROLES, anios=ANIOS, dias=DIAS, clases=clases,
+                           turnos=turnos_de(c["id"]), nombre_maximo=NOMBRE_MAXIMO, apertura=APERTURA, cierre=CIERRE,
+                           correo_pendiente=CORREO_PENDIENTE,
+                           sus_clases=[k for k in clases if k["profesor_id"] == c["id"]])
 
-
-# Cada grupo con cuántos se han registrado y si su código todavía sirve
-INVITACIONES = ("SELECT i.*, to_char(i.vence AT TIME ZONE 'America/Managua', 'DD/MM/YYYY HH24:MI') AS hasta, n.registrados,"
-                " CASE WHEN i.cerrado THEN 'Cerrado' WHEN i.vence <= now() THEN 'Vencido'"
-                " WHEN n.registrados >= i.cupo THEN 'Lleno' ELSE 'Abierto' END AS estado FROM invitaciones i,"
-                " LATERAL (SELECT count(*) AS registrados FROM cuentas WHERE invitacion_id = i.id) n")
 
 def qr(direccion):
     """El código QR de una dirección, como SVG listo para el src de un <img>."""
@@ -1963,50 +2025,100 @@ def qr(direccion):
     return "data:image/svg+xml;base64," + base64.b64encode(renderSVG.drawToString(dibujo).encode()).decode()
 
 
-@app.route("/cuentas/grupos/<int:gid>", methods=["GET", "POST"])
-def grupo(gid):
-    """El código QR del grupo, para proyectarlo o imprimirlo, y quiénes se han registrado con él."""
-    if quien()[2] != "admin":
+@app.route("/clases", methods=["GET", "POST"])
+def clases():
+    """Las clases. El profesor crea las suyas (nombre y periodo); la Facultad las ve todas."""
+    yo, _, rol = quien()
+    if rol == "estudiante":
         return redirect(url_for("menu"))
-    if request.method == "POST" and request.form.get("accion") == "profesor":
-        # RF06: el profesor a cargo de todos los que se registraron con este grupo
-        profesor = request.form.get("profesor", "")
-        fila = sql("SELECT nombre FROM cuentas WHERE cif = %s AND rol = 'profesor'", profesor).fetchone()
-        if fila:
-            n = sql("UPDATE cuentas SET profesor = %s WHERE invitacion_id = %s AND rol = 'estudiante'",
-                    profesor, gid).rowcount
-            grupo_nombre = sql("SELECT nombre FROM invitaciones WHERE id = %s", gid).fetchone()["nombre"]
-            anotar(f"Puso a {fila['nombre']} a cargo de los {n} estudiantes del grupo {grupo_nombre}")
-            flash(f"{fila['nombre']} queda a cargo de los {n} estudiantes del grupo.", "ok")
+    if request.method == "POST" and rol == "profesor":
+        nombre, periodo = request.form.get("nombre", "").strip(), request.form.get("periodo", "").strip().upper()
+        if not nombre or len(nombre) > NOMBRE_MAXIMO or not PERIODO.fullmatch(periodo):
+            flash("Escriba el nombre de la clase y su periodo, por ejemplo 2026-II.", "error")
+        elif sql("SELECT 1 FROM clases WHERE nombre = %s AND periodo = %s AND profesor_id = %s",
+                 nombre, periodo, yo).fetchone():
+            flash("Ya tiene una clase con ese nombre en ese periodo.", "error")
         else:
-            flash("Elija el profesor.", "error")
-        return redirect(url_for("grupo", gid=gid))
-    if request.method == "POST":  # cerrar el registro: el código deja de servir
-        cerrado = sql("UPDATE invitaciones SET cerrado = true WHERE id = %s AND NOT cerrado RETURNING nombre",
-                      gid).fetchone()
-        if cerrado:
-            anotar(f"Cerró el registro del grupo {cerrado['nombre']}")
-            flash("Registro cerrado: el código ya no sirve.", "ok")
-        return redirect(url_for("grupo", gid=gid))
-    invitacion = sql(INVITACIONES + " WHERE i.id = %s", gid).fetchone()
-    if not invitacion:
-        return redirect(url_for("administrar_cuentas"))
-    direccion = SITIO + url_for("registro", codigo=invitacion["codigo"])
-    return render_template(
-        "grupo.html", **comun(), grupo=invitacion, direccion=direccion, qr=qr(direccion), clave_minima=CLAVE_MINIMA,
-        registrados=sql("SELECT cif, nombre, activa, correo, anio, profesor FROM cuentas WHERE invitacion_id = %s"
-                        " ORDER BY nombre", gid).fetchall(), nombre_de=nombre_de,
-        profesores=sql("SELECT cif, nombre FROM cuentas WHERE rol = 'profesor' AND activa ORDER BY nombre").fetchall())
+            kid = sql("INSERT INTO clases (nombre, periodo, profesor_id) VALUES (%s, %s, %s) RETURNING id",
+                      nombre, periodo, yo).fetchone()["id"]
+            anotar(f"Creó la clase {nombre} ({periodo})")
+            return redirect(url_for("clase", kid=kid))
+        return redirect(url_for("clases"))
+    ahora = datetime.now(MANAGUA)
+    periodo = f"{ahora.year}-{'I' if ahora.month <= 6 else 'II'}"
+    return render_template("clases.html", **comun(), periodo=periodo, nombre_maximo=NOMBRE_MAXIMO, clases=sql(
+        CLASES + " WHERE %s OR k.profesor_id = %s ORDER BY k.periodo DESC, k.nombre", rol == "facultad", yo).fetchall())
+
+
+# Cada codigo QR de una clase con su estado: se usa una sola vez y vence
+INVITACIONES = ("SELECT i.*, to_char(i.vence_en AT TIME ZONE 'America/Managua', 'DD/MM/YYYY HH24:MI') AS hasta,"
+                " CASE WHEN i.usada_en IS NOT NULL THEN 'Usado' WHEN i.vence_en <= now() THEN 'Vencido'"
+                " ELSE 'Disponible' END AS estado FROM invitaciones i")
+
+
+@app.route("/clases/<int:kid>", methods=["GET", "POST"])
+def clase(kid):
+    """Una clase: sus estudiantes y sus códigos QR. El profesor genera códigos (cada uno sirve una sola vez) y
+    los imprime o proyecta para que sus estudiantes entren a la clase."""
+    yo, _, rol = quien()
+    k = rol != "estudiante" and sql(CLASES + " WHERE k.id = %s AND (%s OR k.profesor_id = %s)",
+                                    kid, rol == "facultad", yo).fetchone()
+    if not k:
+        return redirect(url_for("menu"))
+    if request.method == "POST" and k["profesor_id"] == yo:
+        cuantos, dias = request.form.get("cantidad", type=int), request.form.get("dias", type=int)
+        if not cuantos or not dias or not 1 <= cuantos <= CODIGOS_MAXIMO or not 1 <= dias <= DIAS_MAXIMO:
+            flash(f"Escriba cuántos códigos (hasta {CODIGOS_MAXIMO}) y cuántos días sirven (hasta {DIAS_MAXIMO}).",
+                  "error")
+        else:
+            with bd().transaction():
+                for _ in range(cuantos):
+                    sql("INSERT INTO invitaciones (codigo, clase_id, vence_en) VALUES (%s, %s, now() + %s * interval '1 day')",
+                        secrets.token_urlsafe(9), kid, dias)
+                anotar(f"Generó {cuantos} códigos QR de la clase {k['nombre']} ({k['periodo']}), por {dias} días")
+            flash(f"{cuantos} códigos generados. Cada uno sirve para un estudiante.", "ok")
+        return redirect(url_for("clase", kid=kid))
+    codigos = sql(INVITACIONES + " WHERE i.clase_id = %s ORDER BY i.usada_en NULLS FIRST, i.id", kid).fetchall()
+    for c in codigos:
+        if c["estado"] == "Disponible":
+            c["direccion"] = SITIO + url_for("registro", codigo=c["codigo"])
+            c["qr"] = qr(c["direccion"])
+    return render_template("clase.html", **comun(), k=k, codigos=codigos, codigos_maximo=CODIGOS_MAXIMO,
+                           dias_maximo=DIAS_MAXIMO, es_suya=k["profesor_id"] == yo, estudiantes=sql(
+                               "SELECT cif, nombre, correo, anio, activa FROM cuentas WHERE clase_id = %s ORDER BY nombre",
+                               kid).fetchall())
+
+
+def usar_codigo(codigo, cuenta_id):
+    """Pone al estudiante en la clase del código (la base lo hace en una sola operación y lo anota en la bitácora).
+    Devuelve el error para mostrar, o None si entró."""
+    try:
+        with bd().transaction():
+            sql("SELECT usar_invitacion(%s, %s)", codigo, cuenta_id)
+    except psycopg.errors.RaiseException as e:
+        return str(e.diag.message_primary or e)
+    return None
 
 
 @app.route("/registro/<codigo>", methods=["GET", "POST"])
 def registro(codigo):
-    """Página a la que lleva el QR de un grupo: el estudiante escribe su CIF y su nombre y crea su contraseña.
-    No pide sesión; la protege el código del grupo, que vence, tiene cupo y la Facultad puede cerrar.
-    Solo crea cuentas de estudiante, y un estudiante nuevo no ve a ningún paciente."""
+    """Página a la que lleva el QR de una clase. Un estudiante nuevo crea su cuenta (CIF, nombre, correo, año y
+    contraseña) y entra a la clase; uno que ya tiene cuenta entra con su contraseña y pasa a esta clase.
+    Cada código sirve una sola vez y vence; solo crea cuentas de estudiante."""
     invitacion = sql(INVITACIONES + " WHERE i.codigo = %s", codigo).fetchone()
+    k = invitacion and sql(CLASES + " WHERE k.id = %s", invitacion["clase_id"]).fetchone()
     datos = {"cif": "", "nombre": "", "correo": "", "anio": None, "errores": {}}
-    if request.method == "POST" and invitacion and invitacion["estado"] == "Abierto":
+    yo = quien()
+    if request.method == "POST" and invitacion and invitacion["estado"] == "Disponible":
+        if request.form.get("accion") == "entrar":  # ya tiene cuenta: inicia sesion y vuelve aqui
+            session["codigo_clase"] = codigo
+            return redirect(url_for("entrar"))
+        if request.form.get("accion") == "unirse" and yo and yo[2] == "estudiante":
+            if error := usar_codigo(codigo, yo[0]):
+                flash(error, "error")
+                return redirect(url_for("registro", codigo=codigo))
+            flash(f"Ya está en la clase {k['nombre']} de {k['profesor']}.", "ok")
+            return redirect(url_for("menu"))
         cif, nombre, correo = (request.form.get(c, "").strip() for c in ("cif", "nombre", "correo"))
         anio = request.form.get("anio", type=int)
         clave, errores = request.form.get("clave", ""), datos["errores"]
@@ -2014,12 +2126,14 @@ def registro(codigo):
         ya_existe = "Ya existe una cuenta con ese CIF. Si es suya, entre con su contraseña; si no, avise a la Facultad."
         if not cif.isalnum() or len(cif) > CIF_MAXIMO:
             errores["cif"] = "Escriba su CIF, solo con números y letras."
-        elif cif in cuentas():
+        elif por_cif(cif):
             errores["cif"] = ya_existe
         if not nombre or len(nombre) > NOMBRE_MAXIMO:
             errores["nombre"] = "Escriba su nombre completo."
         if not CORREO.fullmatch(correo) or len(correo) > 120:
             errores["correo"] = "Escriba su correo, por ejemplo nombre@uamv.edu.ni."
+        elif sql("SELECT 1 FROM cuentas WHERE lower(correo) = lower(%s)", correo).fetchone():
+            errores["correo"] = "Ese correo ya es de otra cuenta."
         if anio not in ANIOS:
             errores["anio"] = "Elija el año de la carrera que cursa."
         if len(clave) < CLAVE_MINIMA:
@@ -2028,127 +2142,122 @@ def registro(codigo):
             errores["clave2"] = "Las dos contraseñas no son iguales."
         if not errores:
             cifrada = cifrar(clave)
-            with bd().transaction():
-                # FOR UPDATE: si dos se registran a la vez por el último cupo, el segundo espera y ya lo ve lleno
-                sql("SELECT 1 FROM invitaciones WHERE id = %s FOR UPDATE", invitacion["id"])
-                invitacion = sql(INVITACIONES + " WHERE i.id = %s", invitacion["id"]).fetchone()
-                creada = invitacion["estado"] == "Abierto" and sql(
-                    "INSERT INTO cuentas (cif, nombre, rol, clave, invitacion_id, correo, anio)"
-                    " VALUES (%s, %s, 'estudiante', %s, %s, %s, %s) ON CONFLICT DO NOTHING RETURNING cif",
-                    cif, nombre, cifrada, invitacion["id"], correo, anio).fetchone()
-            if creada:
+            try:
+                with bd().transaction():  # la cuenta y su entrada a la clase, juntas o ninguna
+                    cid = sql("INSERT INTO cuentas (cif, nombre, correo, anio, rol, clave_hash)"
+                              " VALUES (%s, %s, %s, %s, 'estudiante', %s) RETURNING id",
+                              cif, nombre, correo, anio, cifrada).fetchone()["id"]
+                    sql("SELECT usar_invitacion(%s, %s)", codigo, cid)
+            except psycopg.errors.UniqueViolation:  # otro la creó con ese CIF o correo en el mismo instante
+                errores["cif"] = ya_existe
+            except psycopg.errors.RaiseException as e:  # el código se usó o venció mientras llenaba el formulario
+                flash(str(e.diag.message_primary or e), "error")
+            else:
                 g.pop("cuentas", None)  # para que la sesión ya encuentre la cuenta nueva
                 session.clear()
                 session.permanent = True
-                session["cif"] = cif
-                anotar(f"Creó su cuenta con el código del grupo {invitacion['nombre']}")
+                session["cuenta"] = cid
+                anotar(f"Creó su cuenta con un código de la clase {k['nombre']}")
                 flash("Cuenta creada. La próxima vez entre con su CIF y la contraseña que acaba de crear.", "ok")
                 return redirect(url_for("menu"))
-            if invitacion["estado"] == "Abierto":  # otro la creó con ese CIF en el mismo instante
-                errores["cif"] = ya_existe
-    return render_template("registro.html", **datos, grupo=invitacion, clave_minima=CLAVE_MINIMA, anios=ANIOS,
-                           cif_maximo=CIF_MAXIMO, nombre_maximo=NOMBRE_MAXIMO)
+    return render_template("registro.html", **datos, invitacion=invitacion, k=k, yo=yo, clave_minima=CLAVE_MINIMA,
+                           anios=ANIOS, cif_maximo=CIF_MAXIMO, nombre_maximo=NOMBRE_MAXIMO)
 
 
-def recibos_de(estudiante=None, paciente_id=None):
-    """Los recibos de la hoja de control con su paciente y tratamiento; de un estudiante o de un paciente."""
-    return sql("SELECT r.id, r.numero, r.fecha, r.estudiante, r.firmado, r.firmado_por, p.id AS pid,"
-               " p.nombre AS paciente, p.expediente, a.nombre || coalesce(' del ' || t.diente, '') AS tratamiento"
-               " FROM recibos r JOIN tratamientos t ON t.id = r.tratamiento_id"
-               " JOIN pacientes p ON p.id = t.paciente_id JOIN tarifario a ON a.id = t.procedimiento_id"
-               " WHERE p.eliminado IS NULL AND (%s::text IS NULL OR r.estudiante = %s) AND (%s::int IS NULL OR p.id = %s)"
-               " ORDER BY r.fecha, r.id", estudiante, estudiante, paciente_id, paciente_id).fetchall()
+def recibos_de(estudiante_id=None, paciente_id=None):
+    """Los recibos (pagos de las órdenes de cobro) que van en la hoja de control, con su paciente y lo que se
+    pagó; de un estudiante o de un paciente. Los anulados no cuentan."""
+    return sql("SELECT r.*, to_char(r.pagado_en AT TIME ZONE 'America/Managua', 'YYYY-MM-DD') AS fecha,"
+               " p.id AS pid, p.nombre AS paciente, p.expediente,"
+               " (SELECT string_agg(a.nombre || coalesce(' del ' || t.diente, ''), ', ' ORDER BY t.id)"
+               " FROM tratamientos t JOIN tarifario a ON a.id = t.tarifario_id WHERE t.orden_id = r.orden_id) AS tratamiento"
+               " FROM recibos r JOIN ordenes o ON o.id = r.orden_id JOIN pacientes p ON p.id = o.paciente_id"
+               " WHERE r.anulado_en IS NULL AND p.eliminado_en IS NULL AND (%s::int IS NULL OR r.estudiante_id = %s)"
+               " AND (%s::int IS NULL OR p.id = %s) ORDER BY r.pagado_en, r.id",
+               estudiante_id, estudiante_id, paciente_id, paciente_id).fetchall()
 
 
 @app.route("/control", methods=["GET", "POST"])
 def control():
-    """Hoja de control de expediente y recibos de pago de tratamiento. El estudiante sube la foto de cada
-    recibo con su numero, fecha y tratamiento; el profesor firma cada uno; al final del curso se imprime."""
-    cif, _, rol = quien()
+    """Hoja de control de expediente y recibos de pago. El estudiante sube cada recibo con su número, monto y foto
+    (o le pone la foto a uno que registró la Facultad); el profesor firma cada uno; al final del curso se imprime."""
+    yo, _, rol = quien()
     if request.method == "POST":
         accion = request.form.get("accion")
         if rol == "estudiante" and accion == "subir":
-            # Solo de un tratamiento que él mismo realizó; el paciente puede haber pasado a otro estudiante o
-            # estar de alta: el recibo a veces llega después y la hoja de control no es parte del expediente
-            t = sql("SELECT t.id, a.nombre, p.nombre AS paciente FROM tratamientos t"
-                    " JOIN tarifario a ON a.id = t.procedimiento_id JOIN pacientes p ON p.id = t.paciente_id"
-                    " WHERE t.id = %s AND t.estudiante = %s AND t.realizado IS NOT NULL",
-                    request.form.get("tratamiento", type=int), cif).fetchone()
-            numero = request.form.get("numero", "").strip()
-            fecha = request.form.get("fecha", "").strip()
-            try:
-                fecha_ok = datetime.strptime(fecha, "%Y-%m-%d").date().isoformat() <= hoy()
-            except ValueError:
-                fecha_ok = False
+            # Solo de una orden de un paciente suyo que todavía tiene saldo
+            o = sql("SELECT r.* FROM resumen_ordenes r JOIN pacientes p ON p.id = r.paciente_id WHERE r.id = %s"
+                    " AND p.estudiante_id = %s AND r.anulado_en IS NULL",
+                    request.form.get("orden", type=int), yo).fetchone()
             imagen = foto_jpeg(request.files.get("foto"))
-            if not t:
-                flash("Elija el paciente y el tratamiento realizado que se pagó.", "error")
-            elif not numero or len(numero) > RECIBO_MAXIMO:
-                flash(f"Escriba el número del recibo (hasta {RECIBO_MAXIMO} caracteres).", "error")
-            elif not fecha_ok:
-                flash("Elija en el calendario la fecha del recibo; no puede ser una fecha que no ha llegado.", "error")
+            if not o:
+                flash("Elija la orden de cobro que se pagó.", "error")
             elif not imagen:
                 flash("Suba la foto del recibo: JPG o PNG de hasta 5 MB, o tómela con la cámara.", "error")
-            elif sql("SELECT 1 FROM recibos WHERE tratamiento_id = %s AND numero = %s", t["id"], numero).fetchone():
-                flash("Ese recibo ya está anotado para ese tratamiento.", "error")
             else:
+                p = sql("SELECT * FROM pacientes WHERE id = %s", o["paciente_id"]).fetchone()
                 url = guardar_archivo("recibos", imagen)
-                if sql("INSERT INTO recibos (tratamiento_id, numero, fecha, url, estudiante) VALUES (%s, %s, %s, %s, %s)"
-                       " ON CONFLICT DO NOTHING RETURNING id", t["id"], numero, fecha, url, cif).fetchone():
-                    anotar(f"Subió el recibo {numero} de {t['paciente']}: {t['nombre']}")
-                    flash(f"Recibo {numero} agregado a la hoja de control.", "ok")
-                else:  # otro lo anoto en el mismo instante
+                if registrar_pago(o, p, monto(request.form.get("monto"))):
+                    sql("UPDATE recibos SET url = %s, estudiante_id = %s WHERE numero = %s",
+                        url, yo, request.form.get("numero", "").strip())
+                else:
                     borrar_archivos([url])
-                    flash("Ese recibo ya está anotado para ese tratamiento.", "error")
-        elif rol == "estudiante" and accion == "quitar":
-            # Lo firmado por el profesor ya no se quita
-            r = sql("DELETE FROM recibos WHERE id = %s AND estudiante = %s AND firmado IS NULL RETURNING numero, url",
-                    request.form.get("id", type=int), cif).fetchone()
+        elif rol == "estudiante" and accion == "foto":
+            imagen = foto_jpeg(request.files.get("foto"))
+            r = imagen and sql("UPDATE recibos SET url = %s WHERE id = %s AND estudiante_id = %s AND url IS NULL"
+                               " RETURNING numero", guardar_archivo("recibos", imagen),
+                               request.form.get("id", type=int), yo).fetchone()
             if r:
-                borrar_archivos([r["url"]])
-                anotar(f"Quitó el recibo {r['numero']} de su hoja de control")
-                flash(f"Recibo {r['numero']} quitado.", "ok")
+                anotar(f"Subió la foto del recibo {r['numero']}")
+                flash(f"Foto del recibo {r['numero']} guardada.", "ok")
+            else:
+                flash("Elija la foto del recibo: JPG o PNG de hasta 5 MB.", "error")
+        elif rol == "estudiante" and accion == "quitar":
+            # Un recibo no se borra: se anula. Lo firmado por el profesor ya no se anula
+            r = sql("UPDATE recibos SET anulado_en = now() WHERE id = %s AND estudiante_id = %s AND firmado_por_id IS NULL"
+                    " AND anulado_en IS NULL RETURNING numero", request.form.get("id", type=int), yo).fetchone()
+            if r:
+                anotar(f"Anuló el recibo {r['numero']} de su hoja de control")
+                flash(f"Recibo {r['numero']} anulado.", "ok")
         elif rol == "profesor" and accion in ("firmar", "quitar_firma"):
-            if accion == "firmar":  # solo los recibos de sus estudiantes
-                r = sql("UPDATE recibos SET firmado_por = %s, firmado = %s WHERE id = %s AND firmado IS NULL AND "
-                        + de_mi_grupo("recibos.estudiante") + " RETURNING numero, estudiante",
-                        cif, hoy(), request.form.get("id", type=int), cif).fetchone()
+            if accion == "firmar":  # solo los recibos de los estudiantes de sus clases
+                r = sql("UPDATE recibos SET firmado_por_id = %s WHERE id = %s AND firmado_por_id IS NULL"
+                        " AND es_profesor_de(%s, estudiante_id) RETURNING numero, estudiante_id",
+                        yo, request.form.get("id", type=int), yo).fetchone()
             else:  # solo el profesor que firmó puede quitar su firma
-                r = sql("UPDATE recibos SET firmado_por = NULL, firmado = NULL WHERE id = %s AND firmado_por = %s"
-                        " RETURNING numero, estudiante", request.form.get("id", type=int), cif).fetchone()
+                r = sql("UPDATE recibos SET firmado_por_id = NULL WHERE id = %s AND firmado_por_id = %s"
+                        " RETURNING numero, estudiante_id", request.form.get("id", type=int), yo).fetchone()
             if r:
                 anotar(("Firmó" if accion == "firmar" else "Quitó su firma de")
-                       + f" el recibo {r['numero']} de {nombre_de(r['estudiante'])}")
+                       + f" el recibo {r['numero']} de {nombre_de(r['estudiante_id'])}")
                 flash(f"Recibo {r['numero']} " + ("firmado." if accion == "firmar" else "sin firma otra vez."), "ok")
         return redirect(url_for("control", estudiante=request.args.get("estudiante") or None))
-    estudiantes = [(e["cif"], e["nombre"]) for e in sql(
-        "SELECT cif, nombre FROM cuentas WHERE rol = 'estudiante' AND (%s OR " + de_mi_grupo("cuentas.cif")
-        + ") ORDER BY nombre", rol != "profesor", cif).fetchall()]
-    elegido = cif if rol == "estudiante" else request.args.get("estudiante") or None
-    if elegido not in dict(estudiantes):
+    estudiantes = [(e["id"], e["nombre"]) for e in sql(
+        "SELECT id, nombre FROM cuentas WHERE rol = 'estudiante' AND (%s OR es_profesor_de(%s, id)) ORDER BY nombre",
+        rol == "facultad", yo).fetchall()]
+    elegido = yo if rol == "estudiante" else request.args.get("estudiante", type=int)
+    if rol != "estudiante" and elegido not in dict(estudiantes):
         elegido = None
-    pendientes = []  # los tratamientos que él realizó, para elegir a cuál corresponde el recibo
+    ordenes = []  # las órdenes de sus pacientes con saldo, para elegir a cuál corresponde el recibo
     if rol == "estudiante":
-        pendientes = sql("SELECT t.id, p.nombre AS paciente, a.nombre || coalesce(' del ' || t.diente, '') AS tratamiento"
-                         " FROM tratamientos t JOIN pacientes p ON p.id = t.paciente_id"
-                         " JOIN tarifario a ON a.id = t.procedimiento_id"
-                         " WHERE t.estudiante = %s AND t.realizado IS NOT NULL AND p.eliminado IS NULL"
-                         " ORDER BY p.nombre, t.id", cif).fetchall()
-    recibos = recibos_de(estudiante=elegido)
-    if rol == "profesor":  # sin elegir estudiante, los recibos de todos los de su grupo
-        recibos = [r for r in recibos if r["estudiante"] in dict(estudiantes)]
-    return render_template("control.html", **comun(), recibos=recibos, elegido=elegido,
-                           estudiantes=estudiantes, pendientes=pendientes, hoy=hoy(), nombre_de=nombre_de,
+        ordenes = sql("SELECT r.*, p.nombre AS paciente FROM resumen_ordenes r JOIN pacientes p ON p.id = r.paciente_id"
+                      " WHERE p.estudiante_id = %s AND r.anulado_en IS NULL AND r.saldo > 0 AND p.eliminado_en IS NULL"
+                      " ORDER BY p.nombre, r.id", yo).fetchall()
+    recibos = recibos_de(estudiante_id=elegido)
+    if rol == "profesor":  # sin elegir estudiante, los recibos de todos los de sus clases
+        recibos = [r for r in recibos if r["estudiante_id"] in dict(estudiantes)]
+    return render_template("control.html", **comun(), recibos=recibos, elegido=elegido, metodos=METODOS_PAGO,
+                           estudiantes=estudiantes, ordenes=ordenes, hoy=hoy(), nombre_de=nombre_de,
                            recibo_maximo=RECIBO_MAXIMO)
 
 
 @app.route("/control/recibos/<int:rid>.jpg")
 def recibo_foto(rid):
-    # El estudiante ve solo sus recibos; el profesor y la Facultad, todos
-    cif, _, rol = quien()
-    r = sql("SELECT url FROM recibos WHERE id = %s AND CASE %s WHEN 'estudiante' THEN estudiante = %s"
-            " WHEN 'profesor' THEN " + de_mi_grupo("recibos.estudiante") + " ELSE true END",
-            rid, rol, cif, cif).fetchone()
+    # El estudiante ve solo sus recibos; el profesor, los de sus clases; la Facultad, todos
+    yo, _, rol = quien()
+    r = sql("SELECT url FROM recibos WHERE id = %s AND url IS NOT NULL AND CASE %s WHEN 'estudiante' THEN"
+            " estudiante_id = %s WHEN 'profesor' THEN es_profesor_de(%s, estudiante_id) ELSE true END",
+            rid, rol, yo, yo).fetchone()
     if not r:
         return redirect(url_for("control"))
     return ver_archivo(r["url"])
@@ -2175,14 +2284,16 @@ def bitacora():
         except ValueError:
             f[c] = ""
     como = lambda t: "%" + re.sub(r"([\\%_])", r"\\\1", t) + "%"  # noqa: E731
-    lineas = sql("SELECT to_char(cuando AT TIME ZONE 'America/Managua', 'DD/MM/YYYY HH24:MI') AS cuando,"
-                 " cif, nombre, rol, accion, lugar FROM bitacora"
-                 " WHERE (%s = '' OR (cuando AT TIME ZONE 'America/Managua')::date >= nullif(%s, '')::date)"
-                 " AND (%s = '' OR (cuando AT TIME ZONE 'America/Managua')::date <= nullif(%s, '')::date)"
-                 " AND (%s = '' OR nombre ILIKE %s OR cif ILIKE %s) AND (%s = '' OR accion ILIKE %s)"
-                 " ORDER BY id DESC LIMIT 500", f["desde"], f["desde"], f["hasta"], f["hasta"],
-                 f["usuario"], como(f["usuario"]), como(f["usuario"]), f["accion"], como(f["accion"])).fetchall()
-    return render_template("bitacora.html", **comun(), lineas=lineas, f=f, filtrado=any(f.values()))
+    lineas = sql("SELECT to_char(b.creado_en AT TIME ZONE 'America/Managua', 'DD/MM/YYYY HH24:MI') AS cuando,"
+                 " b.cif_registrado AS cif, coalesce(c.nombre, 'Sistema') AS nombre, c.rol, b.accion, b.lugar"
+                 " FROM bitacora b LEFT JOIN cuentas c ON c.id = b.cuenta_id"
+                 " WHERE (%s = '' OR (b.creado_en AT TIME ZONE 'America/Managua')::date >= nullif(%s, '')::date)"
+                 " AND (%s = '' OR (b.creado_en AT TIME ZONE 'America/Managua')::date <= nullif(%s, '')::date)"
+                 " AND (%s = '' OR coalesce(c.nombre, 'Sistema') ILIKE %s OR b.cif_registrado ILIKE %s)"
+                 " AND (%s = '' OR b.accion ILIKE %s) ORDER BY b.id DESC LIMIT 500", f["desde"], f["desde"],
+                 f["hasta"], f["hasta"], f["usuario"], como(f["usuario"]), como(f["usuario"]), f["accion"],
+                 como(f["accion"])).fetchall()
+    return render_template("bitacora.html", **comun(), lineas=lineas, f=f, filtrado=any(f.values()), roles=ROLES)
 
 
 def firma_png(p):
@@ -2201,7 +2312,7 @@ def expediente_pdf(pid):
     p = paciente(pid)
     if not p:
         return redirect(url_for("pacientes"))
-    p["trabajo"] = sql("SELECT * FROM trabajo WHERE paciente_id = %s ORDER BY id", pid).fetchall()
+    p["trabajo"] = trabajo_de(p)
     archivo = io.BytesIO()
     hoja = canvas.Canvas(archivo, pagesize=letter)
     _, alto = letter
@@ -2221,19 +2332,21 @@ def expediente_pdf(pid):
     for etiqueta, valor in (("Nº de paciente", p["id"]), ("Nº de expediente", p["expediente"] or "—"),
                             ("Nombre", p["nombre"]), ("Cédula", p["cedula"]), ("Teléfono", p["telefono"] or "—"),
                             ("Razón de la consulta", p["razon"] or "—"),
-                            ("Estudiante a cargo", nombre_de(p["estudiante"])),
+                            ("Estudiante a cargo", nombre_de(p["estudiante_id"])),
                             ("Estado", "Aprobado" if p["aprobado"] else f"Rechazado: {p['rechazo']}" if p["rechazo"]
                              else "Pendiente de aprobación")):
         linea(f"{etiqueta}: {valor}")
-    if p["finalizado"]:
-        linea(f"Recibió el alta el {dmy(p['finalizado'])} por {nombre_de(p['finalizado_por'])}: "
+    if p["finalizado_en"]:
+        linea(f"Recibió el alta el {p['finalizado_en'].astimezone(MANAGUA):%d/%m/%Y} por {nombre_de(p['finalizado_por_id'])}: "
               f"{p['finalizado_resumen']}")
 
     y -= 10
     h = historia_de(pid)
     linea("Historia clínica" + ("" if h.get("completa") else " (BORRADOR, sin completar)"), "Helvetica-Bold", 12)
-    for c, etiqueta in HISTORIA.items():
-        if h.get(c):
+    for c, etiqueta in {**DEL_PACIENTE, **HISTORIA}.items():
+        if c == "sexo" and h.get(c):
+            linea(f"{etiqueta}: {SEXOS.get(h[c], h[c])}", "Helvetica", 10)
+        elif h.get(c):
             linea(f"{etiqueta}: {dmy(h[c]) if c == 'nacimiento' else h[c]}"[:110], "Helvetica", 10)
     for a in alertas_de(h):
         linea(f"ALERTA - {a}"[:110], "Helvetica-Bold", 10)
@@ -2241,39 +2354,40 @@ def expediente_pdf(pid):
     y -= 10
     linea("Trabajo por estudiante", "Helvetica-Bold", 12)
     for t in p["trabajo"]:
-        linea(f"- {nombre_de(t['estudiante'])}: {dmy(t['desde'])} a {dmy(t['hasta']) if t['hasta'] else 'hoy'}."
-              f" {t['resumen'] or 'sin resumen'}", "Helvetica", 10)
+        hasta = t["hasta"].astimezone(MANAGUA).strftime(FORMATO) if t["hasta"] else "hoy"
+        linea(f"- {nombre_de(t['estudiante_id'])}: {t['desde'].astimezone(MANAGUA):%d/%m/%Y} a {hasta}."
+              f" {t['resumen'] or ''}", "Helvetica", 10)
 
-    agenda = sql("SELECT * FROM citas WHERE paciente_id = %s ORDER BY fecha, hora", pid).fetchall()
+    agenda = sql(CITAS + " WHERE c.paciente_id = %s ORDER BY c.inicio", pid).fetchall()
     if agenda:
         y -= 10
         linea("Citas", "Helvetica-Bold", 12)
         for c in agenda:
-            linea(f"- {dmy(c['fecha'])} {c['hora']} · {c['razon']} · {c['sala'] or 'sin clínica'} · {c['estado']}"
+            linea(f"- {dmy(c['fecha'])} {c['hora']}-{c['hora_fin']} · {c['razon']} · {c['sala']} · {ESTADOS_CITA[c['estado']]}"
                   + (f" ({c['motivo_cancelacion']})" if c["motivo_cancelacion"] else ""), "Helvetica", 10)
 
     y -= 10
     linea("Odontograma", "Helvetica-Bold", 12)
     linea(f"Revisión del profesor: {REVISIONES[p['odonto_revision']]}"
-          + (f" ({nombre_de(p['odonto_revisor'])})" if p["odonto_revision"] in ("aprobada", "devuelta") else ""),
+          + (f" ({nombre_de(p['odonto_revisor_id'])})" if p["odonto_revision"] in ("aprobada", "devuelta") else ""),
           "Helvetica", 10)
-    hallazgos = sql("SELECT * FROM dientes WHERE paciente_id = %s AND estado <> 'Sano' ORDER BY diente", pid).fetchall()
+    hallazgos = sql("SELECT * FROM dientes WHERE paciente_id = %s AND estado <> 'sano' ORDER BY diente", pid).fetchall()
     for d in hallazgos:
-        linea(f"- Diente {d['diente']}: {d['estado']}" + (f" · {d['nota']}" if d["nota"] else ""), "Helvetica", 10)
+        linea(f"- Diente {d['diente']}: {ESTADOS[d['estado']][0]}" + (f" · {d['nota']}" if d["nota"] else ""), "Helvetica", 10)
     if not hallazgos:
         linea("Sin hallazgos anotados: todos los dientes sanos.", "Helvetica", 10)
 
     y -= 10
     linea("Tratamientos y cobros", "Helvetica-Bold", 12)
     for t in plan_de(pid):
-        linea(f"- {t['fase']}: {t['nombre']}" + (f" del {t['diente']}" if t["diente"] else "") + f" · {cordobas(t['precio'])} · "
+        linea(f"- {FASES[t['fase']]}: {t['nombre']}" + (f" del {t['diente']}" if t["diente"] else "") + f" · {cordobas(t['precio'] - t['descuento_monto'])} · "
               + (f"realizado el {dmy(t['realizado'])}" if t["realizado"] else "pendiente"), "Helvetica", 10)
     c = cuenta_de(pid)
-    linea(f"Realizado: {cordobas(c['realizado'])} · Abonado: {cordobas(c['abonado'])} · "
+    linea(f"Realizado: {cordobas(c['realizado'])} · Pagado: {cordobas(c['abonado'])} · "
           f"Saldo pendiente: {cordobas(c['saldo'])}", "Helvetica", 10)
     for r in recibos_de(paciente_id=pid):
-        linea(f"- Recibo {r['numero']} · {dmy(r['fecha'])} · {r['tratamiento']} · "
-              + (f"firmado por {nombre_de(r['firmado_por'])}" if r["firmado"] else "sin firma del docente"),
+        linea(f"- Recibo {r['numero']} · {dmy(r['fecha'])} · {cordobas(r['monto'])} · "
+              + (f"firmado por {nombre_de(r['firmado_por_id'])}" if r["firmado_por_id"] else "sin firma del docente"),
               "Helvetica", 10)
 
     y -= 14
@@ -2293,7 +2407,7 @@ def expediente_pdf(pid):
         y -= 76
         hoja.line(50, y, 250, y)
         y -= 14
-        linea(f"Firma del paciente · {dmy(p.get('firma_fecha'))}", "Helvetica", 9)
+        linea(f"Firma del paciente · {p['firmado_en'].astimezone(MANAGUA):%d/%m/%Y}", "Helvetica", 9)
 
     hoja.showPage()
     hoja.save()

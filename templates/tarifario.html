@@ -10,9 +10,9 @@
       <tbody>
         {% for t in procedimientos %}
         <tr>
-          <td>{{ t.codigo or '—' }}</td><td>{{ t.nombre }}
+          <td>{{ t.codigo }}</td><td>{{ t.nombre }}
             {% if anteriores[t.id] %}<details class="decidir"><summary>Precios anteriores</summary>
-              <ul>{% for a in anteriores[t.id] %}<li>{{ a.precio|cordobas }} hasta el {{ a.hasta }} ({{ nombre_de(a.cambiado_por) }})</li>{% endfor %}</ul></details>{% endif %}</td>
+              <ul>{% for a in anteriores[t.id] %}<li>{{ a.precio|cordobas }}: {{ "desde el " ~ a.desde if a.desde else "desde el inicio" }} hasta el {{ a.hasta }}</li>{% endfor %}</ul></details>{% endif %}</td>
           <td>{{ t.area or '—' }}</td>
           <td class="num">{{ t.precio|cordobas }}</td>
           <td class="{{ 'verde' if t.activo else 'tenue' }}">{{ "Se puede anotar" if t.activo else "Desactivado" }}</td>
@@ -37,7 +37,7 @@
     <fieldset>
       <legend>Agregar procedimiento</legend>
       <div class="en-linea">
-        <input name="codigo" placeholder="Código" aria-label="Código" maxlength="20" style="width: 7em">
+        <input name="codigo" placeholder="Código" aria-label="Código" maxlength="20" required style="width: 7em">
         <input name="nombre" placeholder="Ej.: Profilaxis, Obturación con resina, Endodoncia unirradicular" aria-label="Procedimiento" required>
         <select name="area" aria-label="Área clínica"><option value="">Área…</option>{% for a in areas %}<option>{{ a }}</option>{% endfor %}</select>
         <label>Precio (C$) <input type="number" name="precio" min="0.01" step="0.01" required style="width: 8em"></label>

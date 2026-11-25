@@ -21,7 +21,7 @@
       <tbody>
         {% for l in lineas %}
         <tr><td class="fecha">{{ l.cuando }}</td><td>{{ l.nombre }}</td><td>{{ l.cif }}</td>
-            <td>{{ l.rol }}</td><td>{{ l.accion }}</td><td>{{ l.lugar or '—' }}</td></tr>
+            <td>{{ roles[l.rol] if l.rol else 'Sistema' }}</td><td>{{ l.accion }}</td><td>{{ l.lugar or '—' }}</td></tr>
         {% endfor %}
       </tbody>
     </table>

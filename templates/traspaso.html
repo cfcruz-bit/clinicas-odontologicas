@@ -7,7 +7,7 @@
   <form method="post">
     <fieldset>
       <legend>Traspaso del paciente</legend>
-      <p>Estudiante actual: <b>{{ nombre_de(p.estudiante) }}</b>. Su trabajo se archiva con el resumen que
+      <p>Estudiante actual: <b>{{ nombre_de(p.estudiante_id) }}</b>. Su trabajo se archiva con el resumen que
          escriba aquí; no se borra nada.</p>
       <div class="campo arriba"><span>¿Qué se le hizo y qué trabajó? *</span>
         <textarea name="resumen" rows="4" autofocus
@@ -16,7 +16,7 @@
       <div class="campo"><span>Nuevo estudiante: *</span>
         <select name="estudiante">
           <option value="">Seleccione…</option>
-          {% for cif_est, nombre_est in estudiantes %}{% if cif_est != p.estudiante %}<option value="{{ cif_est }}">{{ nombre_est }}</option>{% endif %}{% endfor %}
+          {% for id_est, nombre_est in estudiantes %}{% if id_est != p.estudiante_id %}<option value="{{ id_est }}">{{ nombre_est }}</option>{% endif %}{% endfor %}
         </select>
       </div>
       <div class="acciones"><button class="btn">Traspasar paciente</button></div>

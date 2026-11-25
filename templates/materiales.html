@@ -33,7 +33,7 @@
       <tbody>
         {% for s in solicitudes %}<tr><td class="fecha">{{ s.pedida }}</td><td>{{ s.material }}</td><td class="num">{{ s.cantidad }} {{ s.unidad }}</td>
           <td class="fecha">{{ s.para|dmy }}</td>
-          <td class="{{ {'Entregada': 'verde', 'Rechazada': 'rojo'}.get(s.estado, 'amarillo') }}">{{ s.estado }}{% if s.nota %}<div class="tenue">{{ s.nota }}</div>{% endif %}</td></tr>
+          <td class="{{ {'aprobada': 'verde', 'rechazada': 'rojo'}.get(s.estado, 'amarillo') }}">{{ estado_solicitud[s.estado] }}{% if s.nota %}<div class="tenue">{{ s.nota }}</div>{% endif %}</td></tr>
         {% else %}<tr><td class="vacio" colspan="5"><b>Todavía no ha pedido materiales</b>Use el formulario de arriba.</td></tr>{% endfor %}
       </tbody>
     </table>
