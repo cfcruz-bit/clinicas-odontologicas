@@ -18,7 +18,7 @@
           <tr><th>Paciente</th><td>{{ p.nombre }}</td></tr>
           <tr><th>Cédula</th><td>{{ p.cedula }}</td></tr>
           <tr><th>Razón de la consulta</th><td>{{ p.razon or '—' }}</td></tr>
-          <tr><th>Estudiante a cargo</th><td>{{ nombre_de(p.estudiante) }}</td></tr>
+          <tr><th>Estudiante a cargo</th><td>{{ nombre_de(p.estudiante_id) }}</td></tr>
         </tbody>
       </table>
     </div>
@@ -42,7 +42,7 @@
         <div class="firma">
           {% if p.firma %}<img class="firma-trazo" src="{{ p.firma }}" alt="Firma de {{ p.nombre }}">{% endif %}
         </div>
-        <div class="linea-firma">Firma del paciente{% if p.firma %} · {{ p.firma_fecha|dmy }}{% endif %}</div>
+        <div class="linea-firma">Firma del paciente{% if p.firma %} · {{ p.firmado_en.astimezone(MANAGUA).strftime('%d/%m/%Y') }}{% endif %}</div>
       </div>
     </div>
   </div>

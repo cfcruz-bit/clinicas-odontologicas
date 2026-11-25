@@ -3,10 +3,10 @@
 {% block contenido %}
   <p><a href="{{ url_for('expediente', pid=p.id) }}">&larr; Volver al expediente</a></p>
   <h2>Dar de alta o eliminar a {{ p.nombre }}</h2>
-  <p>Cédula {{ p.cedula }} · Estudiante a cargo: {{ nombre_de(p.estudiante) }}</p>
+  <p>Cédula {{ p.cedula }} · Estudiante a cargo: {{ nombre_de(p.estudiante_id) }}</p>
 
-  {% if p.finalizado %}
-  <div class="mensaje ok">Recibió el alta el {{ p.finalizado|dmy }} ({{ nombre_de(p.finalizado_por) }}):
+  {% if p.finalizado_en %}
+  <div class="mensaje ok">Recibió el alta el {{ p.finalizado_en.astimezone(MANAGUA).strftime('%d/%m/%Y') }} ({{ nombre_de(p.finalizado_por_id) }}):
     {{ p.finalizado_resumen }}</div>
   <form method="post">
     <input type="hidden" name="accion" value="reabrir">
@@ -21,7 +21,7 @@
   <div class="mensaje aviso">
     {% if pendientes %}Quedan {{ pendientes|length }} {{ "tratamiento pendiente" if pendientes|length == 1 else "tratamientos pendientes" }}
       en el plan: {{ pendientes|map(attribute='nombre')|join(', ') }}.{% endif %}
-    {% if cuenta.saldo > 0 %}El paciente debe {{ cuenta.saldo|cordobas }}; los abonos se pueden registrar después de darle de alta.{% endif %}
+    {% if cuenta.saldo > 0 %}El paciente debe {{ cuenta.saldo|cordobas }}; los pagos se pueden registrar después de darle de alta.{% endif %}
   </div>
   {% endif %}
   <form method="post">

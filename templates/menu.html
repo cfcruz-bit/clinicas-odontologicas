@@ -16,7 +16,7 @@
   {% if revisar %}
   <div class="mensaje aviso">
     Odontogramas que esperan su revisión:
-    {% for r in revisar %}<a href="{{ url_for('odontograma', pid=r.id) }}">{{ r.nombre }}</a> ({{ nombre_de(r.estudiante) }}){{ ', ' if not loop.last else '.' }}{% endfor %}
+    {% for r in revisar %}<a href="{{ url_for('odontograma', pid=r.id) }}">{{ r.nombre }}</a> ({{ nombre_de(r.estudiante_id) }}){{ ', ' if not loop.last else '.' }}{% endfor %}
   </div>
   {% endif %}
   {% if solicitudes_pendientes %}
@@ -30,7 +30,7 @@
     {{ "1 cita de mañana" if sin_confirmar|length == 1 else "%d citas de mañana"|format(sin_confirmar|length) }} sin confirmar.
     Recuérdeselo al paciente:
     <ul>{% for c in sin_confirmar %}<li>{{ c.hora }} · {{ c.paciente }}
-      {% if c.recordada %}<span class="verde">Recordatorio enviado</span>{% endif %}
+      {% if c.recordada_en %}<span class="verde">Recordatorio enviado</span>{% endif %}
       {% if c.telefono %}<a class="btn chico" href="{{ whatsapp(c.paciente, c.telefono, c) }}" target="_blank" rel="noopener">Recordar por WhatsApp</a>
       {% else %}<span class="tenue">(sin teléfono)</span>{% endif %}</li>{% endfor %}</ul>
   </div>
@@ -40,7 +40,7 @@
     {{ "1 paciente pidió" if contactar|length == 1 else "%d pacientes pidieron"|format(contactar|length) }}
     por WhatsApp que le contacte:
     <ul>{% for k in contactar %}<li><a href="{{ url_for('expediente', pid=k.paciente_id) }}">{{ k.nombre }}</a>
-      <span class="tenue">({{ k.pedido.astimezone(MANAGUA).strftime('%d/%m/%Y %H:%M') }})</span>
+      <span class="tenue">({{ k.pedido_en.astimezone(MANAGUA).strftime('%d/%m/%Y %H:%M') }})</span>
       {% if k.telefono %}<a class="btn chico" href="https://wa.me/505{{ k.telefono }}" target="_blank" rel="noopener">Escribirle</a>{% endif %}
       <form method="post" action="{{ url_for('contacto_atendido', kid=k.id) }}" class="en-linea">
         <button class="btn chico">Ya le contacté</button></form></li>{% endfor %}</ul>
@@ -50,10 +50,21 @@
   <div class="mensaje error">
     El profesor rechazó {{ "a un paciente suyo" if rechazados|length == 1 else "a %d pacientes suyos"|format(rechazados|length) }}:
     <ul>{% for r in rechazados %}<li><a href="{{ url_for('expediente', pid=r.id) }}">{{ r.nombre }}</a>: {{ r.rechazo }}
-      <span class="tenue">({{ nombre_de(r.decision_por) }})</span></li>{% endfor %}</ul>
+      <span class="tenue">({{ nombre_de(r.rechazado_por_id) }})</span></li>{% endfor %}</ul>
   </div>
   {% endif %}
+  {% if es_rol == "estudiante" and not clase %}
+  <div class="mensaje aviso">Todavía no está en ninguna clase. Pídale a su profesor el código QR de su clase y escanéelo:
+    sin clase, ningún profesor puede aprobar sus pacientes ni sus citas.</div>
+  {% endif %}
   <h2>Hola, {{ nombre }}</h2>
+  {% if clase %}<p>Su clase: <b>{{ clase.nombre }}</b> ({{ clase.periodo }}) con {{ clase.profesor }}.</p>{% endif %}
+  {% if citas_por_aprobar %}
+  <h2>Citas por aprobar</h2>
+  <ul>{% for c in citas_por_aprobar %}<li>{{ c.fecha|dmy }} {{ c.hora }} · <a href="{{ url_for('expediente', pid=c.paciente_id) }}">{{ c.paciente }}</a>
+    <span class="tenue">({{ nombre_de(c.estudiante_id) }}, {{ c.sala }})</span></li>{% endfor %}</ul>
+  <p><a href="{{ url_for('citas') }}">Aprobarlas o rechazarlas en Citas</a></p>
+  {% endif %}
   <h2>Citas de hoy</h2>
   {% if citas_hoy %}
   <div class="tabla">
@@ -62,8 +73,8 @@
       <tbody>
         {% for c in citas_hoy %}
         <tr><td>{{ c.hora }}</td><td><a href="{{ url_for('expediente', pid=c.paciente_id) }}">{{ c.paciente }}</a></td>
-          <td>{{ c.razon }}</td><td>{{ c.sala or '—' }}</td><td>{{ c.estado }}</td>
-          {% if es_rol != "estudiante" %}<td>{{ nombre_de(c.estudiante) }}</td>{% endif %}</tr>
+          <td>{{ c.razon }}</td><td>{{ c.sala }}</td><td>{{ estados_cita[c.estado] }}{{ ' (sin aprobar)' if not c.aprobado_en and c.estado == 'programada' }}</td>
+          {% if es_rol != "estudiante" %}<td>{{ nombre_de(c.estudiante_id) }}</td>{% endif %}</tr>
         {% endfor %}
       </tbody>
     </table>
@@ -75,7 +86,7 @@
   <h2>Pacientes por aprobar</h2>
   {% if por_aprobar %}
   <ul>{% for p in por_aprobar %}<li><a href="{{ url_for('expediente', pid=p.id) }}">{{ p.nombre }}</a>
-    <span class="tenue">({{ nombre_de(p.estudiante) }})</span></li>{% endfor %}</ul>
+    <span class="tenue">({{ nombre_de(p.estudiante_id) }})</span></li>{% endfor %}</ul>
   <p><a href="{{ url_for('pacientes') }}">Aprobarlos o rechazarlos en Pacientes</a></p>
   {% else %}
   <p class="tenue">No hay pacientes esperando su aprobación.</p>
@@ -83,12 +94,12 @@
   {% endif %}
   {% if es_rol == "estudiante" %}
   <h2>Mis turnos clínicos</h2>
-  {% if turnos %}<ul>{% for t in turnos %}<li>{{ dias[t.dia] }} de {{ t.desde }} a {{ t.hasta }}</li>{% endfor %}</ul>
+  {% if turnos %}<ul>{% for t in turnos %}<li>{{ dias[t.dia] }} de {{ t.desde.strftime('%H:%M') }} a {{ t.hasta.strftime('%H:%M') }}</li>{% endfor %}</ul>
   <p class="tenue">Sus citas se agendan dentro de estos turnos.</p>
   {% else %}<p class="tenue">La Facultad todavía no le asigna turnos.</p>{% endif %}
   {% endif %}
   <h2>Estado de las clínicas</h2>
-  <p>{{ clinicas.disponibles }} disponibles{% if clinicas.no_disponibles %} · <span class="rojo">{{ clinicas.no_disponibles }} no disponibles</span>{% endif %}.
+  <p>{{ clinicas.disponibles }} habilitadas{% if clinicas.no_disponibles %} · <span class="rojo">{{ clinicas.no_disponibles }} no habilitadas</span>{% endif %}.
     <a href="{{ url_for('salas') }}">Ver el plano</a></p>
   <h2>Lo que puede hacer</h2>
   <p>Entró con el CIF {{ cif }} como <b>{{ rol }}</b>. Desde esta cuenta puede:</p>

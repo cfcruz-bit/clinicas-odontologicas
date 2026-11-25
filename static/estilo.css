@@ -111,7 +111,7 @@ td select { width: auto; min-height: 26px; padding: 1px 4px; }
 .arcada .diente:nth-child(9) { grid-column-start: 10; }  /* linea media */
 .diente { padding: 0; border: 0; background: none; font: inherit; font-size: 12px; color: var(--texto); cursor: pointer; text-align: center; }
 .diente span { display: block; height: 50px; border: 1px solid #5a6068; background: var(--color); margin-bottom: 2px; }
-.diente[data-estado="Extraído"] span {
+.diente[data-estado="ausente"] span {
   background: linear-gradient(to top right, transparent calc(50% - 2px), var(--rojo) calc(50% - 2px), var(--rojo) calc(50% + 2px), transparent calc(50% + 2px)),
               linear-gradient(to top left, transparent calc(50% - 2px), var(--rojo) calc(50% - 2px), var(--rojo) calc(50% + 2px), transparent calc(50% + 2px)),
               var(--color);
@@ -292,3 +292,9 @@ p.vacio { border: 1px dashed var(--borde); border-radius: 3px; background: #fafb
 details.decidir { display: inline-block; text-align: left; }
 details.decidir summary { cursor: pointer; color: var(--azul); text-decoration: underline; font-size: 13px; padding: 3px 0; }
 details.decidir form { display: grid; gap: 4px; margin-top: 6px; width: 190px; }
+
+/* Tarjetas con el código QR de una clase: una por estudiante, para imprimir y recortar */
+.codigos { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 14px; }
+.codigo { border: 1px dashed #9bb; border-radius: 8px; padding: 12px; text-align: center; break-inside: avoid; }
+.codigo img { display: block; width: 160px; height: 160px; margin: 0 auto 8px; }
+.codigo .clave { font-size: 11px; }

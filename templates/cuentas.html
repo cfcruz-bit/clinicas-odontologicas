@@ -18,7 +18,7 @@
       <tbody>
         {% for c in lista %}
         <tr>
-          <td>{{ c.cif }}</td><td>{{ c.nombre }}{% if c.correo %}<br><span class="tenue">{{ c.correo }}</span>{% endif %}</td><td>{{ roles[c.rol] }}{% if c.anio %}, {{ c.anio }}.º año{% endif %}{% if c.profesor %}<br><span class="tenue">Profesor: {{ nombre_de(c.profesor) }}</span>{% endif %}</td>
+          <td>{{ c.cif }}</td><td>{{ c.nombre }}<br><span class="{{ 'amarillo' if c.correo.endswith(correo_pendiente) else 'tenue' }}">{{ 'Correo pendiente' if c.correo.endswith(correo_pendiente) else c.correo }}</span></td><td>{{ roles[c.rol] }}{% if c.anio %}, {{ c.anio }}.º año{% endif %}{% if c.clase %}<br><span class="tenue">Clase: {{ c.clase }}</span>{% endif %}</td>
           <td class="{{ 'tenue' if not c.activa else ('rojo' if c.bloqueada else 'verde') }}">
             {{ "Desactivada" if not c.activa else ("Bloqueada hasta las " ~ c.bloqueada if c.bloqueada else "Activa") }}</td>
           <td class="acciones">
@@ -37,41 +37,12 @@
     </table>
   </div>
 
-  <h2>Grupos de estudiantes</h2>
-  <p class="tenue">Para no crear las cuentas una por una: cree un grupo y el sistema le da un código QR. Cada estudiante lo
-     escanea con su celular, escribe su CIF y su nombre y crea su propia contraseña.</p>
-  {% if grupos %}
-  <div class="tabla">
-    <table>
-      <thead><tr><th>Grupo</th><th>Registrados</th><th>Registro</th><th></th></tr></thead>
-      <tbody>
-        {% for g in grupos %}
-        <tr>
-          <td>{{ g.nombre }}</td><td>{{ g.registrados }} de {{ g.cupo }}</td>
-          <td class="{{ 'verde' if g.estado == 'Abierto' else 'tenue' }}">{{ "Abierto hasta el " ~ g.hasta if g.estado == "Abierto" else g.estado }}</td>
-          <td class="acciones"><a class="btn chico" href="{{ url_for('grupo', gid=g.id) }}">{{ "Ver el QR y la lista" if g.estado == "Abierto" else "Ver la lista" }}</a></td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% endif %}
-  <form method="post">
-    <input type="hidden" name="accion" value="grupo">
-    <fieldset>
-      <legend>Crear un grupo de estudiantes</legend>
-      <div class="campo"><span>Nombre del grupo: *</span><input name="nombre" required maxlength="80" placeholder="Ej.: Operatoria II, grupo A"></div>
-      <div class="campo"><span>¿Cuántos estudiantes son? *</span><input type="number" name="cupo" required min="1" max="{{ cupo_maximo }}" value="30"></div>
-      <div class="campo"><span>Días que queda abierto el registro: *</span><input type="number" name="dias" required min="1" max="{{ dias_maximo }}" value="7"></div>
-      <p class="tenue">Con el cupo lleno o pasados esos días el código deja de servir. También lo puede cerrar antes.</p>
-      <div class="acciones"><button class="btn">Crear el grupo y ver el QR</button></div>
-    </fieldset>
-  </form>
-
+  <p class="tenue">Los estudiantes también crean su propia cuenta con el código QR de la clase de su profesor
+     (pestaña Clases).</p>
   <form method="post">
     <input type="hidden" name="accion" value="crear">
     <fieldset>
-      <legend>Crear una sola cuenta</legend>
+      <legend>Crear una cuenta</legend>
       <div class="campo"><span>CIF: *</span><input name="cif" required pattern="[A-Za-z0-9]+" autocomplete="off"></div>
       <div class="campo"><span>Nombre: *</span><input name="nombre" required></div>
       <div class="campo"><span>Rol: *</span>
@@ -80,8 +51,8 @@
           {% for clave_rol, nombre_rol in roles.items() %}<option value="{{ clave_rol }}">{{ nombre_rol }}</option>{% endfor %}
         </select>
       </div>
-      <div class="campo"><span>Correo:</span><input type="email" name="correo" maxlength="120"></div>
-      <div class="campo"><span>Año de la carrera (estudiantes):</span>
+      <div class="campo"><span>Correo: *</span><input type="email" name="correo" maxlength="120" required></div>
+      <div class="campo"><span>Año de la carrera (obligatorio para estudiantes):</span>
         <select name="anio"><option value="">—</option>{% for a in anios %}<option value="{{ a }}">{{ a }}.º año</option>{% endfor %}</select></div>
       <div class="campo"><span>Contraseña: *</span><input type="password" name="clave" required minlength="{{ clave_minima }}"
         autocomplete="new-password" placeholder="Al menos {{ clave_minima }} caracteres"></div>

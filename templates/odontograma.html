@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 {% block titulo %}Odontograma de {{ p.nombre }} - Clínicas Odontológicas{% endblock %}
 {% macro diente(d) %}
-  {% set f = dientes.get(d) %}{% set estado = f.estado if f else 'Sano' %}
-  {% set titulo = d ~ ': ' ~ estado ~ (' · ' ~ f.nota if f and f.nota else '') %}
-  {% if es_rol == "estudiante" and not p.finalizado %}
-  <a class="diente {{ 'resaltado' if d == elegido }}" data-estado="{{ estado }}" style="--color: {{ estados[estado] }}"
+  {% set f = dientes.get(d) %}{% set estado = f.estado if f else 'sano' %}
+  {% set titulo = d ~ ': ' ~ estados[estado][0] ~ (' · ' ~ f.nota if f and f.nota else '') %}
+  {% if es_rol == "estudiante" and not p.finalizado_en %}
+  <a class="diente {{ 'resaltado' if d == elegido }}" data-estado="{{ estado }}" style="--color: {{ estados[estado][1] }}"
      href="{{ url_for('odontograma', pid=p.id, diente=d) }}#editar" title="{{ titulo }}"><span></span>{{ d }}</a>
   {% else %}
-  <div class="diente" data-estado="{{ estado }}" style="--color: {{ estados[estado] }}" title="{{ titulo }}"><span></span>{{ d }}</div>
+  <div class="diente" data-estado="{{ estado }}" style="--color: {{ estados[estado][1] }}" title="{{ titulo }}"><span></span>{{ d }}</div>
   {% endif %}
 {% endmacro %}
 {% block contenido %}
@@ -15,21 +15,23 @@
   <h2>Odontograma de {{ p.nombre }}</h2>
 
   <ol class="pasos">
-    <li class="{{ 'hecho' if fotos }}">Foto presencial: {{ fotos|length }} {{ "foto" if fotos|length == 1 else "fotos" }}.</li>
-    <li class="{{ 'hecho' if dientes }}">Odontograma: {{ dientes|length }} {{ "diente anotado" if dientes|length == 1 else "dientes anotados" }}; los demás están sanos.</li>
+    {% set del_paciente = fotos|rejectattr('tipo', 'equalto', 'radiografia')|list %}
+    <li class="{{ 'hecho' if del_paciente }}">Fotos del paciente: {{ del_paciente|length }} {{ "foto" if del_paciente|length == 1 else "fotos" }} (intraoral o extraoral).</li>
+    {% set anotados = dientes.values()|rejectattr('estado', 'equalto', 'sano')|list %}
+    <li class="{{ 'hecho' if anotados }}">Odontograma: {{ anotados|length }} {{ "diente con hallazgo" if anotados|length == 1 else "dientes con hallazgos" }}; los demás están sanos.</li>
     <li class="{{ 'hecho' if p.odonto_revision == 'aprobada' }}">Revisión del profesor:
       <b class="{{ 'verde' if p.odonto_revision == 'aprobada' else 'amarillo' }}">{{ revisiones[p.odonto_revision] }}</b>
-      {% if p.odonto_revision in ('aprobada', 'devuelta') %}por {{ nombre_de(p.odonto_revisor) }}{% endif %}
+      {% if p.odonto_revision in ('aprobada', 'devuelta') %}por {{ nombre_de(p.odonto_revisor_id) }}{% endif %}
       {% if p.odonto_revision == 'devuelta' and p.odonto_nota %}<div class="mensaje error">Qué corregir: {{ p.odonto_nota }}</div>{% endif %}
     </li>
   </ol>
 
-  {% if es_rol == "estudiante" and not p.finalizado and p.odonto_revision in ('', 'devuelta') %}
+  {% if es_rol == "estudiante" and not p.finalizado_en and p.odonto_revision in ('', 'devuelta') %}
   <form method="post" class="acciones sin-imprimir">
     <input type="hidden" name="accion" value="pedir">
     <button class="btn">Pedir la revisión del profesor</button>
   </form>
-  {% elif es_rol == "profesor" and p.odonto_revision == 'pedida' and not p.finalizado %}
+  {% elif es_rol == "profesor" and p.odonto_revision == 'pedida' and not p.finalizado_en %}
   <form method="post">
     <fieldset>
       <legend>Revisión del odontograma</legend>
@@ -49,10 +51,10 @@
     <div class="arcada" style="margin-top: 14px">{% for d in abajo %}{{ diente(d) }}{% endfor %}</div>
     <div class="arcada-titulo">Inferior</div>
     <div class="leyenda">
-      {% for estado, color in estados.items() %}<span><i style="background: {{ color }}"></i>{{ estado }}{{ ' (✗)' if estado == 'Extraído' }}</span>{% endfor %}
+      {% for estado, (nombre, color) in estados.items() %}<span><i style="background: {{ color }}"></i>{{ nombre }}{{ ' (✗)' if estado == 'ausente' }}</span>{% endfor %}
     </div>
   </div>
-  {% if es_rol == "estudiante" and not p.finalizado %}<p class="tenue sin-imprimir">Toque un diente para anotar su estado.</p>{% endif %}
+  {% if es_rol == "estudiante" and not p.finalizado_en %}<p class="tenue sin-imprimir">Toque un diente para anotar su estado.</p>{% endif %}
 
   {% if elegido %}
   {% set f = dientes.get(elegido) %}
@@ -63,7 +65,7 @@
       <legend>Diente {{ elegido }}</legend>
       <div class="campo"><span>Estado: *</span>
         <select name="estado" autofocus>
-          {% for estado in estados %}<option{{ ' selected' if (f.estado if f else 'Sano') == estado }}>{{ estado }}</option>{% endfor %}
+          {% for estado, (nombre, color) in estados.items() %}<option value="{{ estado }}"{{ ' selected' if (f.estado if f else 'sano') == estado }}>{{ nombre }}</option>{% endfor %}
         </select>
       </div>
       <div class="campo"><span>Nota</span><input name="nota" value="{{ f.nota if f else '' }}" placeholder="Ej.: caries oclusal profunda"></div>
@@ -80,8 +82,8 @@
     <table>
       <thead><tr><th>Diente</th><th>Estado</th><th>Nota</th></tr></thead>
       <tbody>
-        {% for d in (arriba + abajo)|sort if d in dientes and dientes[d].estado != 'Sano' %}
-        <tr><td>{{ d }}</td><td>{{ dientes[d].estado }}</td><td>{{ dientes[d].nota or '—' }}</td></tr>
+        {% for d in (arriba + abajo)|sort if d in dientes and dientes[d].estado != 'sano' %}
+        <tr><td>{{ d }}</td><td>{{ estados[dientes[d].estado][0] }}</td><td>{{ dientes[d].nota or '—' }}</td></tr>
         {% else %}
         <tr><td class="vacio" colspan="3"><b>Sin hallazgos</b>Todos los dientes están sanos.</td></tr>
         {% endfor %}
@@ -89,14 +91,15 @@
     </table>
   </div>
 
-  <h2>Fotos presenciales y radiografías</h2>
-  {% if es_rol == "estudiante" and not p.finalizado %}
+  <h2>Fotos y radiografías</h2>
+  {% if es_rol == "estudiante" and not p.finalizado_en %}
   <form method="post" enctype="multipart/form-data" class="sin-imprimir">
     <input type="hidden" name="accion" value="foto">
     <fieldset>
       <legend>Subir foto</legend>
-      <div class="en-linea"><select name="tipo" aria-label="Tipo de imagen">{% for t in tipos_foto %}<option>{{ t }}</option>{% endfor %}</select>
-        <input type="file" name="foto" accept="image/jpeg,image/png" required aria-label="Foto presencial o radiografía">
+      <div class="en-linea"><select name="tipo" aria-label="Tipo de imagen">{% for v, t in tipos_foto.items() %}<option value="{{ v }}">{{ t }}</option>{% endfor %}</select>
+        <input type="file" name="foto" accept="image/jpeg,image/png" required aria-label="Foto o radiografía">
+        <input name="descripcion" placeholder="Descripción (opcional)" aria-label="Descripción">
         <button class="btn">Subir</button></div>
       <p class="tenue">JPG o PNG de hasta 5 MB. En el celular o la tableta se puede tomar con la cámara. Se guarda achicada.</p>
     </fieldset>
@@ -105,11 +108,11 @@
   <div class="fotos">
     {% for f in fotos %}
     <a href="{{ url_for('foto', pid=p.id, fid=f.id) }}" target="_blank" title="Abrir la foto en grande">
-      <img class="miniatura" src="{{ url_for('foto', pid=p.id, fid=f.id) }}" alt="{{ f.tipo }} del {{ f.cuando }}">
-      <small class="tenue">{{ f.tipo }} · {{ f.cuando }} · {{ nombre_de(f.cif) }}</small>
+      <img class="miniatura" src="{{ url_for('foto', pid=p.id, fid=f.id) }}" alt="{{ tipos_foto[f.tipo] }} del {{ f.cuando }}">
+      <small class="tenue">{{ tipos_foto[f.tipo] }} · {{ f.cuando }}{{ ' · ' ~ f.descripcion if f.descripcion }}</small>
     </a>
     {% else %}
-    <p class="vacio"><b>Todavía no hay fotos</b>{{ "Suba la primera con el formulario de arriba." if es_rol == "estudiante" and not p.finalizado else "Las sube el estudiante a cargo." }}</p>
+    <p class="vacio"><b>Todavía no hay fotos</b>{{ "Suba la primera con el formulario de arriba." if es_rol == "estudiante" and not p.finalizado_en else "Las sube el estudiante a cargo." }}</p>
     {% endfor %}
   </div>
 {% endblock %}

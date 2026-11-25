@@ -1,92 +1,118 @@
 {% extends "base.html" %}
 {% block titulo %}Citas - Clínicas Odontológicas{% endblock %}
 {% block contenido %}
-  {% if es_rol == "estudiante" %}
+  {% if es_rol in ("estudiante", "profesor") %}
   <h2>Agendar cita</h2>
-  {% if pacientes %}
+  {% set agendables = pacientes|rejectattr('finalizado_en')|list %}
+  {% if agendables %}
   <form method="post">
     <fieldset>
       <legend>Datos de la cita</legend>
+      <p class="tenue">La clínica atiende de lunes a sábado, de {{ apertura }} a {{ cierre }}.
+        {{ "La cita queda esperando la aprobación de su profesor." if es_rol == "estudiante" else "Las citas que usted agenda quedan aprobadas." }}</p>
       <div class="campo"><span>Paciente: *</span>
-        <select name="paciente_id">
+        <select name="paciente_id" required>
           <option value="">Seleccione…</option>
-          {% for p in pacientes if not p.finalizado %}<option value="{{ p.id }}">{{ p.nombre }} ({{ p.cedula }})</option>{% endfor %}
+          {% for p in agendables %}<option value="{{ p.id }}">{{ p.nombre }} ({{ p.cedula }}){{ ' · ' ~ nombre_de(p.estudiante_id) if es_rol == "profesor" }}</option>{% endfor %}
         </select>
       </div>
       <div class="campo"><span>Fecha: *</span><input type="date" name="fecha" value="{{ hoy }}" min="{{ hoy }}" required></div>
-      <div class="campo"><span>Hora: *</span><input type="time" name="hora" required></div>
-      <div class="campo"><span>Clínica</span>
-        <select name="sala">
-          <option value="">Sin asignar</option>
+      <div class="campo"><span>Hora: *</span><input type="time" name="hora" min="{{ apertura }}" max="{{ cierre }}" required></div>
+      <div class="campo"><span>Duración: *</span>
+        <select name="minutos">{% for m in duraciones %}<option value="{{ m }}"{{ ' selected' if m == 60 }}>{{ m }} min</option>{% endfor %}</select></div>
+      <div class="campo"><span>Clínica: *</span>
+        <select name="sala" required>
+          <option value="">Seleccione…</option>
           {% for grupo in salas|groupby('en_sala') %}<optgroup label="{{ GRUPOS[grupo.grouper] }}">
-            {% for s in grupo.list %}<option value="{{ s.nombre }}"{{ ' disabled' if not s.disponible }}>{{ s.nombre }}{{ '' if s.disponible else ' (no disponible)' }}</option>{% endfor %}</optgroup>{% endfor %}
+            {% for s in grupo.list %}<option value="{{ s.id }}"{{ ' disabled' if not s.habilitada }}>{{ s.nombre }}{{ '' if s.habilitada else ' (no habilitada)' }}</option>{% endfor %}</optgroup>{% endfor %}
         </select>
       </div>
-      <div class="campo"><span>Razón de la cita: *</span><input name="razon" placeholder="¿Para qué viene a esta cita?"></div>
+      <div class="campo"><span>Razón de la cita: *</span><input name="razon" placeholder="¿Para qué viene a esta cita?" required></div>
       <div class="acciones"><button class="btn">Agendar</button></div>
     </fieldset>
   </form>
-  {% else %}
+  {% elif es_rol == "estudiante" %}
   <p>Primero <a href="{{ url_for('pacientes') }}">registre un paciente</a>.</p>
+  {% else %}
+  <p class="tenue">Cuando los estudiantes de sus clases tengan pacientes, aquí les puede agendar citas.</p>
   {% endif %}
   {% else %}
-  <p class="tenue">Las citas las agenda el estudiante a cargo del paciente; aquí solo se consulta la agenda.</p>
+  <p class="tenue">Las citas las agendan el estudiante a cargo o su profesor; aquí se consulta la agenda.</p>
   {% endif %}
 
   <h2>{{ "Mis citas" if es_rol == "estudiante" else "Citas" }}</h2>
   <div class="tabla">
     <table>
       <thead><tr><th>Fecha</th><th>Hora</th><th>Paciente</th><th>Razón de la cita</th><th>Clínica</th><th>Estado</th>
-        {% if es_rol != "estudiante" %}<th>Estudiante</th>{% else %}<th></th>{% endif %}</tr></thead>
+        {% if es_rol != "estudiante" %}<th>Estudiante</th>{% endif %}<th></th></tr></thead>
       <tbody>
-        {% for c in citas|sort(attribute='fecha,hora') %}
-        {% set p = mios[c.paciente_id] %}
-        <tr{% if c.estado == "Cancelada" %} class="tenue"{% endif %}>
+        {% for c in citas %}
+        <tr{% if c.estado == "cancelada" %} class="tenue"{% endif %}>
           <td class="fecha">{{ c.fecha|dmy }}</td>
-          <td>{{ c.hora }}</td>
-          <td><a href="{{ url_for('expediente', pid=p.id) }}">{{ p.nombre }}</a>
-            {% if p.razon %}<div class="tenue">{{ p.razon }}</div>{% endif %}
-            {% if p.inasistencias %}<div class="rojo">No se presentó a {{ p.inasistencias }} {{ "cita" if p.inasistencias == 1 else "citas" }}</div>{% endif %}</td>
+          <td>{{ c.hora }} a {{ c.hora_fin }}</td>
+          <td><a href="{{ url_for('expediente', pid=c.paciente_id) }}">{{ c.paciente }}</a></td>
           <td>{{ c.razon }}</td>
-          <td>{{ c.sala or '' }}</td>
-          <td class="{{ color_cita[c.estado] }}">{{ c.estado }}{% if c.motivo_cancelacion %}<div class="tenue">{{ c.motivo_cancelacion }}</div>{% endif %}{% if c.indicaciones %}<div class="tenue">Indicaciones: {{ c.indicaciones }}</div>{% endif %}</td>
-          {% if es_rol != "estudiante" %}<td>{{ nombre_de(p.estudiante) }}</td>
-          {% else %}<td class="acciones">{% if c.estado in activas and not p.finalizado %}
-            {% if c.fecha >= hoy and c.estado == "Programada" %}
+          <td>{{ c.sala }}</td>
+          <td class="{{ color_cita[c.estado] }}">{{ estados_cita[c.estado] }}
+            {% if c.estado == "programada" and not c.aprobado_en %}<div class="amarillo">Espera la aprobación del profesor</div>
+            {% elif c.aprobado_en and c.estado in activas %}<div class="tenue">Aprobada por {{ nombre_de(c.aprobado_por_id) }}</div>{% endif %}
+            {% if c.motivo_cancelacion %}<div class="tenue">{{ c.motivo_cancelacion }}</div>{% endif %}
+            {% if c.indicaciones %}<div class="tenue">Indicaciones: {{ c.indicaciones }}</div>{% endif %}</td>
+          {% if es_rol != "estudiante" %}<td>{{ nombre_de(c.estudiante_id) }}</td>{% endif %}
+          <td class="acciones">
+          {% if es_rol == "profesor" and c.estado == "programada" and not c.aprobado_en %}
+            <form method="post" class="en-linea">
+              <input type="hidden" name="accion" value="aprobar"><input type="hidden" name="id" value="{{ c.id }}">
+              <button class="btn chico">Aprobar</button>
+            </form>
+            <details class="decidir">
+              <summary>Rechazar</summary>
+              <form method="post">
+                <input type="hidden" name="accion" value="rechazar"><input type="hidden" name="id" value="{{ c.id }}">
+                <label for="r-{{ c.id }}">Motivo para el estudiante: *</label>
+                <input id="r-{{ c.id }}" name="motivo" maxlength="500" required>
+                <button class="btn chico peligro">Rechazar cita</button>
+              </form>
+            </details>
+          {% elif es_rol == "estudiante" and c.estado in activas %}
+            {% if c.fecha >= hoy and c.estado == "programada" and c.aprobado_en %}
             <form method="post" class="en-linea">
               <input type="hidden" name="accion" value="estado"><input type="hidden" name="id" value="{{ c.id }}">
-              <input type="hidden" name="estado" value="Confirmada">
+              <input type="hidden" name="estado" value="confirmada">
               <button class="btn chico">Confirmar</button>
             </form>{% endif %}
             {% if c.fecha <= hoy %}
+            {% if c.aprobado_en %}
             <details class="decidir">
               <summary>Atendida</summary>
               <form method="post">
                 <input type="hidden" name="accion" value="estado"><input type="hidden" name="id" value="{{ c.id }}">
-                <input type="hidden" name="estado" value="Atendida">
+                <input type="hidden" name="estado" value="atendida">
                 <label for="i-{{ c.id }}">Indicaciones para el paciente</label>
                 <textarea id="i-{{ c.id }}" name="indicaciones" rows="2" maxlength="500"></textarea>
                 <button class="btn chico">Marcar atendida</button>
               </form>
-            </details>
+            </details>{% endif %}
             <form method="post" class="en-linea">
               <input type="hidden" name="accion" value="estado"><input type="hidden" name="id" value="{{ c.id }}">
-              <button class="btn chico" name="estado" value="No se presentó">No se presentó</button>
+              <button class="btn chico" name="estado" value="no_asistio">No se presentó</button>
             </form>{% endif %}
-            {% if c.recordada %}<span class="verde">Recordatorio enviado</span>{% endif %}
-            {% if c.fecha > hoy and p.telefono %}<a class="btn chico" href="{{ whatsapp(p.nombre, p.telefono, c) }}" target="_blank" rel="noopener">Recordar por WhatsApp</a>{% endif %}
+            {% if c.recordada_en %}<span class="verde">Recordatorio enviado</span>{% endif %}
+            {% if c.fecha > hoy and c.telefono and c.aprobado_en %}<a class="btn chico" href="{{ whatsapp(c.paciente, c.telefono, c) }}" target="_blank" rel="noopener">Recordar por WhatsApp</a>{% endif %}
             {% if c.fecha >= hoy %}
             <details class="decidir">
               <summary>Reprogramar</summary>
               <form method="post">
                 <input type="hidden" name="accion" value="reprogramar"><input type="hidden" name="id" value="{{ c.id }}">
                 <label for="f-{{ c.id }}">Fecha</label><input id="f-{{ c.id }}" type="date" name="fecha" value="{{ c.fecha }}" min="{{ hoy }}" required>
-                <label for="h-{{ c.id }}">Hora</label><input id="h-{{ c.id }}" type="time" name="hora" value="{{ c.hora }}" required>
+                <label for="h-{{ c.id }}">Hora</label><input id="h-{{ c.id }}" type="time" name="hora" value="{{ c.hora }}" min="{{ apertura }}" max="{{ cierre }}" required>
+                <label for="d-{{ c.id }}">Duración</label>
+                <select id="d-{{ c.id }}" name="minutos">{% for m in duraciones %}<option value="{{ m }}"{{ ' selected' if m == c.minutos }}>{{ m }} min</option>{% endfor %}</select>
                 <label for="s-{{ c.id }}">Clínica</label>
                 <select id="s-{{ c.id }}" name="sala">
-                  <option value="">Sin asignar</option>
-                  {% for s in salas %}<option value="{{ s.nombre }}"{{ ' selected' if s.nombre == c.sala }}{{ ' disabled' if not s.disponible and s.nombre != c.sala }}>{{ s.nombre }}</option>{% endfor %}
+                  {% for s in salas %}<option value="{{ s.id }}"{{ ' selected' if s.id == c.sala_id }}{{ ' disabled' if not s.habilitada and s.id != c.sala_id }}>{{ s.nombre }}</option>{% endfor %}
                 </select>
+                <p class="tenue">Al cambiarla, vuelve a esperar la aprobación del profesor.</p>
                 <button class="btn chico">Guardar la nueva fecha</button>
               </form>
             </details>
@@ -99,10 +125,10 @@
                 <button class="btn chico peligro">Cancelar cita</button>
               </form>
             </details>{% endif %}
-          {% endif %}</td>{% endif %}
+          {% endif %}</td>
         </tr>
         {% else %}
-        <tr><td class="vacio" colspan="7"><b>No hay citas agendadas</b>{{ "Agende la primera con el formulario de arriba." if es_rol == "estudiante" and pacientes else "Aparecen aquí cuando un estudiante agenda una." }}</td></tr>
+        <tr><td class="vacio" colspan="8"><b>No hay citas agendadas</b>{{ "Agende la primera con el formulario de arriba." if es_rol == "estudiante" and pacientes else "Aparecen aquí cuando se agenda una." }}</td></tr>
         {% endfor %}
       </tbody>
     </table>
