@@ -42,3 +42,18 @@ jobs:
             flyctl secrets set --stage -a clinicas-odontologicas-uam "${datos[@]}"
           fi
       - run: flyctl deploy --remote-only -a clinicas-odontologicas-uam
+      # Las máquinas programadas (respaldo diario y recordatorios por WhatsApp) no son del grupo "app": el despliegue no
+      # las toca y seguirían con el programa anterior. Se les pone la misma imagen recién publicada, sin arrancarlas
+      # (corren solas a su hora).
+      - name: Actualizar las máquinas programadas
+        run: |
+          maquinas=$(flyctl machines list -a clinicas-odontologicas-uam --json)
+          imagen=$(echo "$maquinas" | jq -r '[.[] | select(.config.metadata.fly_process_group == "app")][0].config.image')
+          for nombre in respaldo-diario recordatorios; do
+            id=$(echo "$maquinas" | jq -r --arg n "$nombre" '.[] | select(.name == $n) | .id')
+            if [ -n "$id" ]; then
+              flyctl machine update "$id" -a clinicas-odontologicas-uam --image "$imagen" --skip-start -y
+            else
+              echo "::warning::No existe la máquina $nombre"
+            fi
+          done
