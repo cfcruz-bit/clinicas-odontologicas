@@ -5,12 +5,12 @@
 - Tareas: registrar un paciente, llenar la historia clínica, agendar una cita, subir un recibo, aprobar un paciente
   y firmar un recibo.
 - Se mide: si termina cada tarea sin ayuda, cuánto tarda y dónde se equivoca.
-- Al final responden el cuestionario SUS (System Usability Scale), en `docs/cuestionario-sus.md`.
+- Al final responden el cuestionario SUS (System Usability Scale), en `docs/pruebas/cuestionario-sus.md`.
 - Aprobado si el 80 % de las tareas se terminan sin ayuda y el puntaje SUS es de 68 o más.
 
 ## RNF02 - Rendimiento
 - Objetivo: cada página responde en menos de 3 segundos con 50 usuarios a la vez.
-- Herramienta: `carga.py`, siempre contra una rama de pruebas de Neon, nunca la base real.
+- Herramienta: `pruebas/carga.py`, siempre contra una rama de pruebas de Neon, nunca la base real.
 - Escenario: 40 estudiantes (inicio, pacientes, expediente, historia clínica, guardar la historia, citas,
   odontograma, tratamientos, clínicas) y 10 profesores (inicio, pacientes, citas, hoja de control, clínicas).
   Cada uno hace clic cada 1 a 3 segundos.

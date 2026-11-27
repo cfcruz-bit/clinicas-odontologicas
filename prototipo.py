@@ -239,7 +239,7 @@ def crear_tablas_cli():
 
 
 # RNF07: respaldo diario propio. Neon solo deja volver 6 horas atras en el plan gratis y no programa copias,
-# asi que la maquina respaldo-diario de Fly corre `flask --app prototipo respaldar` cada dia (docs/respaldos.md).
+# asi que la maquina respaldo-diario de Fly corre `flask --app prototipo respaldar` cada dia (docs/operacion/respaldos.md).
 # El respaldo es un .zip con cada tabla en formato COPY y va al mismo almacen privado de las fotos.
 RESPALDOS_GUARDADOS = 30  # ponytail: arma el .zip en memoria; pasar a archivo temporal si la base pasa de ~100 MB
 
@@ -435,7 +435,7 @@ def whatsapp(nombre, telefono, cita):
 app.jinja_env.globals["whatsapp"] = whatsapp
 
 # RF12: recordatorio automatico con la API oficial de WhatsApp (Cloud API de Meta). Lo corre cada hora la
-# maquina recordatorios de Fly: `flask --app prototipo recordar` (ver docs/recordatorios-whatsapp.md)
+# maquina recordatorios de Fly: `flask --app prototipo recordar` (ver docs/operacion/recordatorios-whatsapp.md)
 HORARIO_RECORDATORIOS = (8, 18)  # solo se envia de 8:00 a 18:00 de Managua
 
 def enviar_whatsapp(telefono, variables, cita_id):
