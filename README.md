@@ -61,9 +61,9 @@ indicaciones después de la atención y bot de WhatsApp para que el paciente con
 
 ```
 ├── prototipo.py          Aplicación web (Flask): rutas, roles, validaciones y comandos de mantenimiento
-├── esquema.sql           Esquema de la base de datos (modelo v14)
 ├── templates/            Plantillas HTML de cada pantalla
 ├── static/               Estilos, imágenes y scripts del navegador
+├── base-de-datos/        Esquema de la base de datos (esquema.sql, modelo v14)
 ├── requirements.txt      Dependencias de Python
 ├── Dockerfile, fly.toml  Construcción y publicación en Fly.io
 ├── .github/workflows/    Publicación automática al subir cambios a main
@@ -77,14 +77,14 @@ indicaciones después de la atención y bot de WhatsApp para que el paciente con
     └── legal/            Cumplimiento de la Ley N.º 787
 ```
 
-La aplicación (`prototipo.py`, `esquema.sql`, `templates/` y `static/`) queda en la raíz porque así la buscan Flask,
+La aplicación (`prototipo.py`, `templates/` y `static/`) queda en la raíz porque así la buscan Flask,
 Gunicorn y las máquinas programadas de Fly.
 
 ## Modelo de datos
 
 La base sigue el **modelo de datos v14**: 20 tablas, todas las relaciones 1:N salvo dos 1:1, sin muchos a muchos.
 El diagrama está en [`docs/diseno/diagrama-entidad-relacion.png`](docs/diseno/diagrama-entidad-relacion.png) (fuente:
-[`diagrama-entidad-relacion.drawio`](docs/diseno/diagrama-entidad-relacion.drawio)) y el SQL en [`esquema.sql`](esquema.sql).
+[`diagrama-entidad-relacion.drawio`](docs/diseno/diagrama-entidad-relacion.drawio)) y el SQL en [`base-de-datos/esquema.sql`](base-de-datos/esquema.sql).
 
 Lo principal:
 
@@ -97,7 +97,7 @@ Lo principal:
 - Los pagos son recibos de una orden de cobro. El total, lo pagado y el saldo los calcula la vista `resumen_ordenes`.
 - La cantidad de cada material sale de sus movimientos de inventario (vista `existencias`), que no se editan.
 
-[`esquema.sql`](esquema.sql) es el modelo v14 con tres ajustes marcados `[ajuste]`:
+[`base-de-datos/esquema.sql`](base-de-datos/esquema.sql) es el modelo v14 con tres ajustes marcados `[ajuste]`:
 
 1. Una llave diferible entre cuentas y clases, para poder cargar respaldos.
 2. Las reglas de rol se revisan al crear la fila o cuando cambia la persona, y no al cargar un respaldo.
