@@ -1,7 +1,7 @@
 __pycache__
 *.pdf
 pruebas/
-scripts/
+migraciones/
 fly.toml
-docs/
+documentacion/
 archivos/

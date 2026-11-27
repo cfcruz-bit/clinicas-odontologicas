@@ -1,0 +1,59 @@
+{% extends "inicio-de-sesion.html" %}
+{% block titulo %}Entrar a la clase{% endblock %}
+{% block formulario %}
+  {% if not invitacion or invitacion.estado != "Disponible" %}
+  <h1>Código no disponible</h1>
+  <p class="aviso">Este código ya no sirve{{ {"Usado": ": ya lo usó otro estudiante (cada código sirve una sola vez)", "Vencido": ": ya venció"}[invitacion.estado] if invitacion }}.
+     Pídale a su profesor un código nuevo.</p>
+  <p class="nota"><a href="{{ url_for('entrar') }}">Iniciar sesión</a></p>
+  {% elif yo %}
+  <h1>Entrar a la clase</h1>
+  {% if yo[2] == "estudiante" %}
+  <p class="aviso">Clase <b>{{ k.nombre }}</b> ({{ k.periodo }}) con {{ k.profesor }}. Si ya estaba en otra clase, pasa a esta.</p>
+  <input type="hidden" name="accion" value="unirse">
+  <button>Entrar a la clase</button>
+  {% else %}
+  <p class="aviso">Solo los estudiantes entran a una clase con un código.</p>
+  {% endif %}
+  <p class="nota"><a href="{{ url_for('menu') }}">Volver al inicio</a></p>
+  {% else %}
+  <h1>Entrar a la clase</h1>
+  <p class="aviso">Clase <b>{{ k.nombre }}</b> ({{ k.periodo }}) con {{ k.profesor }}.</p>
+  <button name="accion" value="entrar" formnovalidate>Ya tengo cuenta: iniciar sesión</button>
+  <p class="nota">¿Es su primera vez? Cree su cuenta aquí abajo con sus datos y la contraseña con la que va a entrar.</p>
+
+  <label>CIF
+    <input name="cif" value="{{ cif }}" required maxlength="{{ cif_maximo }}" autocomplete="username" autocapitalize="none">
+  </label>
+  {% if errores.cif %}<p class="error">{{ errores.cif }}</p>{% endif %}
+
+  <label>Nombre completo
+    <input name="nombre" value="{{ nombre }}" required maxlength="{{ nombre_maximo }}" autocomplete="name">
+  </label>
+  {% if errores.nombre %}<p class="error">{{ errores.nombre }}</p>{% endif %}
+
+  <label>Correo
+    <input name="correo" type="email" value="{{ correo }}" required maxlength="120" autocomplete="email">
+  </label>
+  {% if errores.correo %}<p class="error">{{ errores.correo }}</p>{% endif %}
+
+  <label>Año de la carrera
+    <select name="anio" required><option value="">Seleccione…</option>
+      {% for a in anios %}<option value="{{ a }}"{{ ' selected' if anio == a }}>{{ a }}.º año</option>{% endfor %}</select>
+  </label>
+  {% if errores.anio %}<p class="error">{{ errores.anio }}</p>{% endif %}
+
+  <label>Contraseña (al menos {{ clave_minima }} caracteres)
+    <input name="clave" type="password" required minlength="{{ clave_minima }}" autocomplete="new-password">
+  </label>
+  {% if errores.clave %}<p class="error">{{ errores.clave }}</p>{% endif %}
+
+  <label>Repita la contraseña
+    <input name="clave2" type="password" required minlength="{{ clave_minima }}" autocomplete="new-password">
+  </label>
+  {% if errores.clave2 %}<p class="error">{{ errores.clave2 }}</p>{% endif %}
+
+  <button name="accion" value="crear">Crear mi cuenta y entrar a la clase</button>
+  <p class="nota">Nadie más puede ver su contraseña. Si la olvida, la Facultad le pone una nueva.</p>
+  {% endif %}
+{% endblock %}

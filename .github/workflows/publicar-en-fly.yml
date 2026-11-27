@@ -1,0 +1,59 @@
+# Despliega en Fly cada vez que se sube algo a main (o a mano, desde la pestaña Actions).
+# Los datos secretos se guardan en GitHub: Settings → Secrets and variables → Actions.
+#   FLY_API_TOKEN: token de despliegue de la app (fly.io → la app → Tokens → Create deploy token). Obligatorio.
+#   WHATSAPP_*, CLINICA_UBICACION: opcionales; los que estén cargados se pasan a Fly (ver documentacion/operacion/recordatorios-whatsapp.md)
+name: Desplegar en Fly
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency: desplegar
+
+jobs:
+  desplegar:
+    runs-on: ubuntu-latest
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Revisar que esté el token de Fly
+        run: |
+          if [ -z "$FLY_API_TOKEN" ]; then
+            echo "::error::Falta el secreto FLY_API_TOKEN en GitHub (Settings → Secrets and variables → Actions)."
+            exit 1
+          fi
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Pasar a Fly los datos de WhatsApp
+        env:
+          WHATSAPP_TOKEN: ${{ secrets.WHATSAPP_TOKEN }}
+          WHATSAPP_NUMERO_ID: ${{ secrets.WHATSAPP_NUMERO_ID }}
+          WHATSAPP_PLANTILLA: ${{ secrets.WHATSAPP_PLANTILLA }}
+          WHATSAPP_VERIFICAR: ${{ secrets.WHATSAPP_VERIFICAR }}
+          WHATSAPP_SECRETO: ${{ secrets.WHATSAPP_SECRETO }}
+          CLINICA_UBICACION: ${{ secrets.CLINICA_UBICACION }}
+        run: |
+          datos=()
+          for v in WHATSAPP_TOKEN WHATSAPP_NUMERO_ID WHATSAPP_PLANTILLA WHATSAPP_VERIFICAR WHATSAPP_SECRETO CLINICA_UBICACION; do
+            if [ -n "${!v}" ]; then datos+=("$v=${!v}"); fi
+          done
+          if [ ${#datos[@]} -gt 0 ]; then
+            flyctl secrets set --stage -a clinicas-odontologicas-uam "${datos[@]}"
+          fi
+      - run: flyctl deploy --remote-only -a clinicas-odontologicas-uam
+      # Las máquinas programadas (respaldo diario y recordatorios por WhatsApp) no son del grupo "app": el despliegue no
+      # las toca y seguirían con el programa anterior. Se les pone la misma imagen recién publicada, sin arrancarlas
+      # (corren solas a su hora).
+      - name: Actualizar las máquinas programadas
+        run: |
+          maquinas=$(flyctl machines list -a clinicas-odontologicas-uam --json)
+          imagen=$(echo "$maquinas" | jq -r '[.[] | select(.config.metadata.fly_process_group == "app")][0].config.image')
+          for nombre in respaldo-diario recordatorios; do
+            id=$(echo "$maquinas" | jq -r --arg n "$nombre" '.[] | select(.name == $n) | .id')
+            if [ -n "$id" ]; then
+              flyctl machine update "$id" -a clinicas-odontologicas-uam --image "$imagen" --skip-start -y
+            else
+              echo "::warning::No existe la máquina $nombre"
+            fi
+          done

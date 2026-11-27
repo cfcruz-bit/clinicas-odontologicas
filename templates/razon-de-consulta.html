@@ -1,0 +1,37 @@
+{% extends "plantilla-base.html" %}
+{% block titulo %}Razón de la consulta - Clínicas Odontológicas{% endblock %}
+{% block contenido %}
+  <h2>Paso 2: ¿por qué está el paciente?</h2>
+  <p><b>{{ p.nombre }}</b> quedó registrado con la cédula {{ p.cedula }}. La razón que escriba aquí aparecerá
+     al lado de su nombre y en la página de citas.</p>
+
+  <form method="post">
+    <fieldset>
+      <legend>Razón de la consulta</legend>
+      <div class="campo arriba"><span>Razón: *</span>
+        <textarea name="razon" rows="3" autofocus placeholder="Ej.: dolor en muela inferior derecha, limpieza, valoración…">{{ p.razon }}</textarea>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>Primera cita (opcional)</legend>
+      <p class="tenue">Si ya quedó agendada, se crea de una vez.</p>
+      <div class="campo"><span>Fecha</span><input type="date" name="fecha" min="{{ hoy }}"></div>
+      <div class="campo"><span>Hora</span><input type="time" name="hora" min="{{ apertura }}" max="{{ cierre }}"></div>
+      <div class="campo"><span>Duración</span>
+        <select name="minutos">{% for m in duraciones %}<option value="{{ m }}"{{ ' selected' if m == 60 }}>{{ m }} min</option>{% endfor %}</select></div>
+      <div class="campo"><span>Clínica</span>
+        <select name="sala">
+          <option value="">Seleccione…</option>
+          {% for grupo in salas|groupby('en_sala') %}<optgroup label="{{ GRUPOS[grupo.grouper] }}">
+            {% for s in grupo.list %}<option value="{{ s.id }}"{{ ' disabled' if not s.habilitada }}>{{ s.nombre }}{{ '' if s.habilitada else ' (no habilitada)' }}</option>{% endfor %}</optgroup>{% endfor %}
+        </select>
+      </div>
+      <p class="tenue">La clínica atiende de lunes a sábado, de {{ apertura }} a {{ cierre }}. La cita queda esperando la aprobación de su profesor.</p>
+      <div class="campo"><span>Razón de la cita</span><input name="razon_cita" placeholder="Si se deja vacío, se usa la razón de la consulta"></div>
+    </fieldset>
+    <div class="acciones">
+      <a class="btn" href="{{ url_for('pacientes') }}">Lo lleno después</a>
+      <button class="btn">Guardar</button>
+    </div>
+  </form>
+{% endblock %}
