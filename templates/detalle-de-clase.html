@@ -1,0 +1,62 @@
+{% extends "plantilla-base.html" %}
+{% block titulo %}{{ k.nombre }} - Clínicas Odontológicas{% endblock %}
+{% block contenido %}
+  <p class="sin-imprimir"><a href="{{ url_for('clases') }}">&larr; {{ "Mis clases" if es_rol == "profesor" else "Clases" }}</a></p>
+  <div class="sin-imprimir">
+    <h2>{{ k.nombre }} <span class="tenue">({{ k.periodo }})</span></h2>
+    <p>Profesor: {{ k.profesor }} · {{ k.estudiantes }} {{ "estudiante" if k.estudiantes == 1 else "estudiantes" }}</p>
+
+    <h2>Estudiantes</h2>
+    <div class="tabla">
+      <table>
+        <thead><tr><th>CIF</th><th>Nombre</th><th>Correo</th><th>Año</th><th>Estado</th></tr></thead>
+        <tbody>
+          {% for e in estudiantes %}
+          <tr><td>{% if es_rol == "facultad" %}<a href="{{ url_for('cuenta', cif=e.cif) }}">{{ e.cif }}</a>{% else %}{{ e.cif }}{% endif %}</td>
+            <td>{{ e.nombre }}</td><td>{{ e.correo }}</td><td>{{ e.anio }}.º</td>
+            <td class="{{ 'verde' if e.activa else 'tenue' }}">{{ "Activa" if e.activa else "Desactivada" }}</td></tr>
+          {% else %}
+          <tr><td class="vacio" colspan="5"><b>Todavía no entra nadie</b>Aparecen aquí cuando escanean un código de esta clase.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if es_suya %}
+    <form method="post">
+      <fieldset>
+        <legend>Generar códigos QR</legend>
+        <p class="tenue">Cada código sirve para un solo estudiante y una sola vez: genere uno por estudiante. Si un
+           estudiante ya estaba en otra clase, al usar el código pasa a esta.</p>
+        <div class="campo"><span>¿Cuántos códigos? *</span><input type="number" name="cantidad" required min="1" max="{{ codigos_maximo }}" value="10"></div>
+        <div class="campo"><span>¿Cuántos días sirven? *</span><input type="number" name="dias" required min="1" max="{{ dias_maximo }}" value="7"></div>
+        <div class="acciones"><button class="btn">Generar</button></div>
+      </fieldset>
+    </form>
+    {% endif %}
+  </div>
+
+  {% set disponibles = codigos|selectattr('estado', 'equalto', 'Disponible')|list %}
+  {% if disponibles %}
+  <p class="tenue sin-imprimir">Imprima esta página (Ctrl+P): sale una tarjeta por código para recortar y dar a cada estudiante.</p>
+  <div class="codigos">
+    {% for c in disponibles %}
+    <div class="codigo">
+      <img src="{{ c.qr }}" alt="Código QR para entrar a la clase">
+      <b>{{ k.nombre }}</b> ({{ k.periodo }})<br>
+      <span class="clave">{{ c.direccion }}</span><br>
+      <small class="tenue">Sirve una sola vez, hasta el {{ c.hasta }}</small>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% set otros = codigos|rejectattr('estado', 'equalto', 'Disponible')|list %}
+  {% if otros %}
+  <div class="sin-imprimir">
+    <h2>Códigos usados o vencidos</h2>
+    <p class="tenue">{{ otros|selectattr('estado', 'equalto', 'Usado')|list|length }} usados ·
+      {{ otros|selectattr('estado', 'equalto', 'Vencido')|list|length }} vencidos. Quién usó cada uno queda en la bitácora.</p>
+  </div>
+  {% endif %}
+{% endblock %}

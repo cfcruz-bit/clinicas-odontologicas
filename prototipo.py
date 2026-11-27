@@ -239,7 +239,7 @@ def crear_tablas_cli():
 
 
 # RNF07: respaldo diario propio. Neon solo deja volver 6 horas atras en el plan gratis y no programa copias,
-# asi que la maquina respaldo-diario de Fly corre `flask --app prototipo respaldar` cada dia (docs/operacion/respaldos.md).
+# asi que la maquina respaldo-diario de Fly corre `flask --app prototipo respaldar` cada dia (documentacion/operacion/respaldos.md).
 # El respaldo es un .zip con cada tabla en formato COPY y va al mismo almacen privado de las fotos.
 RESPALDOS_GUARDADOS = 30  # ponytail: arma el .zip en memoria; pasar a archivo temporal si la base pasa de ~100 MB
 
@@ -435,7 +435,7 @@ def whatsapp(nombre, telefono, cita):
 app.jinja_env.globals["whatsapp"] = whatsapp
 
 # RF12: recordatorio automatico con la API oficial de WhatsApp (Cloud API de Meta). Lo corre cada hora la
-# maquina recordatorios de Fly: `flask --app prototipo recordar` (ver docs/operacion/recordatorios-whatsapp.md)
+# maquina recordatorios de Fly: `flask --app prototipo recordar` (ver documentacion/operacion/recordatorios-whatsapp.md)
 HORARIO_RECORDATORIOS = (8, 18)  # solo se envia de 8:00 a 18:00 de Managua
 
 def enviar_whatsapp(telefono, variables, cita_id):
@@ -902,7 +902,7 @@ def entrar():
                            cuenta["id"])
                     datos["aviso"] = (f"Demasiados intentos fallidos. La cuenta queda bloqueada "
                                       f"{MINUTOS_BLOQUEO} min.")
-    return render_template("entrar.html", **datos)
+    return render_template("inicio-de-sesion.html", **datos)
 
 
 def citas_de(condicion, *args, orden="c.inicio"):
@@ -937,7 +937,7 @@ def menu():
     citas_hoy = citas_de("c.fecha = %s AND c.estado <> 'cancelada' AND " + condicion, hoy(), *args)
     clinicas = sql("SELECT count(*) FILTER (WHERE habilitada) AS disponibles, count(*) FILTER (WHERE NOT habilitada)"
                    " AS no_disponibles FROM salas").fetchone()
-    return render_template("menu.html", **comun(), que_hace=QUE_HACE[rol], revisar=revisar, rechazados=rechazados,
+    return render_template("inicio.html", **comun(), que_hace=QUE_HACE[rol], revisar=revisar, rechazados=rechazados,
                            nombre_de=nombre_de, citas_hoy=citas_hoy, estados_cita=ESTADOS_CITA,
                            turnos=turnos_de(yo) if rol == "estudiante" else [], dias=DIAS,
                            clase=clase_de(yo) if rol == "estudiante" else None,
@@ -1060,7 +1060,7 @@ def razon(pid):
             else:
                 flash("Razón de la consulta guardada.", "ok")
             return redirect(url_for("expediente", pid=pid))
-    return render_template("razon.html", **comun(), p=p, hoy=hoy(), salas=todas_las_salas(), duraciones=DURACIONES,
+    return render_template("razon-de-consulta.html", **comun(), p=p, hoy=hoy(), salas=todas_las_salas(), duraciones=DURACIONES,
                            apertura=APERTURA, cierre=CIERRE)
 
 
@@ -1082,7 +1082,7 @@ def editar(pid):
             anotar(f"Corrigió los datos de {form['nombre']} ({form['cedula']})")
             flash("Datos del paciente guardados.", "ok")
             return redirect(url_for("expediente", pid=pid))
-    return render_template("editar.html", **comun(), p=p)
+    return render_template("editar-paciente.html", **comun(), p=p)
 
 
 def trabajo_de(p):
@@ -1103,7 +1103,7 @@ def expediente(pid):
     p["trabajo"] = trabajo_de(p)
     citas = sql(CITAS + " WHERE c.paciente_id = %s ORDER BY c.inicio", pid).fetchall()
     h = historia_de(pid)
-    return render_template("expediente.html", **comun(), p=p, nombre_de=nombre_de, revisiones=REVISIONES, citas=citas,
+    return render_template("expediente-del-paciente.html", **comun(), p=p, nombre_de=nombre_de, revisiones=REVISIONES, citas=citas,
                            color_cita=COLOR_CITA, estados_cita=ESTADOS_CITA,
                            inasistencias=sum(c["estado"] == "no_asistio" for c in citas),
                            h=h, alertas=alertas_de(h), avance=avance_de(pid))
@@ -1202,7 +1202,7 @@ def historia(pid):
             else:
                 flash("Borrador guardado. Puede seguir llenándolo en la próxima cita.", "ok")
             return redirect(url_for("historia", pid=pid))
-    return render_template("historia.html", **comun(), p=p, h=h, campos=campos, sexos=SEXOS, alertas=alertas_de(h),
+    return render_template("historia-clinica.html", **comun(), p=p, h=h, campos=campos, sexos=SEXOS, alertas=alertas_de(h),
                            hoy=hoy(), nombre_de=nombre_de, puede=rol == "estudiante" and not p["finalizado_en"],
                            obligatorios=[campos[c] for c in HISTORIA_COMPLETA])
 
@@ -1229,7 +1229,7 @@ def traspaso(pid):
                 anotar(f"Pasó a {p['nombre']} de {nombre_de(p['estudiante_id'])} a {nombre_de(nuevo)}")
             flash(f"{p['nombre']} pasó a {nombre_de(nuevo)}. El trabajo anterior quedó archivado.", "ok")
             return redirect(url_for("expediente", pid=pid))
-    return render_template("traspaso.html", **comun(), p=p, estudiantes=estudiantes, nombre_de=nombre_de)
+    return render_template("traspaso-de-paciente.html", **comun(), p=p, estudiantes=estudiantes, nombre_de=nombre_de)
 
 
 @app.route("/pacientes/<int:pid>/cerrar", methods=["GET", "POST"])
@@ -1275,7 +1275,7 @@ def cerrar(pid):
                 flash(f"{p['nombre']} fue eliminado. Su expediente se conserva y se puede restaurar.", "ok")
                 return redirect(url_for("pacientes"))
         return redirect(url_for("cerrar", pid=pid))
-    return render_template("cerrar.html", **comun(), p=p, nombre_de=nombre_de, cuenta=cuenta_de(pid),
+    return render_template("dar-de-alta-o-eliminar-paciente.html", **comun(), p=p, nombre_de=nombre_de, cuenta=cuenta_de(pid),
                            pendientes=[t for t in plan_de(pid) if not t["cita_id"]])
 
 
@@ -1294,7 +1294,7 @@ def consentimiento(pid):
             anotar(f"Recogió la firma del consentimiento informado de {p['nombre']}")
             flash("Consentimiento informado firmado. Ya se puede imprimir.", "ok")
         return redirect(url_for("consentimiento", pid=pid))
-    return render_template("consentimiento.html", **comun(), p=p, nombre_de=nombre_de)
+    return render_template("consentimiento-informado.html", **comun(), p=p, nombre_de=nombre_de)
 
 
 @app.route("/citas", methods=["GET", "POST"])
@@ -1452,7 +1452,7 @@ def salas():
                     " to_char(r.resuelto_en AT TIME ZONE 'America/Managua', 'DD/MM/YYYY HH24:MI') AS resuelto"
                     " FROM reportes r JOIN salas s ON s.id = r.sala_id WHERE r.resuelto_en IS NOT NULL"
                     " ORDER BY r.resuelto_en DESC LIMIT 100").fetchall() if rol != "estudiante" else []
-    return render_template("salas.html", **comun(), salas=todas_las_salas(), nombre_de=nombre_de,
+    return render_template("clinicas.html", **comun(), salas=todas_las_salas(), nombre_de=nombre_de,
                            motivo_maximo=MOTIVO_MAXIMO, tipos_falla=TIPOS_FALLA, historial=historial)
 
 
@@ -1657,7 +1657,7 @@ def tratamientos(pid):
     ordenes = sql("SELECT *, to_char(creado_en AT TIME ZONE 'America/Managua', 'DD/MM/YYYY') AS creada"
                   " FROM resumen_ordenes WHERE paciente_id = %s ORDER BY id", pid).fetchall()
     return render_template(
-        "tratamientos.html", **comun(), p=p, nombre_de=nombre_de, plan=plan_de(pid), cuenta=cuenta_de(pid),
+        "tratamientos-del-paciente.html", **comun(), p=p, nombre_de=nombre_de, plan=plan_de(pid), cuenta=cuenta_de(pid),
         fases=FASES, superficies=SUPERFICIES, metodos=METODOS_PAGO, avance=avance_de(pid), ordenes=ordenes,
         por_pagar=[o for o in ordenes if o["estado"] in ("pendiente", "abonada")],
         sin_orden=sql("SELECT count(*) AS n FROM tratamientos WHERE paciente_id = %s AND orden_id IS NULL",
@@ -1691,7 +1691,7 @@ def orden(oid):
             registrar_pago(o, p, monto(request.form.get("monto")) if request.form.get("monto") else o["saldo"])
         return redirect(url_for("orden", oid=oid))
     o["creada_texto"] = o["creado_en"].astimezone(MANAGUA).strftime("%d/%m/%Y %H:%M")
-    return render_template("orden.html", **comun(), o=o, p=p, nombre_de=nombre_de, metodos=METODOS_PAGO,
+    return render_template("orden-de-cobro.html", **comun(), o=o, p=p, nombre_de=nombre_de, metodos=METODOS_PAGO,
                            recibos=sql("SELECT *, to_char(pagado_en AT TIME ZONE 'America/Managua', 'DD/MM/YYYY HH24:MI')"
                                        " AS cuando FROM recibos WHERE orden_id = %s ORDER BY id", oid).fetchall(),
                            creo=nombre_de(sql("SELECT creado_por_id FROM ordenes WHERE id = %s",
@@ -2012,7 +2012,7 @@ def cuenta(cif):
                 anotar(f"Quitó a {c['nombre']} el turno del {DIAS[t['dia']].lower()} de {t['desde']:%H:%M} a {t['hasta']:%H:%M}")
                 flash("Turno quitado.", "ok")
         return redirect(url_for("cuenta", cif=cif))
-    return render_template("cuenta.html", **comun(), c=c, roles=ROLES, anios=ANIOS, dias=DIAS, clases=clases,
+    return render_template("editar-cuenta.html", **comun(), c=c, roles=ROLES, anios=ANIOS, dias=DIAS, clases=clases,
                            turnos=turnos_de(c["id"]), nombre_maximo=NOMBRE_MAXIMO, apertura=APERTURA, cierre=CIERRE,
                            correo_pendiente=CORREO_PENDIENTE,
                            sus_clases=[k for k in clases if k["profesor_id"] == c["id"]])
@@ -2083,7 +2083,7 @@ def clase(kid):
         if c["estado"] == "Disponible":
             c["direccion"] = SITIO + url_for("registro", codigo=c["codigo"])
             c["qr"] = qr(c["direccion"])
-    return render_template("clase.html", **comun(), k=k, codigos=codigos, codigos_maximo=CODIGOS_MAXIMO,
+    return render_template("detalle-de-clase.html", **comun(), k=k, codigos=codigos, codigos_maximo=CODIGOS_MAXIMO,
                            dias_maximo=DIAS_MAXIMO, es_suya=k["profesor_id"] == yo, estudiantes=sql(
                                "SELECT cif, nombre, correo, anio, activa FROM cuentas WHERE clase_id = %s ORDER BY nombre",
                                kid).fetchall())
@@ -2160,7 +2160,7 @@ def registro(codigo):
                 anotar(f"Creó su cuenta con un código de la clase {k['nombre']}")
                 flash("Cuenta creada. La próxima vez entre con su CIF y la contraseña que acaba de crear.", "ok")
                 return redirect(url_for("menu"))
-    return render_template("registro.html", **datos, invitacion=invitacion, k=k, yo=yo, clave_minima=CLAVE_MINIMA,
+    return render_template("registro-de-estudiante.html", **datos, invitacion=invitacion, k=k, yo=yo, clave_minima=CLAVE_MINIMA,
                            anios=ANIOS, cif_maximo=CIF_MAXIMO, nombre_maximo=NOMBRE_MAXIMO)
 
 
@@ -2246,7 +2246,7 @@ def control():
     recibos = recibos_de(estudiante_id=elegido)
     if rol == "profesor":  # sin elegir estudiante, los recibos de todos los de sus clases
         recibos = [r for r in recibos if r["estudiante_id"] in dict(estudiantes)]
-    return render_template("control.html", **comun(), recibos=recibos, elegido=elegido, metodos=METODOS_PAGO,
+    return render_template("hoja-de-control.html", **comun(), recibos=recibos, elegido=elegido, metodos=METODOS_PAGO,
                            estudiantes=estudiantes, ordenes=ordenes, hoy=hoy(), nombre_de=nombre_de,
                            recibo_maximo=RECIBO_MAXIMO)
 
@@ -2418,7 +2418,7 @@ def expediente_pdf(pid):
 @app.route("/privacidad")
 def privacidad():
     """Politica de privacidad publica (Ley 787). Meta la pide para publicar la app de WhatsApp."""
-    return render_template("privacidad.html")
+    return render_template("politica-de-privacidad.html")
 
 
 @app.route("/salir")

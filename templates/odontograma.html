@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends "plantilla-base.html" %}
 {% block titulo %}Odontograma de {{ p.nombre }} - Clínicas Odontológicas{% endblock %}
 {% macro diente(d) %}
   {% set f = dientes.get(d) %}{% set estado = f.estado if f else 'sano' %}
