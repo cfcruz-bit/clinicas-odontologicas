@@ -29,7 +29,7 @@ Siempre en una rama nueva de Neon, nunca encima de la base real: el comando se n
 hora. Neon guarda el estado anterior por si hay que deshacerlo.
 
 ## Prueba de restauración
-- Las pruebas automáticas (`pruebas.py`) sacan un respaldo, vacían la base, lo restauran y comprueban que vuelvan
+- Las pruebas automáticas (`pruebas/sistema.py`) sacan un respaldo, vacían la base, lo restauran y comprueban que vuelvan
   todas las filas de todas las tablas y que los números automáticos sigan sin chocar.
 - Hacer además una restauración de verdad, como arriba, al menos una vez por semestre, y anotar la fecha aquí.
 

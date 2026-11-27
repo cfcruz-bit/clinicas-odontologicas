@@ -1,7 +1,7 @@
 # Despliega en Fly cada vez que se sube algo a main (o a mano, desde la pestaña Actions).
 # Los datos secretos se guardan en GitHub: Settings → Secrets and variables → Actions.
 #   FLY_API_TOKEN: token de despliegue de la app (fly.io → la app → Tokens → Create deploy token). Obligatorio.
-#   WHATSAPP_*, CLINICA_UBICACION: opcionales; los que estén cargados se pasan a Fly (ver docs/recordatorios-whatsapp.md)
+#   WHATSAPP_*, CLINICA_UBICACION: opcionales; los que estén cargados se pasan a Fly (ver docs/operacion/recordatorios-whatsapp.md)
 name: Desplegar en Fly
 
 on:

@@ -2,7 +2,7 @@
 unos minutos. Aprobado si el 95 % de las paginas responde en menos de 3 s y no hay errores.
 
 Usa solo una rama de pruebas de Neon, porque la VACIA y la llena con cuentas y pacientes ficticios.
-    CARGA_DATABASE_URL=<rama de pruebas> python carga.py [segundos]
+    CARGA_DATABASE_URL=<rama de pruebas> python -m pruebas.carga [segundos]   (desde la raíz del repositorio)
 Levanta el sistema en este mismo equipo (gunicorn, como en Fly) y le manda las visitas. Para medir mejor, el
 sistema va en otra maquina y CARGA_SITIO=http://<su direccion>:8080 (con esa misma base y sin FLY_APP_NAME).
 """

@@ -1,6 +1,6 @@
 """Pruebas de Clínicas Odontológicas. Borran todo lo que haya en la base, así que usan su propia rama de Neon.
 
-Ejecutar:  PRUEBAS_DATABASE_URL=<cadena de la rama de pruebas> python pruebas.py
+Ejecutar:  PRUEBAS_DATABASE_URL=<cadena de la rama de pruebas> python -m pruebas.sistema   (desde la raíz del repositorio)
 """
 import io
 import os

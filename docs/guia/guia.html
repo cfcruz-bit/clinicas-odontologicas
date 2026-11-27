@@ -1,7 +1,7 @@
 <!doctype html>
 <!--
   Fuente de guia-defensa.pdf. Para volver a generar el PDF despues de editar este archivo:
-  "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --headless=new --no-pdf-header-footer --print-to-pdf=guia-defensa.pdf guia\guia.html
+  "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --headless=new --no-pdf-header-footer --print-to-pdf=docs\guia\guia-defensa.pdf docs\guia\guia.html
   Las capturas usan datos ficticios de la rama 'capturas' de Neon. Las de la aplicacion se toman a 1280 px de
   ancho (escala 1,25) y las de celular a 390 px; las de la consola de Neon (n1 a n6) son de la primera version.
 -->
@@ -62,7 +62,7 @@ Está hecha en Python con <b>Flask</b> y plantillas HTML, guarda todo en una bas
   <li><code>prototipo.py</code>: toda la lógica: rutas, roles, validaciones, tablas de la base de datos, bitácora, el código QR de los grupos y el expediente en PDF.</li>
   <li><code>templates/</code>: las plantillas Jinja de cada pantalla (<code>base.html</code> tiene la cabecera y las pestañas).</li>
   <li><code>static/</code>: la hoja de estilos, el logo de la UAM, el ícono, la foto de fondo y <code>cargando.js</code>, que muestra que un formulario se está enviando y evita enviarlo dos veces.</li>
-  <li><code>pruebas.py</code>: las pruebas automáticas (más de 150 casos); corren contra una rama de Neon aparte para no tocar los datos reales.</li>
+  <li><code>pruebas/</code>: las pruebas automáticas (más de 150 casos, en <code>sistema.py</code>) y la prueba de carga (<code>carga.py</code>); corren contra una rama de Neon aparte para no tocar los datos reales.</li>
   <li><code>requirements.txt</code>, <code>Dockerfile</code> y <code>fly.toml</code>: lo que necesita Fly para construir y publicar la aplicación.</li>
 </ul>
 <div class="nota">Todas las capturas de esta guía se tomaron con <b>datos ficticios</b> en una rama de Neon llamada
@@ -236,7 +236,7 @@ independientes de la base:</p>
 <table>
   <tr><th style="width:18%">Rama</th><th>Para qué</th></tr>
   <tr><td><code>main</code></td><td>La base real: la que usa la aplicación publicada en Fly.</td></tr>
-  <tr><td><code>pruebas</code></td><td>La usa <code>pruebas.py</code>. Se borra entera cada vez que corren las pruebas.</td></tr>
+  <tr><td><code>pruebas</code></td><td>La usa <code>pruebas/sistema.py</code>. Se borra entera cada vez que corren las pruebas.</td></tr>
   <tr><td><code>capturas</code></td><td>Datos ficticios para las capturas de esta guía.</td></tr>
 </table>
 <p>Las tablas se crean solas con <code>CREATE TABLE IF NOT EXISTS</code> y las columnas nuevas con
@@ -424,7 +424,7 @@ igual, pero hoy la lista de tablas es más larga y <code>pacientes</code> tiene 
   <li>Tras 5 contraseñas equivocadas seguidas la cuenta se bloquea 15 minutos.</li>
   <li>Cada estudiante solo ve y solo toca a sus pacientes; cada acción revisa el rol en el servidor.</li>
 </ul>
-<p>Todas están comprobadas en <code>pruebas.py</code>, que dice OK o FALLO por cada caso.</p>
+<p>Todas están comprobadas en <code>pruebas/sistema.py</code>, que dice OK o FALLO por cada caso.</p>
 
 <h2>9. Lo que falta</h2>
 <table>

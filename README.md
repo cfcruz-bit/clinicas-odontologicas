@@ -15,7 +15,7 @@ Reemplaza los expedientes y controles en papel de las clínicas de la Facultad. 
 desde el registro hasta el alta, el profesor supervisa y aprueba cada paso, y la Facultad administra las clínicas,
 los cobros y los materiales. Funciona en computadora, tableta y celular, sin instalar nada.
 
-![Plano de las clínicas](guia/capturas/09-salas-facultad.png)
+![Plano de las clínicas](docs/guia/capturas/09-salas-facultad.png)
 
 ## Qué hace
 
@@ -33,7 +33,7 @@ indicaciones después de la atención y bot de WhatsApp para que el paciente con
 
 | Odontograma | Expediente | En el celular |
 |---|---|---|
-| ![Odontograma](guia/capturas/14-odontograma.png) | ![Expediente](guia/capturas/04-expediente.png) | ![Celular](guia/capturas/24-pacientes-celular.png) |
+| ![Odontograma](docs/guia/capturas/14-odontograma.png) | ![Expediente](docs/guia/capturas/04-expediente.png) | ![Celular](docs/guia/capturas/24-pacientes-celular.png) |
 
 ## Seguridad y datos de pacientes
 
@@ -43,7 +43,7 @@ indicaciones después de la atención y bot de WhatsApp para que el paciente con
 - Toda acción queda en una bitácora que no se puede editar ni borrar.
 - Respaldo automático diario de la base de datos.
 - El consentimiento informado incluye la autorización del paciente según la Ley N.º 787 de Protección de Datos
-  Personales. Detalle en [docs/ley-787.md](docs/ley-787.md).
+  Personales. Detalle en [docs/legal/ley-787.md](docs/legal/ley-787.md).
 
 ## Cómo está hecho
 
@@ -57,11 +57,34 @@ indicaciones después de la atención y bot de WhatsApp para que el paciente con
 | PDF | ReportLab |
 | Recordatorios | API de WhatsApp Business (Meta) |
 
+## Estructura del repositorio
+
+```
+├── prototipo.py          Aplicación web (Flask): rutas, roles, validaciones y comandos de mantenimiento
+├── esquema.sql           Esquema de la base de datos (modelo v14)
+├── templates/            Plantillas HTML de cada pantalla
+├── static/               Estilos, imágenes y scripts del navegador
+├── requirements.txt      Dependencias de Python
+├── Dockerfile, fly.toml  Construcción y publicación en Fly.io
+├── .github/workflows/    Publicación automática al subir cambios a main
+├── pruebas/              Pruebas del sistema (sistema.py) y prueba de carga (carga.py)
+├── scripts/              Scripts de una sola vez (migración al modelo v14)
+└── docs/
+    ├── diseno/           Diagramas de casos de uso y entidad-relación
+    ├── guia/             Guía de uso (HTML, PDF y capturas)
+    ├── operacion/        Respaldos y recordatorios por WhatsApp
+    ├── pruebas/          Plan de pruebas y cuestionario SUS
+    └── legal/            Cumplimiento de la Ley N.º 787
+```
+
+La aplicación (`prototipo.py`, `esquema.sql`, `templates/` y `static/`) queda en la raíz porque así la buscan Flask,
+Gunicorn y las máquinas programadas de Fly.
+
 ## Modelo de datos
 
 La base sigue el **modelo de datos v14**: 20 tablas, todas las relaciones 1:N salvo dos 1:1, sin muchos a muchos.
-El diagrama está en [`diagrama-entidad-relacion.png`](diagrama-entidad-relacion.png) (fuente:
-[`diagrama-entidad-relacion.drawio`](diagrama-entidad-relacion.drawio)) y el SQL en [`esquema.sql`](esquema.sql).
+El diagrama está en [`docs/diseno/diagrama-entidad-relacion.png`](docs/diseno/diagrama-entidad-relacion.png) (fuente:
+[`diagrama-entidad-relacion.drawio`](docs/diseno/diagrama-entidad-relacion.drawio)) y el SQL en [`esquema.sql`](esquema.sql).
 
 Lo principal:
 
@@ -85,7 +108,7 @@ sistema ya tenía: el bloqueo de la cuenta, el consentimiento firmado, la razón
 observación, la revisión del odontograma, el alta y la eliminación del paciente, el resto de la historia clínica,
 los recordatorios por WhatsApp, la foto de los recibos, los traspasos y los pedidos de contacto.
 
-Una base del modelo anterior se pasa al v14 con [`migrar_v14.py`](migrar_v14.py), siempre en una rama nueva de Neon.
+Una base del modelo anterior se pasa al v14 con [`scripts/migrar_v14.py`](scripts/migrar_v14.py), siempre en una rama nueva de Neon.
 Mientras la base no esté migrada, el sistema no arranca.
 
 ## Correrlo en una computadora
@@ -110,29 +133,30 @@ fotos se guardan en la carpeta `archivos/`.
 | `CLAVE_INICIAL` | Contraseña de las cuentas que se crean por primera vez |
 | `SITIO` | Dirección pública del sistema, usada en los QR y en WhatsApp |
 | `COMENTARIOS` | Enlace al formulario de comentarios |
-| `WHATSAPP_*`, `CLINICA_UBICACION` | Recordatorios y bot de WhatsApp, ver [docs/recordatorios-whatsapp.md](docs/recordatorios-whatsapp.md) |
+| `WHATSAPP_*`, `CLINICA_UBICACION` | Recordatorios y bot de WhatsApp, ver [docs/operacion/recordatorios-whatsapp.md](docs/operacion/recordatorios-whatsapp.md) |
 
 **Comandos**
 
 | Comando | Qué hace |
 |---|---|
 | `flask --app prototipo crear-tablas` | En una base vacía crea las tablas del modelo v14 (se corre solo en cada publicación) |
-| `MIGRAR_DATABASE_URL=<rama> python migrar_v14.py` | Pasa una base del modelo anterior al v14 (una sola vez, en una rama nueva) |
+| `MIGRAR_DATABASE_URL=<rama> python scripts/migrar_v14.py` | Pasa una base del modelo anterior al v14 (una sola vez, en una rama nueva) |
 | `flask --app prototipo respaldar` | Guarda un respaldo de la base en el almacén |
 | `flask --app prototipo restaurar <archivo>` | Restaura un respaldo en una base vacía |
 | `flask --app prototipo recordar` | Envía los recordatorios de las citas de mañana |
 
 ## Pruebas
 
-Las dos pruebas **borran la base que usan**: córralas siempre en una rama de Neon aparte, nunca en la real.
+Las dos pruebas **borran la base que usan**: córralas siempre en una rama de Neon aparte, nunca en la real. Se
+corren desde la raíz del repositorio.
 
 ```bash
-PRUEBAS_DATABASE_URL="<rama de pruebas>" python pruebas.py   # pruebas del sistema
-CARGA_DATABASE_URL="<rama de pruebas>" python carga.py       # 50 usuarios a la vez
+PRUEBAS_DATABASE_URL="<rama de pruebas>" python -m pruebas.sistema   # pruebas del sistema
+CARGA_DATABASE_URL="<rama de pruebas>" python -m pruebas.carga       # 50 usuarios a la vez
 ```
 
 La prueba de carga del 16 de noviembre de 2026 respondió el 95 % de las páginas en 0,05 s con 50 usuarios a la vez
-y sin errores. Plan y resultados en [docs/plan-de-pruebas.md](docs/plan-de-pruebas.md).
+y sin errores. Plan y resultados en [docs/pruebas/plan-de-pruebas.md](docs/pruebas/plan-de-pruebas.md).
 
 ## Publicar
 
@@ -144,12 +168,14 @@ base real, así que todo cambio a `main` debe estar probado antes.
 
 | Documento | Contenido |
 |---|---|
-| [`guia-defensa.pdf`](guia-defensa.pdf) | Guía de uso de 15 minutos, con capturas |
-| [docs/plan-de-pruebas.md](docs/plan-de-pruebas.md) | Usabilidad, rendimiento, portabilidad y disponibilidad |
-| [docs/cuestionario-sus.md](docs/cuestionario-sus.md) | Cuestionario de facilidad de uso, listo para imprimir |
-| [docs/ley-787.md](docs/ley-787.md) | Cómo cumple el sistema la ley de protección de datos |
-| [docs/respaldos.md](docs/respaldos.md) | Respaldos y cómo restaurarlos |
-| [docs/recordatorios-whatsapp.md](docs/recordatorios-whatsapp.md) | Configuración de WhatsApp |
+| [`docs/guia/guia-defensa.pdf`](docs/guia/guia-defensa.pdf) | Guía de uso de 15 minutos, con capturas (fuente: `docs/guia/guia.html`) |
+| [`docs/diseno/diagrama-casos-de-uso.png`](docs/diseno/diagrama-casos-de-uso.png) | Diagrama de casos de uso (vista de escenarios, Enterprise Architect) |
+| [`docs/diseno/diagrama-entidad-relacion.png`](docs/diseno/diagrama-entidad-relacion.png) | Modelo de datos v14 |
+| [`docs/pruebas/plan-de-pruebas.md`](docs/pruebas/plan-de-pruebas.md) | Usabilidad, rendimiento, portabilidad y disponibilidad |
+| [`docs/pruebas/cuestionario-sus.md`](docs/pruebas/cuestionario-sus.md) | Cuestionario de facilidad de uso, listo para imprimir |
+| [`docs/legal/ley-787.md`](docs/legal/ley-787.md) | Cómo cumple el sistema la ley de protección de datos |
+| [`docs/operacion/respaldos.md`](docs/operacion/respaldos.md) | Respaldos y cómo restaurarlos |
+| [`docs/operacion/recordatorios-whatsapp.md`](docs/operacion/recordatorios-whatsapp.md) | Configuración de WhatsApp |
 
 ## Derechos
 

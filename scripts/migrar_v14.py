@@ -1,7 +1,7 @@
 """Pasa una base del modelo de datos anterior al modelo v14 (esquema.sql). Se corre UNA vez, en una rama nueva de
 Neon que es copia de la de producción; la base de producción no se toca.
 
-    MIGRAR_DATABASE_URL=<cadena de la rama nueva> python migrar_v14.py
+    MIGRAR_DATABASE_URL=<cadena de la rama nueva> python scripts/migrar_v14.py
 
 Las tablas viejas pasan al esquema "anterior" (no se borran) y se crean las del modelo v14 con los datos
 convertidos. Al final imprime qué no se pudo pasar tal cual y por qué. Todo va en una sola transacción: si algo
@@ -55,7 +55,7 @@ def migrar(c):
     q("CREATE SCHEMA anterior")
     for t in VIEJAS:
         q(f"ALTER TABLE IF EXISTS public.{t} SET SCHEMA anterior")
-    q(Path(__file__).with_name("esquema.sql").read_text(encoding="utf-8"))
+    q(Path(__file__).resolve().parent.parent.joinpath("esquema.sql").read_text(encoding="utf-8"))
     # Son datos que ya pasaron las reglas del sistema anterior: las reglas automaticas de rol y de aprobacion no
     # se repiten (las CHECK y las de no encimar citas si se revisan)
     q("SET LOCAL clinicas.restaurando = 'si'")
