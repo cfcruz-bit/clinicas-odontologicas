@@ -133,8 +133,8 @@ IMAGEN_MAXIMA = 5 * 1024 * 1024  # RNF09: fotos JPG o PNG de hasta 5 MB
 REVISIONES = {"": "Sin pedir", "pedida": "Pedida, esperando al profesor", "aprobada": "Aprobada",
               "devuelta": "Devuelta para corregir"}
 
-# El esquema de la base (modelo de datos v14 y sus extensiones) esta en esquema.sql
-ESQUEMA = (Path(__file__).parent / "esquema.sql").read_text(encoding="utf-8")
+# El esquema de la base (modelo de datos v14 y sus extensiones) esta en base-de-datos/esquema.sql
+ESQUEMA = (Path(__file__).parent / "base-de-datos" / "esquema.sql").read_text(encoding="utf-8")
 
 app = Flask(__name__)
 # Sin SECRET_KEY las sesiones se pierden al reiniciar, pero nunca quedan firmadas con una clave conocida
